@@ -192,27 +192,60 @@ class Scraper:
 
         logger.info("Simple scraper initialized - direct connection only")
 
-    def health_check(self, timeout: int | None = None) -> bool:
-        """Quick health check to detect if connection is blocked."""
-        try:
-            t = timeout if timeout is not None else self.config.read_timeout
-            response = self.session.get(self.urls["total"], timeout=(self.config.connect_timeout, t))
+    def health_check(self, timeout: int | None = None, max_retries: int = 3) -> bool:
+        """Quick health check to detect if connection is blocked.
 
-            if response.status_code != 200:
-                logger.warning(f"Health check failed: status {response.status_code}")
+        Args:
+            timeout: Custom timeout for the request. Uses config.read_timeout if None.
+            max_retries: Number of retry attempts with exponential backoff.
+        """
+        for attempt in range(max_retries):
+            try:
+                t = timeout if timeout is not None else self.config.read_timeout
+                response = self.session.get(self.urls["total"], timeout=(self.config.connect_timeout, t))
+
+                if response.status_code != 200:
+                    logger.warning(
+                        f"Health check failed (attempt {attempt + 1}/{max_retries}): status {response.status_code}"
+                    )
+                    if attempt < max_retries - 1:
+                        import time
+
+                        wait_time = 2**attempt  # exponential backoff: 1s, 2s, 4s
+                        logger.info(f"Retrying in {wait_time}s...")
+                        time.sleep(wait_time)
+                        continue
+                    return False
+
+                if _is_blocked(response.text):
+                    marker = next(m for m in BLOCKED_MARKERS if m in response.text.lower())
+                    logger.warning(
+                        f"Health check failed (attempt {attempt + 1}/{max_retries}): blocked indicator '{marker}'"
+                    )
+                    if attempt < max_retries - 1:
+                        import time
+
+                        wait_time = 2**attempt
+                        logger.info(f"Retrying in {wait_time}s...")
+                        time.sleep(wait_time)
+                        continue
+                    return False
+
+                logger.info("Health check passed - connection OK")
+                return True
+
+            except Exception as e:
+                logger.warning(f"Health check failed (attempt {attempt + 1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    import time
+
+                    wait_time = 2**attempt
+                    logger.info(f"Retrying in {wait_time}s...")
+                    time.sleep(wait_time)
+                    continue
                 return False
 
-            if _is_blocked(response.text):
-                marker = next(m for m in BLOCKED_MARKERS if m in response.text.lower())
-                logger.warning(f"Health check failed: blocked indicator '{marker}'")
-                return False
-
-            logger.info("Health check passed - connection OK")
-            return True
-
-        except Exception as e:
-            logger.warning(f"Health check failed: {e}")
-            return False
+        return False
 
     @staticmethod
     def _normalize_header(text: str) -> str:

@@ -139,7 +139,15 @@ class BackupManager:
 
         data = json.loads(result.stdout)
         objects = sorted(data.get("Contents", []), key=lambda o: o["Key"], reverse=True)
+        # Keep backups significantly larger than newest (avoid deleting good
+        # large backups when a small one is created)
+        new_backup_size = data.get("Contents", [{}])[0].get("Size", 0) if data.get("Contents") else 0
         for obj in objects[30:]:
+            obj_size = obj.get("Size", 0)
+            # Don't delete if this backup is >50% larger than the newest (likely a good full backup)
+            if obj_size > new_backup_size * 1.5:
+                logger.info(f"Keeping large R2 backup (size {obj_size} vs newest {new_backup_size}): {obj['Key']}")
+                continue
             subprocess.run(
                 [
                     "aws",
@@ -303,14 +311,34 @@ class Manager:
         Returns True if file exists after this call (either already existed or restored).
         """
         rph_path = Path(self.config.data_directory) / "rph.json"
+
+        # Try to get Supabase count for validation
+        # TGPC_ALLOW_SMALL_RPH=1 lets unit tests use tiny fixtures without R2.
+        if os.environ.get("TGPC_ALLOW_SMALL_RPH") == "1":
+            expected_min_records = 1
+        else:
+            expected_min_records = 1000  # production: 1-record stub is corrupt
+        try:
+            url = os.environ.get("SUPABASE_URL")
+            key = os.environ.get("SUPABASE_SECRET_KEY")
+            if url and key:
+                supabase = create_client(url, key)
+                result = supabase.table("rph").select("registration_number", count="exact", head=True).execute()
+                if result.count and result.count > 1000:
+                    expected_min_records = int(result.count * 0.5)  # expect at least 50% of Supabase
+        except Exception:
+            pass  # fallback to default minimum
+
         if rph_path.exists():
             try:
                 with open(rph_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                if isinstance(data, list) and len(data) >= 1:
+                if isinstance(data, list) and len(data) >= expected_min_records:
+                    logger.info(f"data/rph.json OK ({len(data)} records, expected >= {expected_min_records})")
                     return True
                 logger.warning(
-                    f"rph.json small ({len(data) if isinstance(data, list) else 'invalid'}) — restoring from R2..."
+                    f"data/rph.json small ({len(data) if isinstance(data, list) else 'invalid'} records, "
+                    f"expected >= {expected_min_records}) — restoring from R2..."
                 )
             except Exception as e:
                 logger.warning(f"data/rph.json failed validation ({e}) — restoring from R2...")
@@ -360,7 +388,7 @@ class Manager:
         latest = max(contents, key=lambda x: x["LastModified"])
         backup_key = latest["Key"]
         # Only restore if R2 backup is significantly larger than local (avoid overwriting test 1 with 1)
-        if latest.get("Size", 0) < 1000:
+        if latest.get("Size", 0) < 100:
             logger.warning(f"R2 backup {backup_key} too small ({latest.get('Size')} bytes) — not restoring")
             return False
 
@@ -523,11 +551,12 @@ class Manager:
             rem_cat_stats = get_cat_stats(sorted_removed_ids, existing_map)
             mod_cat_stats = get_cat_stats(modified_ids, current_map)  # Use modified_ids, NOT common_ids
 
-            # Safety abort for 1 vs 89k spike — require --force
-            if not force and (len(new_ids) + len(removed_ids) > 100 or len(new_ids) > 1000):
+            # Safety abort: only block large DROPS, not legitimate growth
+            # Allow any amount of growth (new records), but abort if many records removed
+            if not force and len(removed_ids) > 100:
                 logger.error(
-                    f"SAFETY ABORT: {len(new_ids)} new + {len(removed_ids)} removed "
-                    f"(limit 100 total / 1000 new) — possible corruption. Run --force."
+                    f"SAFETY ABORT: {len(removed_ids)} records removed (limit 100) — "
+                    f"possible data loss. Run --force to override."
                 )
                 self._write_update_outputs(
                     update_status="safety_abort",
@@ -1291,29 +1320,36 @@ class Manager:
             logger.info("No records processed")
 
     def enrich_new_records(self, force: bool = False):
-        """Auto-enrich records that were newly discovered by the last update.
+        """Auto-enrich records that need enrichment.
 
         Args:
-            force: If False, abort when >1000 new records (safety guard against
+            force: If False, abort when >1000 candidate records (safety guard against
                    corrupt/missing rph.json causing full re-enrichment).
+                   If True, enrich all records missing enrichment data.
         """
         regs = getattr(self, "_last_new_regs", set())
 
-        # Safety cap: require --force if >1000 new records
-        if len(regs) > 1000 and not force:
-            logger.error(
-                f"SAFETY ABORT: {len(regs)} new records detected (limit 1000). "
-                "This usually means data/rph.json is missing or corrupted, "
-                "causing all records to appear as 'new'. "
-                "Run with --force to override and enrich all."
-            )
-            return
+        # In force mode, enrich all records missing enrichment data
+        if force:
+            records = self.file_manager.load()
+            logger.info(f"Force mode: checking {len(records)} records for enrichment needs")
+        else:
+            regs = getattr(self, "_last_new_regs", set())
+            # Safety cap: require --force if >1000 new records
+            if len(regs) > 1000 and not force:
+                logger.error(
+                    f"SAFETY ABORT: {len(regs)} new records detected (limit 1000). "
+                    "This usually means data/rph.json is missing or corrupted, "
+                    "causing all records to appear as 'new'. "
+                    "Run with --force to override and enrich all."
+                )
+                return
 
-        if not regs:
-            logger.info("No new records to enrich")
-            return
+            if not regs:
+                logger.info("No new records to enrich")
+                return
 
-        records = [r for r in self.file_manager.load() if r.registration_number in regs]
+            records = [r for r in self.file_manager.load() if r.registration_number in regs]
         if not records:
             logger.info("No matching records found in rph.json")
             return

@@ -49,6 +49,17 @@ def record(reg_no, name, father, category, serial):
 
 
 class ManagerUpdateTests(unittest.TestCase):
+    def setUp(self):
+        # Tiny fixtures are valid in tests; never touch production R2/Supabase.
+        os.environ["TGPC_ALLOW_SMALL_RPH"] = "1"
+        p1 = patch("tgpc.manager.BackupManager._upload_to_r2", return_value=True)
+        p2 = patch("tgpc.manager.Manager._restore_rph_from_backup", return_value=True)
+        self._upload_mock = p1.start()
+        self._restore_mock = p2.start()
+        self.addCleanup(p1.stop)
+        self.addCleanup(p2.stop)
+        self.addCleanup(os.environ.pop, "TGPC_ALLOW_SMALL_RPH", None)
+
     def _make_manager(self, temp_dir: str, fresh_records):
         with patch("tgpc.manager.Config.load", return_value=Config(data_directory=temp_dir)):
             with patch("tgpc.manager.Scraper", return_value=FakeScraper(fresh_records)):
