@@ -272,9 +272,13 @@ class ManagerUpdateTests(unittest.TestCase):
 
     def test_sync_to_supabase_returns_true_on_success(self):
         """H1: a completed sync must report success."""
-        with tempfile.TemporaryDirectory():
+        with tempfile.TemporaryDirectory() as temp_dir:
             with patch("tgpc.manager.load_credentials"):
-                manager = Manager()
+                with patch(
+                    "tgpc.manager.Config.load",
+                    return_value=Config(data_directory=temp_dir, enrichment_directory=temp_dir),
+                ):
+                    manager = Manager()
             with patch(
                 "tgpc.manager.os.environ",
                 {"SUPABASE_URL": "https://test.supabase.co", "SUPABASE_SECRET_KEY": "test-key"},
