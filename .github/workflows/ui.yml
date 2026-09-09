@@ -22,8 +22,8 @@ jobs:
       PUBLIC_SUPABASE_PUBLISHABLE_KEY: placeholder-key
       PUBLIC_R2_PHOTO_BASE: https://placeholder.r2.dev/photos
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
