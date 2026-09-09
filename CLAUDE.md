@@ -73,7 +73,7 @@ Prefer `TGPC` export from `ui/src/lib/colors.ts`. See `AGENTS.md` for full guide
 
 ## Data
 
-~87,500 pharmacist records across 6 categories: BPharm, DPharm, MPharm, PharmD, QC, QP.
+~89,000 pharmacist records across 6 categories: BPharm, DPharm, MPharm, PharmD, QC, QP.
 
 ## See Also
 

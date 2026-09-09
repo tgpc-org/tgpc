@@ -4,7 +4,7 @@ Public-facing search portal for the Telangana State Pharmacy Council pharmacist 
 
 - **Frontend:** SvelteKit 5 + Tailwind v4 + Supabase — [tgpc.pages.dev](https://tgpc.pages.dev)
 - **Pipeline:** Python scraper, data enrichment, multi-destination sync (Supabase, R2, GDrive)
-- **Data:** ~87,500 pharmacist records with photo, gender, registration status, and validity dates across 6 categories (BPharm, DPharm, MPharm, PharmD, QC, QP)
+- **Data:** ~89,000 pharmacist records with photo, gender, registration status, and validity dates across 6 categories (BPharm, DPharm, MPharm, PharmD, QC, QP)
 - **Deploys:** pushes to `main` auto-deploy to Cloudflare Pages (`tgpc-org/tgpc` → `tgpc.pages.dev`)
 
 ## Architecture

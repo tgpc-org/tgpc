@@ -31,6 +31,7 @@ data/img/
 data/webp/
 data/progress/
 data/update_details.json
+data/*.jsonl
 *.backup
 *.bak
 *.tmp

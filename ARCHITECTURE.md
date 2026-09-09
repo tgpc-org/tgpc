@@ -29,7 +29,7 @@ tgpc/
 ├── ARCHITECTURE.md
 ├── README.md
 ├── data/
-│   ├── rph.json                     # ~87K pharmacist records (JSON array) — gitignored but tracked historically
+│   ├── rph.json                     # ~89K pharmacist records (JSON array) — gitignored but tracked historically
 │   ├── update_details.json         # Sync diff summary — gitignored
 │   ├── webp/                       # Per-record enrichment photos (WebP) — gitignored
 │   ├── inactive_records.jsonl      # Inactive-sweep phase 1 output — gitignored
@@ -42,7 +42,7 @@ tgpc/
 │   ├── progress.py                 # ProgressBar, Phase, heartbeat, BarHandler (TTY + CI-safe output)
 │   ├── quota.py                    # Free-tier quota report (Supabase, R2, Resend, GDrive)
 │   ├── scraper.py                  # Scraper, RateLimiter, PharmacistRecord, extractors, TLS adapter
-│   ├── manager.py                  # FileManager, BackupManager, Manager (~1490 lines)
+│   ├── manager.py                  # FileManager, BackupManager, Manager (~1550 lines)
 │   ├── inactive_sweep.py           # Detect inactive→active reactivations (2-phase, resumable)
 │   └── enrich_actives.py           # Parallel enrichment + upsert of reactivated records
 ├── ui/                            # Production frontend (SvelteKit)
@@ -182,7 +182,7 @@ Config is loaded via `Config.load()` classmethod (reads env vars for proxy and e
 - `extract_basic_records()` → `List[PharmacistRecord]` — fetches total endpoint, finds `<table id="tablesorter-demo">` (fallback to any `<table>`), extracts rows with ≥5 cells (serial, reg_no, name, father, category)
 - `extract_detailed_info(reg_no, img_dir)` → `Optional[PharmacistRecord]` — POSTs to search endpoint, parses detail page for: registration table (name, father, gender, category, status, validity), education table (qualification → category, university, college, years, HT No), work experience table (address, state, district, pin code), and photos (base64 data URI or URL download → saved to `img_dir`)
 
-### `tgpc/manager.py` — Orchestration (~1490 lines)
+### `tgpc/manager.py` — Orchestration (~1550 lines)
 
 **`DataIntegrityError`** — raised when enrichment scraped data doesn't match the expected registration.
 
@@ -472,7 +472,7 @@ Job permissions: `actions: write`, `contents: write` (release upload).
 
 **Quality gates:**
 - `.github/workflows/ui.yml` runs on push/PR touching `ui/` — ESLint + brand-color gate (`check:colors`) + svelte-check + the 18 unit tests + a build with placeholder PUBLIC env vars (real values live in the Cloudflare Pages dashboard) + `npm audit --audit-level=high`. Auto-deploys from `main` build `ui/`.
-- `.github/workflows/python.yml` runs on push/PR touching `tgpc/`, `tests/`, or `pyproject.toml` — `ruff check`, `ruff format --check` (pinned 0.11.5, matching pre-commit), the full pytest suite, and a `pip-audit` dependency vulnerability scan.
+- `.github/workflows/python.yml` runs on push/PR touching `tgpc/`, `tests/`, or `pyproject.toml` — `ruff check`, `ruff format --check` (pinned 0.16.6, matching pre-commit), the full pytest suite, and a `pip-audit` dependency vulnerability scan.
 
 **Dependency updates:**
 Dependabot was removed (2026-09) in favour of manual bumps. CVE coverage comes from the two audit gates: `pip-audit` in `python.yml` and `npm audit --audit-level=high` in `ui.yml` — both fail the build on known-vulnerable dependencies.
@@ -509,7 +509,7 @@ All tests use mocking (no real HTTP or Supabase calls). The `supabase` module is
 
 `.pre-commit-config.yaml` runs on commit for staged files:
 
-**Python** (root, via `astral-sh/ruff-pre-commit` v0.11.5): `ruff check --fix` + `ruff-format` on changed Python files.
+**Python** (root, via `astral-sh/ruff-pre-commit` v0.16.6): `ruff check --fix` + `ruff-format` on changed Python files.
 
 **UI** (local hooks, run from `ui/`): `ui-eslint` (ESLint flat config, 0 errors), `ui-svelte-check` (svelte-check), and `ui-check-colors` (brand-color gate, `npm run check:colors`) on changed Svelte/TS/JS files. `requirements`: a `node`/`npm` install is expected on the dev machine.
 
