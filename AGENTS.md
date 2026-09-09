@@ -49,3 +49,9 @@ red/green may also appear as alpha tints: `rgba(239,68,68,a)` /
 
 - Do not commit or push unless explicitly asked.
 - When verifying UI changes, the page must load 200 and `svelte-check` must not introduce new errors.
+
+## Email Format (standing rule)
+
+- Every records email uses the DEFAULT `make scrape` pipeline report format —
+  no custom formats, period. Send via `Manager.email_record_list(reg_ids)`,
+  which builds `_last_update_details` and delegates to `sync_to_email()`.

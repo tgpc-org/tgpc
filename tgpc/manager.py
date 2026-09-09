@@ -1210,6 +1210,31 @@ class Manager:
                 logger.warning(f"Email send error: {e}")
                 return False
 
+    def email_record_list(self, reg_ids) -> bool:
+        """Email a record list using the DEFAULT make-scrape report format.
+
+        Standing rule: every records email uses sync_to_email() — no custom
+        formats. Builds _last_update_details from the given registration IDs
+        (as NEW) and delegates to sync_to_email().
+        """
+        reg_ids = sorted(set(reg_ids))
+        lookup = {r.registration_number: r for r in self.file_manager.load()}
+        new_details = [f"{rid} - {lookup[rid].name} ({lookup[rid].category})" for rid in reg_ids if rid in lookup]
+        if not new_details:
+            logger.info("No matching records found in rph.json — skipping email")
+            return True
+        new_cat_stats = dict(sorted(Counter(lookup[r].category for r in reg_ids if r in lookup).items()))
+        self._last_update_details = {
+            "new_details": new_details,
+            "modified_details": [],
+            "removed_details": [],
+            "new_cat_stats": new_cat_stats,
+            "rem_cat_stats": {},
+            "mod_cat_stats": {},
+            "total_records": len(lookup),
+        }
+        return self.sync_to_email()
+
     def run_enrichment(
         self,
         start: int = 1,
