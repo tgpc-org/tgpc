@@ -1,5 +1,9 @@
 <svelte:head>
   <title>TGPC RPh Index</title>
+  <link rel="preconnect" href={PUBLIC_SUPABASE_URL} />
+  <link rel="preconnect" href={new URL(PUBLIC_R2_PHOTO_BASE).origin} />
+  <link rel="dns-prefetch" href={PUBLIC_SUPABASE_URL} />
+  <link rel="dns-prefetch" href={new URL(PUBLIC_R2_PHOTO_BASE).origin} />
 </svelte:head>
 
 <script lang="ts">
@@ -9,6 +13,7 @@
   import { supabase } from '$lib/supabase';
   import { page } from '$app/stores';
   import { CATEGORY_COLORS, CATEGORIES, CATEGORY_KEYS } from '$lib/colors';
+  import { PUBLIC_SUPABASE_URL, PUBLIC_R2_PHOTO_BASE } from '$env/static/public';
 
   import Clock from '$lib/components/Clock.svelte';
 
@@ -55,8 +60,10 @@
   }
 
   $effect(() => {
-    loadStats();
-    loadLastSync();
+    // SSR already supplied stats — don't refetch on mount; realtime channel
+    // below keeps them fresh.
+    if (!ssrStats) loadStats();
+    if (!ssrSync) loadLastSync();
     const channel = supabase
       .channel('metadata-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'metadata', filter: `key=eq.last_sync` }, () => { loadStats(); loadLastSync(); })

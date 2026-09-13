@@ -95,6 +95,8 @@
           src={photo}
           alt={`${record.name}'s photo`}
           onerror={handlePhotoError}
+          decoding="async"
+          fetchpriority="high"
           class="w-full h-full object-cover {photoError ? 'hidden' : ''}"
         />
         {#if photoError}

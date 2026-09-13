@@ -6,8 +6,20 @@ export const load: LayoutLoad = async () => {
   let stats: Stats | null = null;
   let lastSync = '';
 
+  // Parallel — both must resolve before first paint, so don't await sequentially.
+  const [statsRes, syncRes] = await Promise.all([
+    supabase.rpc('get_rph_stats').then(
+      (r) => r,
+      () => ({ data: null, error: true })
+    ),
+    supabase.from('metadata').select('value').eq('key', 'last_sync').single().then(
+      (r) => r,
+      () => ({ data: null, error: true })
+    )
+  ]);
+
   try {
-    const { data, error } = await supabase.rpc('get_rph_stats');
+    const { data, error } = statsRes as { data: unknown; error: unknown };
     if (!error && data && typeof data === 'object') {
       const d = data as { total: number; active: number; inactive: number; categories: Record<string, number> };
       stats = {
@@ -25,11 +37,7 @@ export const load: LayoutLoad = async () => {
   } catch {}
 
   try {
-    const { data, error } = await supabase
-      .from('metadata')
-      .select('value')
-      .eq('key', 'last_sync')
-      .single();
+    const { data, error } = syncRes as { data: { value?: string } | null; error: unknown };
     if (!error && data?.value) {
       const d = new Date(data.value);
       lastSync = d.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'short', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).toUpperCase().replace(/,/g, '');

@@ -97,7 +97,7 @@
         <div class="bg-white border border-[#e5e7eb] rounded-xl p-3 space-y-3">
           <div class="flex gap-4 items-start">
             <div class="flex-shrink-0 w-24 h-30 rounded-lg bg-[#f3f4f6] overflow-hidden relative" style="width:80px;height:100px">
-              <img src={photo} alt={`${record.name}'s photo`} onerror={handlePhotoError} class="w-full h-full object-cover {photoError ? 'hidden' : ''}" />
+              <img src={photo} alt={`${record.name}'s photo`} onerror={handlePhotoError} decoding="async" class="w-full h-full object-cover {photoError ? 'hidden' : ''}" />
               {#if photoError}
                 <div class="w-full h-full flex items-center justify-center bg-[#f3f4f6]">
                   <svg class="w-10 h-10 text-[#d1d5db]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>

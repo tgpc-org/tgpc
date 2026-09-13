@@ -6,8 +6,6 @@
   import ProfileSidebar from '$lib/components/ProfileSidebar.svelte';
   import { getRecord } from '$lib/api';
   import { PUBLIC_R2_PHOTO_BASE } from '$env/static/public';
-  import jsPDF from 'jspdf';
-  import autoTable from 'jspdf-autotable';
   import { fly } from 'svelte/transition';
 
   function photoUrl(r: PharmacistRecord): string {
@@ -199,8 +197,14 @@
     return `${String(d.getDate()).padStart(2,'0')}${String(d.getMonth()+1).padStart(2,'0')}${d.getFullYear()}`;
   }
 
-  function exportPDF() {
+  // jspdf + autotable + html2canvas (~650KB) load on demand, not in the
+  // critical homepage bundle.
+  async function exportPDF() {
     if (filtered.length === 0) return;
+    const [{ jsPDF }, { default: autoTable }] = await Promise.all([
+      import('jspdf'),
+      import('jspdf-autotable')
+    ]);
     const doc = new jsPDF({ format: 'a4', unit: 'mm' });
     const now = new Date();
     const kw = query.trim() || '(all)';
@@ -446,7 +450,7 @@
             {#each filtered as r (r.registration_number)}
               <tr class="text-[0.875rem] text-[#374151] border-b border-[#f3f4f6]" style="content-visibility:auto;contain-intrinsic-size:48px">
                 <td class="py-1.5">
-                  <img src={photoUrl(r)} alt="" loading="lazy" class="w-9 h-11 rounded object-cover bg-[#f3f4f6]" />
+                  <img src={photoUrl(r)} alt="" loading="lazy" decoding="async" width="36" height="44" class="w-9 h-11 rounded object-cover bg-[#f3f4f6]" />
                 </td>
                 <td class="py-2.5 text-[#2563eb]" style="font-weight:600">
                   <a href="/rph/{r.registration_number}" onclick={(e) => { e.preventDefault(); openDrawer(r.registration_number); }} class="hover:underline no-underline cursor-pointer" aria-label="View profile for {r.registration_number}">
@@ -474,7 +478,7 @@
       <div class="md:hidden space-y-0.5">
           {#each filtered as r (r.registration_number)}
             <div class="flex gap-3 py-2 border-b border-[#f3f4f6] text-[0.875rem]" style="content-visibility:auto;contain-intrinsic-size:110px">
-              <img src={photoUrl(r)} alt="" loading="lazy" class="w-10 h-12 rounded object-cover bg-[#f3f4f6] flex-shrink-0" />
+              <img src={photoUrl(r)} alt="" loading="lazy" decoding="async" width="40" height="48" class="w-10 h-12 rounded object-cover bg-[#f3f4f6] flex-shrink-0" />
               <div class="min-w-0">
                 <a href="/rph/{r.registration_number}" onclick={(e) => { e.preventDefault(); openDrawer(r.registration_number); }} class="text-[#2563eb] hover:underline no-underline cursor-pointer" style="font-weight:600" aria-label="View profile for {r.registration_number}">{r.registration_number}</a>
                 <div class="mt-0.5 text-[#374151] truncate">{r.name}</div>
