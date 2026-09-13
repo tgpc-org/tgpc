@@ -120,16 +120,22 @@
     }
   });
 
+  let searchSeq = 0;
+
   async function doSearch() {
     const q = query.trim();
-    if (q.length < 3 || loading) return;
+    if (q.length < 3) return;
+    const mySeq = ++searchSeq;
     loading = true;
     searched = true;
     try {
-      results = await searchRecords(query);
+      const res = await searchRecords(query);
+      if (mySeq !== searchSeq) return; // superseded by newer keystroke
+      results = res;
       category = 'all';
     } finally {
-      loading = false;
+      if (mySeq === searchSeq) loading = false;
+      else void doSearch(); // keystroke arrived mid-flight — fetch latest
     }
   }
 
