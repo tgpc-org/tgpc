@@ -41,10 +41,9 @@
   }));
 
   const cached = browser && cachedOrNull<Notice[]>('tgpc_notices');
-  let initial = $derived(cached || data.notices);
-  $effect(() => {
-    if (initial.length > 0) { notices = initial; buildYears(); loading = false; }
-  });
+  // svelte-ignore state_referenced_locally
+  const initial = cached || data.notices;
+  if (initial.length > 0) { notices = initial; buildYears(); loading = false; }
 
   function buildYears() {
     years = [...new Set(notices.map(n => getYr(n.date)))].sort((a, b) => +b - +a);

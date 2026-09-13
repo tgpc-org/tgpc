@@ -44,10 +44,9 @@
   }));
 
   const cached = browser && cachedOrNull<{ name: string; size?: number; stale?: boolean }[]>("tgpc_dispatch");
-  let initial = $derived(cached || data.files);
-  $effect(() => {
-    if (initial.length > 0) { build(initial); loading = false; }
-  });
+  // svelte-ignore state_referenced_locally
+  const initial = cached || data.files;
+  if (initial.length > 0) { build(initial); loading = false; }
 
   if (!cached && browser) {
     fetchDispatchFiles().then(raw => {
