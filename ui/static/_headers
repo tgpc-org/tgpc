@@ -1,15 +1,13 @@
 # Security headers for static assets served directly by Cloudflare Pages.
-# HTML pages and /api/* also get these via src/hooks.server.ts (the hook
-# cannot set headers on static-asset responses, and _headers cannot see
-# function responses, so both are needed). Keep these in sync.
+# HTML pages get their headers (incl. nonce-based CSP from kit.csp.mode
+# 'auto' in svelte.config.js) via src/hooks.server.ts. CSP MUST NOT be set
+# here: a second enforced policy without the matching per-request nonce
+# bricks hydration (all inline SvelteKit scripts blocked).
 #
-# NOTE: static assets cannot carry a per-request CSP nonce (unlike the hook,
-# which injects one via transformPageChunk). Non-HTML assets (JS/CSS/images/
-# PDFs) don't execute inline scripts, so 'unsafe-inline' here is safe. The
-# hook serves all route HTML with a nonce-based CSP, which is stricter.
+# NOTE: non-HTML assets (JS/CSS/images/PDFs) don't execute inline scripts,
+# so they intentionally carry no CSP.
 
 /*
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://pub-4591c8c5282040459ade2ed1e5e3d5be.r2.dev; connect-src 'self' https://vhgpyvzgmvhijqgsapnk.supabase.co; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY
   Referrer-Policy: strict-origin-when-cross-origin
