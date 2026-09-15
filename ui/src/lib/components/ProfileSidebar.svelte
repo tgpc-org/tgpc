@@ -21,7 +21,13 @@
   function handlePhotoError() { photoError = true; }
   function formatDate(v: string | null | undefined) { return v || '—'; }
   function statusColor(s: string | null | undefined) { return s === 'Active' ? '#00cc66' : '#ef4444'; }
-  function categoryColor(cat: string) { return CATEGORY_COLORS[cat as keyof typeof CATEGORY_COLORS] || '#6b7280'; }
+  // Theme-aware: MPharm's #111827 is invisible on night backgrounds, and
+  // unknown categories fall back to the muted token (not raw #6b7280).
+  function categoryColor(cat: string) {
+    const c = CATEGORY_COLORS[cat as keyof typeof CATEGORY_COLORS];
+    if (!c) return 'var(--t-muted)';
+    return c === '#111827' ? 'var(--t-ink)' : c;
+  }
   function printPage() { window.print(); }
   function displayWork(v: string | null | undefined): string {
     if (!v) return '—';
@@ -107,8 +113,8 @@
             <div class="flex-1 min-w-0 space-y-2">
               <h2 class="text-base font-bold text-[var(--t-ink)] truncate">{record.name}</h2>
               <div class="flex flex-wrap items-center gap-2">
-                <span class="px-2.5 py-1 rounded-full text-[0.6rem] font-semibold uppercase tracking-wider tabular-nums" style="background:#2563eb15;color:#2563eb">RPC: {record.registration_number}</span>
-                <span class="px-2.5 py-1 rounded-full text-[0.6rem] font-semibold uppercase tracking-wider" style="background:{categoryColor(record.category)}15;color:{categoryColor(record.category)}">{record.category}</span>
+                <span class="px-2.5 py-1 rounded-full text-[0.6rem] font-semibold uppercase tracking-wider tabular-nums" style="background:color-mix(in srgb, #2563eb 10%, transparent);color:var(--t-link)">RPC: {record.registration_number}</span>
+                <span class="px-2.5 py-1 rounded-full text-[0.6rem] font-semibold uppercase tracking-wider" style="background:color-mix(in srgb, {categoryColor(record.category)} 10%, transparent);color:{categoryColor(record.category)}">{record.category}</span>
                 <span class="px-2.5 py-1 rounded-full text-[0.6rem] font-semibold uppercase tracking-wider" style="background:{record.status === 'Active' ? 'rgba(0,204,102,0.1)' : 'rgba(239,68,68,0.1)'};color:{statusColor(record.status)}">{record.status || 'Unknown'}</span>
               </div>
               <div class="flex flex-wrap gap-3 text-xs text-[var(--t-muted)]">

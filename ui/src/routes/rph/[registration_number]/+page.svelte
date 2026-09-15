@@ -23,8 +23,12 @@
     return status === 'Active' ? '#00cc66' : '#ef4444';
   }
 
+  // Theme-aware: MPharm's #111827 is invisible on night backgrounds, and
+  // unknown categories fall back to the muted token (not raw #6b7280).
   function categoryColor(cat: string): string {
-    return CATEGORY_COLORS[cat as keyof typeof CATEGORY_COLORS] || '#6b7280';
+    const c = CATEGORY_COLORS[cat as keyof typeof CATEGORY_COLORS];
+    if (!c) return 'var(--t-muted)';
+    return c === '#111827' ? 'var(--t-ink)' : c;
   }
 
   function printPage() {
@@ -114,11 +118,11 @@
 
         <div class="flex flex-wrap items-center gap-2.5">
           <span class="px-3 py-1 rounded-full text-[0.7rem] font-semibold uppercase tracking-wider tabular-nums"
-            style="background:#2563eb15;color:#2563eb">
+            style="background:color-mix(in srgb, #2563eb 10%, transparent);color:var(--t-link)">
             RPC: {record.registration_number}
           </span>
           <span class="px-3 py-1 rounded-full text-[0.7rem] font-semibold uppercase tracking-wider"
-            style="background:{categoryColor(record.category)}15;color:{categoryColor(record.category)}">
+            style="background:color-mix(in srgb, {categoryColor(record.category)} 10%, transparent);color:{categoryColor(record.category)}">
             {record.category}
           </span>
           <span class="px-3 py-1 rounded-full text-[0.7rem] font-semibold uppercase tracking-wider"
@@ -221,7 +225,7 @@
   </div>
 
   <footer class="text-center text-[0.7rem] text-[#9ca3af] py-4 border-t border-[var(--t-border)]">
-    Data sourced from Telangana State Pharmacy Council &middot; <a href="https://tgpc.pages.dev" class="text-[#2563eb] hover:underline">tgpc.pages.dev</a>
+    Data sourced from Telangana State Pharmacy Council &middot; <a href="https://tgpc.pages.dev" class="text-[var(--t-link)] hover:underline">tgpc.pages.dev</a>
   </footer>
 </div>
 

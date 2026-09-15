@@ -252,7 +252,7 @@
                 <div class="divide-y divide-[var(--t-border)]">
                   {#each group.items as item (item.url)}
                     <div class="flex items-center gap-2 px-3 py-1.5">
-                      <span class="flex-1 text-xs font-mono text-[#2563eb] break-all">{item.url}</span>
+                      <span class="flex-1 text-xs font-mono text-[var(--t-link)] break-all">{item.url}</span>
                       <button
                         onclick={() => copyUrl(item.url)}
                         class="shrink-0 text-xs font-semibold px-2 py-1 rounded border border-[var(--t-border)] text-[var(--t-muted)] hover:bg-[var(--t-surface-2)] transition-colors"

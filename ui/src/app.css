@@ -32,6 +32,9 @@
   --t-ink-soft: #374151;
   --t-muted: #6b7280;
   --t-faint: #9ca3af;
+  /* Links: brand blue fails contrast on dark backgrounds, so night mode
+     lightens it with white (both literals already approved — no new hex). */
+  --t-link: #2563eb;
   color-scheme: light;
 }
 
@@ -47,6 +50,7 @@
   --t-ink-soft: #f9fafb;
   --t-muted: #d1d5db;
   --t-faint: #9ca3af;
+  --t-link: color-mix(in srgb, #2563eb 72%, #ffffff);
   color-scheme: dark;
 }
 
@@ -58,8 +62,8 @@ body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
-  background: var(--color-bg);
-  color: var(--color-text);
+  background: var(--t-bg);
+  color: var(--t-ink);
   line-height: 1.5;
   overscroll-behavior: none;
 }

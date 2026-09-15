@@ -25,8 +25,14 @@
   function linkType(url: string): string {
     const e = url.match(/\.([a-z0-9]+)(?:\?.*)?$/i)?.[1]?.toLowerCase() || '';
     if (e === 'pdf') return '#ef4444';
-    if (['jpg','jpeg','png','gif','webp'].includes(e)) return '#2563eb';
-    return '#2563eb';
+    // Blue links use the theme token (lightened for contrast at night).
+    return 'var(--t-link)';
+  }
+
+  // Badge tint that works with both hex colors and var() tokens
+  // (the old `{color}10` suffix trick is only valid for hex).
+  function linkBg(color: string, alpha: number): string {
+    return `color-mix(in srgb, ${color} ${alpha}%, transparent)`;
   }
 
   function resolve(url: string) {
@@ -124,9 +130,9 @@
                       {#each n.links as link (link.url)}
                         <a href={resolve(link.url)} target="_blank" rel="noopener"
                           class="px-2 py-0.5 rounded text-[0.7rem] font-medium no-underline transition-colors"
-                          style="color:{linkType(link.url)};background:{linkType(link.url)}10"
-                          onmouseenter={(e) => e.currentTarget.style.background = linkType(link.url) + '20'}
-                          onmouseleave={(e) => e.currentTarget.style.background = linkType(link.url) + '10'}>
+                          style="color:{linkType(link.url)};background:{linkBg(linkType(link.url), 8)}"
+                          onmouseenter={(e) => e.currentTarget.style.background = linkBg(linkType(link.url), 16)}
+                          onmouseleave={(e) => e.currentTarget.style.background = linkBg(linkType(link.url), 8)}>
                           {link.label}
                         </a>
                       {/each}
@@ -148,9 +154,9 @@
                   {#each n.links as link (link.url)}
                     <a href={resolve(link.url)} target="_blank" rel="noopener"
                       class="px-2 py-0.5 rounded text-[0.7rem] font-medium no-underline transition-colors"
-                      style="color:{linkType(link.url)};background:{linkType(link.url)}10"
-                      onmouseenter={(e) => e.currentTarget.style.background = linkType(link.url) + '20'}
-                      onmouseleave={(e) => e.currentTarget.style.background = linkType(link.url) + '10'}>
+                      style="color:{linkType(link.url)};background:{linkBg(linkType(link.url), 8)}"
+                      onmouseenter={(e) => e.currentTarget.style.background = linkBg(linkType(link.url), 16)}
+                      onmouseleave={(e) => e.currentTarget.style.background = linkBg(linkType(link.url), 8)}>
                       {link.label}
                     </a>
                   {/each}
@@ -178,7 +184,7 @@
                       {#each n.links as link (link.url)}
                         <a href={resolve(link.url)} target="_blank" rel="noopener"
                           class="px-2 py-0.5 rounded text-[0.7rem] font-medium no-underline"
-                          style="color:{linkType(link.url)};background:{linkType(link.url)}10">
+                          style="color:{linkType(link.url)};background:{linkBg(linkType(link.url), 8)}">
                           {link.label}
                         </a>
                       {/each}
@@ -198,7 +204,7 @@
                   {#each n.links as link (link.url)}
                     <a href={resolve(link.url)} target="_blank" rel="noopener"
                       class="px-2 py-0.5 rounded text-[0.7rem] font-medium no-underline"
-                      style="color:{linkType(link.url)};background:{linkType(link.url)}10">
+                      style="color:{linkType(link.url)};background:{linkBg(linkType(link.url), 8)}">
                       {link.label}
                     </a>
                   {/each}

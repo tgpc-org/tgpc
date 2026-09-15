@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { PharmacistRecord, CategoryFilter } from '$lib/types';
-  import { searchRecords, type AdvancedFilters } from '$lib/api';
+  import { searchRecords, searchWithRefiners, type AdvancedFilters } from '$lib/api';
   import DatePicker from '$lib/DatePicker.svelte';
   import { CATEGORY_COLORS, CATEGORIES as CAT_NAMES } from '$lib/colors';
   import ProfileSidebar from '$lib/components/ProfileSidebar.svelte';
@@ -67,11 +67,14 @@
   });
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
 
-  // Debounced typeahead — 300ms after typing, q>=3
+  // Debounced typeahead — 300ms after typing, q>=3 (or refiner-only search).
   $effect(() => {
     const q = query.trim();
+    // hasAnyRefiner() reads every refiner field, so this effect re-runs on
+    // any refiner edit and re-searches (debounced) even with a short query.
+    const refinersOn = hasAnyRefiner();
     clearTimeout(debounceTimer);
-    if (q.length < 3) {
+    if (q.length < 3 && !refinersOn) {
       if (q.length === 0 && searched) {
         // handled by clear effect below
       }
@@ -122,12 +125,21 @@
 
   async function doSearch() {
     const q = query.trim();
-    if (q.length < 3) return;
+    const useRefiners = hasAnyRefiner();
+    if (q.length < 3 && !useRefiners) return;
     const mySeq = ++searchSeq;
     loading = true;
     searched = true;
     try {
-      const res = await searchRecords(query);
+      // Refiners filter server-side so results are never silently truncated
+      // to the fetched slice; plain queries keep the ranked RPC path.
+      // Never throws outward — a failed fetch shows empty, not an error page.
+      let res: PharmacistRecord[] = [];
+      try {
+        res = useRefiners ? await searchWithRefiners(query, advFilters) : await searchRecords(query);
+      } catch {
+        res = [];
+      }
       if (mySeq !== searchSeq) return; // superseded by newer keystroke
       results = res;
       category = 'all';
@@ -470,7 +482,7 @@
                 <td class="py-1.5">
                   <img src={photoUrl(r)} alt="" loading="lazy" decoding="async" width="36" height="44" class="w-9 h-11 rounded object-cover bg-[var(--t-surface)]" />
                 </td>
-                <td class="py-2.5 text-[#2563eb]" style="font-weight:600">
+                <td class="py-2.5 text-[var(--t-link)]" style="font-weight:600">
                   <a href="/rph/{r.registration_number}" onclick={(e) => { e.preventDefault(); openDrawer(r.registration_number); }} class="hover:underline no-underline cursor-pointer" aria-label="View profile for {r.registration_number}">
                     {r.registration_number}
                   </a>
@@ -498,7 +510,7 @@
             <div class="flex gap-3 py-2 border-b border-[var(--t-surface)] text-[0.875rem]" style="content-visibility:auto;contain-intrinsic-size:110px">
               <img src={photoUrl(r)} alt="" loading="lazy" decoding="async" width="40" height="48" class="w-10 h-12 rounded object-cover bg-[var(--t-surface)] flex-shrink-0" />
               <div class="min-w-0">
-                <a href="/rph/{r.registration_number}" onclick={(e) => { e.preventDefault(); openDrawer(r.registration_number); }} class="text-[#2563eb] hover:underline no-underline cursor-pointer" style="font-weight:600" aria-label="View profile for {r.registration_number}">{r.registration_number}</a>
+                <a href="/rph/{r.registration_number}" onclick={(e) => { e.preventDefault(); openDrawer(r.registration_number); }} class="text-[var(--t-link)] hover:underline no-underline cursor-pointer" style="font-weight:600" aria-label="View profile for {r.registration_number}">{r.registration_number}</a>
                 <div class="mt-0.5 text-[var(--t-ink-soft)] truncate">{r.name}</div>
                 <div class="mt-0.5 text-[var(--t-ink-soft)] truncate">{r.father_name || '—'}</div>
                 <div class="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1 text-[var(--t-ink-soft)]">

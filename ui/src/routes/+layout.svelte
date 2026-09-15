@@ -158,7 +158,7 @@
             <span style="display:inline-flex;align-items:center;justify-content:center;width:10px;height:10px;background:#00cc66;border-radius:50%;color:white;font-size:6px;font-weight:bold">&#10003;</span>
             <span style="color:#00cc66;font-size:0.45rem;font-weight:600;text-transform:uppercase;letter-spacing:0.3px">Synced</span>
           </span>
-          <span style="color:#2563eb;font-weight:600">{lastSync || '—'}</span>
+          <span style="color:var(--t-link);font-weight:600">{lastSync || '—'}</span>
           <span style="opacity:0.4">|</span>
           <span>Active: <span style="color:#00cc66;font-weight:600">{val('active')}</span></span>
           <span style="opacity:0.4">|</span>
