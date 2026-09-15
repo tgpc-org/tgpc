@@ -9,6 +9,11 @@
     <link rel="apple-touch-icon" sizes="192x192" href="/favicon-192.png">
     <link rel="manifest" href="/manifest.json">
     <meta name="theme-color" content="#00cc66">
+    <!-- Theme FOUC guard: applies the saved/OS scheme before first paint so
+      the page never flashes the wrong mode. CSP nonce placeholder is filled
+      by SvelteKit (csp.mode 'auto'); if CSP ever blocks this, the app simply
+      starts in light mode until $lib/theme hydrates. -->
+    <script nonce="%sveltekit.nonce%">try{var t=localStorage.getItem('tgpc-theme');if(t!=='light'&&t!=='dark'){t=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}if(t==='dark'){document.documentElement.classList.add('dark');var m=document.querySelector('meta[name="theme-color"]');if(m){m.setAttribute('content','#111827');}}}catch(e){}</script>
     %sveltekit.head%
   </head>
   <body>

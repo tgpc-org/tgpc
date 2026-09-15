@@ -181,7 +181,7 @@
   }
 
   function chipStyle(cat: CategoryFilter): string {
-    if (cat !== category) return 'background:#f3f4f6;color:#6b7280';
+    if (cat !== category) return 'background:var(--t-surface);color:var(--t-muted)';
     return 'background:#00cc66;color:#fff';
   }
 
@@ -334,7 +334,7 @@
 <div class="space-y-2">
   <!-- Search + Chips row -->
   <div class="flex items-center gap-3">
-    <div class="flex items-center min-w-0 border-b-2 border-[#e5e7eb] transition-colors focus-within:border-[#00cc66]"
+    <div class="flex items-center min-w-0 border-b-2 border-[var(--t-border)] transition-colors focus-within:border-[#00cc66]"
          class:flex-1={!searched}
          class:max-w-[25vw]={searched}>
       <div class="relative min-w-0 min-h-[2rem] flex-1" style="display:{searched ? 'inline-grid' : 'grid'};grid-template-columns:1fr">
@@ -355,7 +355,7 @@
           <div class="absolute right-0.5 top-1/2 -translate-y-1/2 z-10 flex items-center gap-1">
             <button onclick={doSearch} disabled={query.trim().length < 3}
               class="rounded cursor-pointer border-none transition-colors disabled:opacity-30 disabled:cursor-not-allowed {searched ? 'px-2.5 py-1 text-[0.65rem] font-medium' : 'px-3 py-1 text-[0.7rem] font-semibold'}"
-              style="background:{query.trim().length >= 3 ? (searched ? 'rgba(0,204,102,0.08)' : '#00cc66') : '#f3f4f6'};color:{query.trim().length >= 3 ? (searched ? '#00cc66' : '#fff') : '#9ca3af'}"
+              style="background:{query.trim().length >= 3 ? (searched ? 'rgba(0,204,102,0.08)' : '#00cc66') : 'var(--t-surface)'};color:{query.trim().length >= 3 ? (searched ? '#00cc66' : '#fff') : '#9ca3af'}"
               transition:fly={{ y: 4, duration: 120, opacity: 0 }}>
               SEARCH
             </button>
@@ -399,42 +399,42 @@
     {#if loading}
       <div class="space-y-3 py-4">
         {#each Array(8) as _, i (i)}
-          <div class="h-4 bg-[#f3f4f6] rounded animate-pulse" style="width:{40 + Math.random() * 60}%"></div>
+          <div class="h-4 bg-[var(--t-surface)] rounded animate-pulse" style="width:{40 + Math.random() * 60}%"></div>
         {/each}
       </div>
     {:else}
       {#if results.length > 0}
         <!-- Result filters — slim modern single row (persistent when filtering) -->
-      <div class="mb-2 flex flex-wrap items-end gap-2 rounded-lg border bg-white p-2 transition-colors lg:flex-nowrap" style="border-color:{refinersActive ? '#00cc66' : '#e5e7eb'}">
+      <div class="mb-2 flex flex-wrap items-end gap-2 rounded-lg border bg-[var(--t-bg)] p-2 transition-colors lg:flex-nowrap" style="border-color:{refinersActive ? '#00cc66' : 'var(--t-border)'}">
         <label class="flex min-w-[92px] flex-1 flex-col gap-1">
           <span class="text-[0.6rem] font-semibold uppercase tracking-widest text-[#9ca3af]">RPC</span>
           <input type="text" bind:value={advFilters.registration_number} placeholder="TG..."
-            class="h-7 w-full rounded-lg border border-[#e5e7eb] bg-white px-2.5 text-sm outline-none transition-all focus:border-[#00cc66] focus:ring-2 focus:ring-[rgba(0,204,102,0.15)]" />
+            class="h-7 w-full rounded-lg border border-[var(--t-border)] bg-[var(--t-bg)] px-2.5 text-sm outline-none transition-all focus:border-[#00cc66] focus:ring-2 focus:ring-[rgba(0,204,102,0.15)]" />
         </label>
         <label class="flex min-w-[122px] flex-1 flex-col gap-1">
           <span class="text-[0.6rem] font-semibold uppercase tracking-widest text-[#9ca3af]">Name</span>
           <input type="text" bind:value={advFilters.name} placeholder="Name"
-            class="h-7 w-full rounded-lg border border-[#e5e7eb] bg-white px-2.5 text-sm outline-none transition-all focus:border-[#00cc66] focus:ring-2 focus:ring-[rgba(0,204,102,0.15)]" />
+            class="h-7 w-full rounded-lg border border-[var(--t-border)] bg-[var(--t-bg)] px-2.5 text-sm outline-none transition-all focus:border-[#00cc66] focus:ring-2 focus:ring-[rgba(0,204,102,0.15)]" />
         </label>
         <label class="flex min-w-[122px] flex-1 flex-col gap-1">
           <span class="text-[0.6rem] font-semibold uppercase tracking-widest text-[#9ca3af]">Father Name</span>
           <input type="text" bind:value={advFilters.father_name} placeholder="Father"
-            class="h-7 w-full rounded-lg border border-[#e5e7eb] bg-white px-2.5 text-sm outline-none transition-all focus:border-[#00cc66] focus:ring-2 focus:ring-[rgba(0,204,102,0.15)]" />
+            class="h-7 w-full rounded-lg border border-[var(--t-border)] bg-[var(--t-bg)] px-2.5 text-sm outline-none transition-all focus:border-[#00cc66] focus:ring-2 focus:ring-[rgba(0,204,102,0.15)]" />
         </label>
         <label class="flex min-w-[128px] flex-col gap-1">
           <span class="text-[0.6rem] font-semibold uppercase tracking-widest text-[#9ca3af]">Gender</span>
-          <div class="flex h-7 rounded-full bg-[#f3f4f6] p-1">
-            <button onclick={() => advFilters.gender = ''} class="flex-1 rounded-full px-2 text-xs font-semibold transition-all" style="{!advFilters.gender ? 'background:#00cc66;color:#fff' : 'background:transparent;color:#6b7280'}">All</button>
-            <button onclick={() => advFilters.gender = 'Male'} class="flex-1 rounded-full px-2 text-xs font-semibold transition-all" style="{advFilters.gender === 'Male' ? 'background:#00cc66;color:#fff' : 'background:transparent;color:#6b7280'}">Male</button>
-            <button onclick={() => advFilters.gender = 'Female'} class="flex-1 rounded-full px-2 text-xs font-semibold transition-all" style="{advFilters.gender === 'Female' ? 'background:#00cc66;color:#fff' : 'background:transparent;color:#6b7280'}">Female</button>
+            <div class="flex h-7 rounded-full bg-[var(--t-surface)] p-1">
+            <button onclick={() => advFilters.gender = ''} class="flex-1 rounded-full px-2 text-xs font-semibold transition-all" style="{!advFilters.gender ? 'background:#00cc66;color:#fff' : 'background:transparent;color:var(--t-muted)'}">All</button>
+            <button onclick={() => advFilters.gender = 'Male'} class="flex-1 rounded-full px-2 text-xs font-semibold transition-all" style="{advFilters.gender === 'Male' ? 'background:#00cc66;color:#fff' : 'background:transparent;color:var(--t-muted)'}">Male</button>
+            <button onclick={() => advFilters.gender = 'Female'} class="flex-1 rounded-full px-2 text-xs font-semibold transition-all" style="{advFilters.gender === 'Female' ? 'background:#00cc66;color:#fff' : 'background:transparent;color:var(--t-muted)'}">Female</button>
           </div>
         </label>
         <label class="flex min-w-[168px] flex-col gap-1">
           <span class="text-[0.6rem] font-semibold uppercase tracking-widest text-[#9ca3af]">Status</span>
-          <div class="flex h-7 rounded-full bg-[#f3f4f6] p-1">
-            <button onclick={() => advFilters.status = ''} class="flex-1 rounded-full px-2 text-xs font-semibold transition-all" style="{!advFilters.status ? 'background:#00cc66;color:#fff' : 'background:transparent;color:#6b7280'}">All</button>
-            <button onclick={() => advFilters.status = 'Active'} class="flex-1 rounded-full px-2 text-xs font-semibold transition-all" style="{advFilters.status === 'Active' ? 'background:#00cc66;color:#fff' : 'background:transparent;color:#6b7280'}">Active</button>
-            <button onclick={() => advFilters.status = 'Inactive'} class="flex-1 rounded-full px-2 text-xs font-semibold transition-all" style="{advFilters.status === 'Inactive' ? 'background:#ef4444;color:#fff' : 'background:transparent;color:#6b7280'}">Inactive</button>
+            <div class="flex h-7 rounded-full bg-[var(--t-surface)] p-1">
+            <button onclick={() => advFilters.status = ''} class="flex-1 rounded-full px-2 text-xs font-semibold transition-all" style="{!advFilters.status ? 'background:#00cc66;color:#fff' : 'background:transparent;color:var(--t-muted)'}">All</button>
+            <button onclick={() => advFilters.status = 'Active'} class="flex-1 rounded-full px-2 text-xs font-semibold transition-all" style="{advFilters.status === 'Active' ? 'background:#00cc66;color:#fff' : 'background:transparent;color:var(--t-muted)'}">Active</button>
+            <button onclick={() => advFilters.status = 'Inactive'} class="flex-1 rounded-full px-2 text-xs font-semibold transition-all" style="{advFilters.status === 'Inactive' ? 'background:#ef4444;color:#fff' : 'background:transparent;color:var(--t-muted)'}">Inactive</button>
           </div>
         </label>
         <label class="flex min-w-[138px] flex-col gap-1">
@@ -442,7 +442,7 @@
           <DatePicker bind:value={advFilters.valid_till} placeholder="DD/MM/YYYY" />
         </label>
         {#if refinersActive}
-          <button onclick={clearAdvanced} class="h-7 self-end rounded-full border border-[rgba(239,68,68,0.2)] bg-white px-3 text-xs font-semibold text-[#ef4444] transition-colors hover:bg-[rgba(239,68,68,0.06)]">Clear</button>
+          <button onclick={clearAdvanced} class="h-7 self-end rounded-full border border-[rgba(239,68,68,0.2)] bg-[var(--t-bg)] px-3 text-xs font-semibold text-[#ef4444] transition-colors hover:bg-[rgba(239,68,68,0.06)]">Clear</button>
         {/if}
       </div>
       {/if}
@@ -452,23 +452,23 @@
         <div class="hidden md:block">
         <div style="max-height:{resultsMaxH};min-height:{resultsMinH};overflow-y:auto;overflow-x:auto" bind:this={resultsBox}>
         <table class="w-full" style="table-layout:auto">
-          <thead class="sticky top-0 bg-white z-10">
+          <thead class="sticky top-0 bg-[var(--t-bg)] z-10">
             <tr class="text-[0.65rem] font-semibold text-[#9ca3af] uppercase tracking-wider">
-              <th class="font-inherit text-left py-1.5 border-b-2 border-[#e5e7eb] w-[52px]"></th>
-              <th class="font-inherit text-left py-1.5 border-b-2 border-[#e5e7eb]">RPC NUMBER</th>
-              <th class="font-inherit text-left py-1.5 border-b-2 border-[#e5e7eb]">Name</th>
-              <th class="font-inherit text-left py-1.5 border-b-2 border-[#e5e7eb] hidden lg:table-cell">Father Name</th>
-              <th class="font-inherit text-left py-1.5 border-b-2 border-[#e5e7eb] hidden xl:table-cell">Gender</th>
-              <th class="font-inherit text-left py-1.5 border-b-2 border-[#e5e7eb]">Category</th>
-              <th class="font-inherit text-left py-1.5 border-b-2 border-[#e5e7eb] hidden xl:table-cell">Valid Till</th>
-              <th class="font-inherit text-right py-1.5 border-b-2 border-[#e5e7eb] pr-10">Status</th>
+              <th class="font-inherit text-left py-1.5 border-b-2 border-[var(--t-border)] w-[52px]"></th>
+              <th class="font-inherit text-left py-1.5 border-b-2 border-[var(--t-border)]">RPC NUMBER</th>
+              <th class="font-inherit text-left py-1.5 border-b-2 border-[var(--t-border)]">Name</th>
+              <th class="font-inherit text-left py-1.5 border-b-2 border-[var(--t-border)] hidden lg:table-cell">Father Name</th>
+              <th class="font-inherit text-left py-1.5 border-b-2 border-[var(--t-border)] hidden xl:table-cell">Gender</th>
+              <th class="font-inherit text-left py-1.5 border-b-2 border-[var(--t-border)]">Category</th>
+              <th class="font-inherit text-left py-1.5 border-b-2 border-[var(--t-border)] hidden xl:table-cell">Valid Till</th>
+              <th class="font-inherit text-right py-1.5 border-b-2 border-[var(--t-border)] pr-10">Status</th>
             </tr>
           </thead>
           <tbody>
             {#each filtered as r (r.registration_number)}
-              <tr class="text-[0.875rem] text-[#374151] border-b border-[#f3f4f6]" style="content-visibility:auto;contain-intrinsic-size:48px">
+              <tr class="text-[0.875rem] text-[var(--t-ink-soft)] border-b border-[var(--t-surface)]" style="content-visibility:auto;contain-intrinsic-size:48px">
                 <td class="py-1.5">
-                  <img src={photoUrl(r)} alt="" loading="lazy" decoding="async" width="36" height="44" class="w-9 h-11 rounded object-cover bg-[#f3f4f6]" />
+                  <img src={photoUrl(r)} alt="" loading="lazy" decoding="async" width="36" height="44" class="w-9 h-11 rounded object-cover bg-[var(--t-surface)]" />
                 </td>
                 <td class="py-2.5 text-[#2563eb]" style="font-weight:600">
                   <a href="/rph/{r.registration_number}" onclick={(e) => { e.preventDefault(); openDrawer(r.registration_number); }} class="hover:underline no-underline cursor-pointer" aria-label="View profile for {r.registration_number}">
@@ -478,13 +478,13 @@
                 <td class="py-2.5 truncate hidden lg:table-cell" title={r.name}>{r.name}</td>
                 <td class="py-2.5 truncate hidden lg:table-cell" title={r.father_name || ''}>{r.father_name || '—'}</td>
                 <td class="py-2.5 hidden xl:table-cell">{r.gender || '—'}</td>
-                <td class="py-2.5" style="color:{CATEGORY_COLORS[r.category]}">{r.category}</td>
+                <td class="py-2.5" style="color:{CATEGORY_COLORS[r.category] === '#111827' ? 'var(--t-ink)' : CATEGORY_COLORS[r.category]}">{r.category}</td>
                 <td class="py-2.5 hidden xl:table-cell">{r.validity_date || '—'}</td>
                 <td class="py-2.5 text-right pr-10">
                   {#if r.status}
-                    <span style="color:{r.status === 'Active' ? '#111827' : '#ef4444'}">{r.status}</span>
+                    <span style="color:{r.status === 'Active' ? 'var(--t-ink)' : '#ef4444'}">{r.status}</span>
                   {:else}
-                    <span class="text-[#374151]">—</span>
+                    <span class="text-[var(--t-ink-soft)]">—</span>
                   {/if}
                 </td>
               </tr>
@@ -495,18 +495,18 @@
       </div>
       <div class="md:hidden space-y-0.5">
           {#each filtered as r (r.registration_number)}
-            <div class="flex gap-3 py-2 border-b border-[#f3f4f6] text-[0.875rem]" style="content-visibility:auto;contain-intrinsic-size:110px">
-              <img src={photoUrl(r)} alt="" loading="lazy" decoding="async" width="40" height="48" class="w-10 h-12 rounded object-cover bg-[#f3f4f6] flex-shrink-0" />
+            <div class="flex gap-3 py-2 border-b border-[var(--t-surface)] text-[0.875rem]" style="content-visibility:auto;contain-intrinsic-size:110px">
+              <img src={photoUrl(r)} alt="" loading="lazy" decoding="async" width="40" height="48" class="w-10 h-12 rounded object-cover bg-[var(--t-surface)] flex-shrink-0" />
               <div class="min-w-0">
                 <a href="/rph/{r.registration_number}" onclick={(e) => { e.preventDefault(); openDrawer(r.registration_number); }} class="text-[#2563eb] hover:underline no-underline cursor-pointer" style="font-weight:600" aria-label="View profile for {r.registration_number}">{r.registration_number}</a>
-                <div class="mt-0.5 text-[#374151] truncate">{r.name}</div>
-                <div class="mt-0.5 text-[#374151] truncate">{r.father_name || '—'}</div>
-                <div class="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1 text-[#374151]">
+                <div class="mt-0.5 text-[var(--t-ink-soft)] truncate">{r.name}</div>
+                <div class="mt-0.5 text-[var(--t-ink-soft)] truncate">{r.father_name || '—'}</div>
+                <div class="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1 text-[var(--t-ink-soft)]">
                   {#if r.gender}<span>{r.gender}</span>{/if}
-                  <span style="color:{CATEGORY_COLORS[r.category]}">{r.category}</span>
+                  <span style="color:{CATEGORY_COLORS[r.category] === '#111827' ? 'var(--t-ink)' : CATEGORY_COLORS[r.category]}">{r.category}</span>
                   {#if r.validity_date}<span>Valid till: {r.validity_date}</span>{/if}
                   {#if r.status}
-                    <span style="color:{r.status === 'Active' ? '#111827' : '#ef4444'}">{r.status}</span>
+                    <span style="color:{r.status === 'Active' ? 'var(--t-ink)' : '#ef4444'}">{r.status}</span>
                   {/if}
                 </div>
               </div>

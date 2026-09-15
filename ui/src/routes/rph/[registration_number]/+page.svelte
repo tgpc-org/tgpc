@@ -77,7 +77,7 @@
   <div class="flex items-center gap-3 mb-2">
     <button
       onclick={backToSearch}
-      class="flex items-center gap-1.5 px-3 py-1.5 rounded border border-[#e5e7eb] text-[0.75rem] font-medium text-[#374151] hover:bg-[#f4f4f5] transition-colors"
+      class="flex items-center gap-1.5 px-3 py-1.5 rounded border border-[var(--t-border)] text-[0.75rem] font-medium text-[var(--t-ink-soft)] hover:bg-[var(--t-row)] transition-colors"
       aria-label="Back to search"
     >
       <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -88,9 +88,9 @@
   </div>
 
   <!-- Single Module -->
-  <div class="bg-white border border-[#e5e7eb] rounded-xl p-3 space-y-3">
+  <div class="bg-[var(--t-bg)] border border-[var(--t-border)] rounded-xl p-3 space-y-3">
     <div class="flex flex-col md:flex-row gap-4 items-start md:items-center">
-      <div class="flex-shrink-0 w-24 h-32 md:w-28 md:h-36 rounded-lg bg-[#f3f4f6] overflow-hidden relative">
+      <div class="flex-shrink-0 w-24 h-32 md:w-28 md:h-36 rounded-lg bg-[var(--t-surface)] overflow-hidden relative">
         <img
           src={photo}
           alt={`${record.name}'s photo`}
@@ -100,8 +100,8 @@
           class="w-full h-full object-cover {photoError ? 'hidden' : ''}"
         />
         {#if photoError}
-          <div class="w-full h-full flex items-center justify-center bg-[#f3f4f6]">
-            <svg class="w-12 h-12 text-[#d1d5db]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <div class="w-full h-full flex items-center justify-center bg-[var(--t-surface)]">
+            <svg class="w-12 h-12 text-[var(--t-border-soft)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
               <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
               <circle cx="12" cy="7" r="4" />
             </svg>
@@ -110,7 +110,7 @@
       </div>
 
       <div class="flex-1 min-w-0 space-y-2">
-        <h1 class="text-xl md:text-2xl font-bold text-[#111827] truncate">{record.name}</h1>
+        <h1 class="text-xl md:text-2xl font-bold text-[var(--t-ink)] truncate">{record.name}</h1>
 
         <div class="flex flex-wrap items-center gap-2.5">
           <span class="px-3 py-1 rounded-full text-[0.7rem] font-semibold uppercase tracking-wider tabular-nums"
@@ -127,29 +127,29 @@
           </span>
         </div>
 
-        <div class="flex flex-wrap items-center gap-4 text-[0.875rem] text-[#6b7280]">
-          <span>Serial: <span class="text-[#374151] font-medium">#{record.serial_number || '—'}</span></span>
-          <span>Valid till: <span class="text-[#374151] font-medium">{formatDate(record.validity_date)}</span></span>
+        <div class="flex flex-wrap items-center gap-4 text-[0.875rem] text-[var(--t-muted)]">
+          <span>Serial: <span class="text-[var(--t-ink-soft)] font-medium">#{record.serial_number || '—'}</span></span>
+          <span>Valid till: <span class="text-[var(--t-ink-soft)] font-medium">{formatDate(record.validity_date)}</span></span>
         </div>
       </div>
     </div>
 
-    <div class="border-t border-[#f3f4f6] pt-2 flex flex-wrap gap-3 text-[0.875rem]">
+    <div class="border-t border-[var(--t-surface)] pt-2 flex flex-wrap gap-3 text-[0.875rem]">
       <div class="flex items-center gap-1.5">
         <span class="text-[#9ca3af]">Father:</span>
-        <span class="text-[#374151] font-medium">{record.father_name || '—'}</span>
+        <span class="text-[var(--t-ink-soft)] font-medium">{record.father_name || '—'}</span>
       </div>
       {#if record.gender}
         <div class="flex items-center gap-1.5">
           <span class="text-[#9ca3af]">Gender:</span>
-          <span class="text-[#374151] font-medium">{record.gender}</span>
+          <span class="text-[var(--t-ink-soft)] font-medium">{record.gender}</span>
         </div>
       {/if}
     </div>
 
     {#if record.education && record.education.length > 0}
-      <div class="border-t border-[#f3f4f6] pt-2 space-y-2">
-        <h2 class="text-sm font-semibold text-[#111827] flex items-center gap-2">
+      <div class="border-t border-[var(--t-surface)] pt-2 space-y-2">
+        <h2 class="text-sm font-semibold text-[var(--t-ink)] flex items-center gap-2">
           <svg class="w-5 h-5 text-[#00cc66]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M22 10v6M2 10l10-5 10 5-10 5z" />
             <path d="M6 12v5c3 3 9 3 12 0v-5" />
@@ -158,16 +158,16 @@
         </h2>
         <div class="space-y-3">
           {#each record.education as edu (edu['HT No'] || edu.Category)}
-            <div class="rounded-lg border border-[#f3f4f6] bg-[#f9fafb] p-2.5 space-y-1.5">
+            <div class="rounded-lg border border-[var(--t-surface)] bg-[var(--t-surface-3)] p-2.5 space-y-1.5">
               <div class="flex items-center justify-between gap-2">
                 <span class="text-[0.6rem] font-semibold uppercase tracking-wider text-[#9ca3af]">Category</span>
                 <span class="text-sm font-semibold" style="color:{categoryColor(edu.Category || '')}">{edu.Category || '—'}</span>
               </div>
               <div class="grid grid-cols-1 gap-1.5 text-sm">
-                <div><span class="text-[#9ca3af]">Board / University:</span> <span class="text-[#374151] font-medium">{edu['Board/University'] || '—'}</span></div>
-                <div><span class="text-[#9ca3af]">College:</span> <span class="text-[#374151] font-medium">{edu['College Name'] || '—'}</span></div>
-                {#if edu['College Address']}<div><span class="text-[#9ca3af]">Address:</span> <span class="text-[#374151]">{edu['College Address']}</span></div>{/if}
-                <div class="flex flex-wrap gap-4"><span class="text-[#9ca3af]">HT No:</span> <span class="text-[#374151] font-medium tabular-nums">{edu['HT No'] || '—'}</span> {#if edu.From || edu.To}<span class="text-[#9ca3af]">From–To:</span> <span class="text-[#374151]">{edu.From || ''}{#if edu.From && edu.To} – {/if}{edu.To || ''}</span>{/if}</div>
+                <div><span class="text-[#9ca3af]">Board / University:</span> <span class="text-[var(--t-ink-soft)] font-medium">{edu['Board/University'] || '—'}</span></div>
+                <div><span class="text-[#9ca3af]">College:</span> <span class="text-[var(--t-ink-soft)] font-medium">{edu['College Name'] || '—'}</span></div>
+                {#if edu['College Address']}<div><span class="text-[#9ca3af]">Address:</span> <span class="text-[var(--t-ink-soft)]">{edu['College Address']}</span></div>{/if}
+                <div class="flex flex-wrap gap-4"><span class="text-[#9ca3af]">HT No:</span> <span class="text-[var(--t-ink-soft)] font-medium tabular-nums">{edu['HT No'] || '—'}</span> {#if edu.From || edu.To}<span class="text-[#9ca3af]">From–To:</span> <span class="text-[var(--t-ink-soft)]">{edu.From || ''}{#if edu.From && edu.To} – {/if}{edu.To || ''}</span>{/if}</div>
               </div>
             </div>
           {/each}
@@ -176,8 +176,8 @@
     {/if}
 
     {#if record.work_experience && (record.work_experience.Address || record.work_experience.State || record.work_experience.District || record.work_experience['Pin code'])}
-      <div class="border-t border-[#f3f4f6] pt-2 space-y-2">
-        <h2 class="text-sm font-semibold text-[#111827] flex items-center gap-2">
+      <div class="border-t border-[var(--t-surface)] pt-2 space-y-2">
+        <h2 class="text-sm font-semibold text-[var(--t-ink)] flex items-center gap-2">
           <svg class="w-5 h-5 text-[#00cc66]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <rect x="2" y="7" width="20" height="14" rx="2" />
             <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" />
@@ -187,27 +187,27 @@
         <dl class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[0.875rem]">
           <div>
             <dt class="text-[#9ca3af] text-[0.7rem] font-semibold uppercase tracking-wider">Address</dt>
-          <dd class="text-[#374151] mt-0.5">{displayWork(record.work_experience.Address)}</dd>
+          <dd class="text-[var(--t-ink-soft)] mt-0.5">{displayWork(record.work_experience.Address)}</dd>
         </div>
         <div>
           <dt class="text-[#9ca3af] text-[0.7rem] font-semibold uppercase tracking-wider">State</dt>
-          <dd class="text-[#374151] mt-0.5">{displayWork(record.work_experience.State)}</dd>
+          <dd class="text-[var(--t-ink-soft)] mt-0.5">{displayWork(record.work_experience.State)}</dd>
         </div>
         <div>
           <dt class="text-[#9ca3af] text-[0.7rem] font-semibold uppercase tracking-wider">District</dt>
-          <dd class="text-[#374151] mt-0.5">{displayWork(record.work_experience.District)}</dd>
+          <dd class="text-[var(--t-ink-soft)] mt-0.5">{displayWork(record.work_experience.District)}</dd>
         </div>
         <div>
           <dt class="text-[#9ca3af] text-[0.7rem] font-semibold uppercase tracking-wider">Pin Code</dt>
-          <dd class="text-[#374151] mt-0.5">{displayWork(record.work_experience['Pin code'])}</dd>
+          <dd class="text-[var(--t-ink-soft)] mt-0.5">{displayWork(record.work_experience['Pin code'])}</dd>
           </div>
         </dl>
       </div>
     {/if}
-    <div class="border-t border-[#f3f4f6] pt-3 flex items-center justify-end">
+    <div class="border-t border-[var(--t-surface)] pt-3 flex items-center justify-end">
       <button
         onclick={printPage}
-        class="flex items-center gap-1.5 px-3 py-1.5 rounded border border-[#e5e7eb] text-xs font-medium text-[#374151] hover:bg-[#f4f4f5] transition-colors"
+        class="flex items-center gap-1.5 px-3 py-1.5 rounded border border-[var(--t-border)] text-xs font-medium text-[var(--t-ink-soft)] hover:bg-[var(--t-row)] transition-colors"
       >
         <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <polyline points="6 9 6 2 18 2 18 9" />
@@ -220,7 +220,7 @@
     </div>
   </div>
 
-  <footer class="text-center text-[0.7rem] text-[#9ca3af] py-4 border-t border-[#e5e7eb]">
+  <footer class="text-center text-[0.7rem] text-[#9ca3af] py-4 border-t border-[var(--t-border)]">
     Data sourced from Telangana State Pharmacy Council &middot; <a href="https://tgpc.pages.dev" class="text-[#2563eb] hover:underline">tgpc.pages.dev</a>
   </footer>
 </div>
@@ -228,7 +228,7 @@
 <style>
   @media print {
     .max-w-3xl { max-width: none !important; padding: 0 !important; }
-    .bg-white { box-shadow: none !important; border: 1px solid #e5e7eb !important; break-inside: avoid; }
+    .bg-\[var\(--t-bg\)\] { box-shadow: none !important; border: 1px solid var(--t-border) !important; break-inside: avoid; }
     button { display: none !important; }
     a { text-decoration: none !important; color: inherit !important; }
   }

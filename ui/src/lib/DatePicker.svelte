@@ -87,11 +87,11 @@
       }
     }}
     onkeydown={onKeydown}
-    class="w-full h-7 px-2.5 text-xs rounded-lg border border-[#e5e7eb] bg-white outline-none transition-colors focus:border-[#00cc66] focus:ring-2 focus:ring-[rgba(0,204,102,0.15)] cursor-pointer"
+    class="w-full h-7 px-2.5 text-xs rounded-lg border border-[var(--t-border)] bg-[var(--t-bg)] outline-none transition-colors focus:border-[#00cc66] focus:ring-2 focus:ring-[rgba(0,204,102,0.15)] cursor-pointer"
   />
   {#if isOpen()}
 <div
-      class="absolute left-0 top-full mt-1 z-30 w-full bg-white border border-[#e5e7eb] rounded-lg shadow-lg p-0.5"
+      class="absolute left-0 top-full mt-1 z-30 w-full bg-[var(--t-bg)] border border-[var(--t-border)] rounded-lg shadow-lg p-0.5"
       role="dialog"
       aria-label="Date picker"
       tabindex="-1"
@@ -100,12 +100,12 @@
     >
 <div class="flex items-center justify-between mb-0.25">
         <button type="button" onclick={prevMonth} aria-label="Previous month"
-          class="w-4 h-4 flex items-center justify-center rounded text-[#6b7280] hover:bg-[#f3f4f6] cursor-pointer border-none transition-colors">
+          class="w-4 h-4 flex items-center justify-center rounded text-[var(--t-muted)] hover:bg-[var(--t-surface)] cursor-pointer border-none transition-colors">
           <svg class="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m15 18-6-6 6-6"/></svg>
         </button>
-        <span class="text-[0.6rem] font-semibold text-[#111827]">{MONTHS[view.getMonth()]} {view.getFullYear()}</span>
+        <span class="text-[0.6rem] font-semibold text-[var(--t-ink)]">{MONTHS[view.getMonth()]} {view.getFullYear()}</span>
         <button type="button" onclick={nextMonth} aria-label="Next month"
-          class="w-4 h-4 flex items-center justify-center rounded text-[#6b7280] hover:bg-[#f3f4f6] cursor-pointer border-none transition-colors">
+          class="w-4 h-4 flex items-center justify-center rounded text-[var(--t-muted)] hover:bg-[var(--t-surface)] cursor-pointer border-none transition-colors">
           <svg class="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m9 18 6-6-6-6"/></svg>
         </button>
       </div>
@@ -125,7 +125,7 @@
           {/if}
         {/each}
       </div>
-<div class="mt-0.5 flex items-center justify-between border-t border-[#f3f4f6] pt-0.5">
+<div class="mt-0.5 flex items-center justify-between border-t border-[var(--t-surface)] pt-0.5">
         <button type="button" onclick={() => { value = today(); open = false; }}
           class="text-[0.5rem] font-semibold text-[#00cc66] uppercase hover:underline cursor-pointer border-none bg-transparent">
           Today

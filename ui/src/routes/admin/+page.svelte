@@ -134,7 +134,7 @@
     <div class="text-center py-16">
       <h1 class="text-2xl font-bold mb-1">Admin</h1>
       <form onsubmit={(e) => { e.preventDefault(); login(); }} class="max-w-xs mx-auto">
-        <div class="flex items-center gap-2 border border-[#e5e7eb] rounded focus-within:border-[#00cc66] bg-white">
+        <div class="flex items-center gap-2 border border-[var(--t-border)] rounded focus-within:border-[#00cc66] bg-[var(--t-bg)]">
           <input
             type={show ? 'text' : 'password'}
             bind:value={secret}
@@ -145,7 +145,7 @@
           <button
             type="button"
             onclick={() => show = !show}
-            class="shrink-0 px-2 py-1 text-[#6b7280] hover:text-[#00cc66] text-sm"
+            class="shrink-0 px-2 py-1 text-[var(--t-muted)] hover:text-[#00cc66] text-sm"
             aria-label={show ? 'Hide password' : 'Show password'}
             tabindex="-1"
           >{#if show}
@@ -168,15 +168,15 @@
     <div class="flex items-center justify-between pb-1">
       <div class="flex items-center gap-0.5" style="font-size:0.7rem;padding-bottom:3px">
         <button style="text-decoration:none;padding:2px 4px;font-weight:700;color:#ef4444;white-space:nowrap;cursor:default;border:none;background:transparent">ADMIN</button>
-        <span style="color:#d1d5db;font-weight:300;padding:0;user-select:none">—</span>
+        <span style="color:var(--t-border-soft);font-weight:300;padding:0;user-select:none">—</span>
         <button onclick={() => tab = 'usage'}
-          style="text-decoration:none;padding:2px 4px;font-weight:700;color:{tab === 'usage' ? '#00cc66' : '#6b7280'};white-space:nowrap;cursor:pointer;border:none;background:transparent">USAGE</button>
-        <span style="color:#d1d5db;font-weight:300;padding:0;user-select:none">/</span>
+          style="text-decoration:none;padding:2px 4px;font-weight:700;color:{tab === 'usage' ? '#00cc66' : 'var(--t-muted)'};white-space:nowrap;cursor:pointer;border:none;background:transparent">USAGE</button>
+        <span style="color:var(--t-border-soft);font-weight:300;padding:0;user-select:none">/</span>
         <button onclick={() => tab = 'links'}
-          style="text-decoration:none;padding:2px 4px;font-weight:700;color:{tab === 'links' ? '#00cc66' : '#6b7280'};white-space:nowrap;cursor:pointer;border:none;background:transparent">INTERNAL LINKS</button>
+          style="text-decoration:none;padding:2px 4px;font-weight:700;color:{tab === 'links' ? '#00cc66' : 'var(--t-muted)'};white-space:nowrap;cursor:pointer;border:none;background:transparent">INTERNAL LINKS</button>
       </div>
       <button onclick={logout}
-        class="shrink-0 text-xs font-semibold px-3 py-1.5 rounded border border-[#e5e7eb] text-[#6b7280] hover:bg-[#f8f9fa] hover:text-[#ef4444] transition-colors">
+        class="shrink-0 text-xs font-semibold px-3 py-1.5 rounded border border-[var(--t-border)] text-[var(--t-muted)] hover:bg-[var(--t-surface-2)] hover:text-[#ef4444] transition-colors">
         LOGOUT
       </button>
     </div>
@@ -209,8 +209,8 @@
 
           {#if report}
             {#each report.services as service (service.name)}
-              <div class="mb-5 border border-[#e5e7eb] rounded-lg overflow-hidden">
-                <div class="bg-[#f8f9fa] px-3 py-2 font-semibold text-sm border-b border-[#e5e7eb]">
+              <div class="mb-5 border border-[var(--t-border)] rounded-lg overflow-hidden">
+                <div class="bg-[var(--t-surface-2)] px-3 py-2 font-semibold text-sm border-b border-[var(--t-border)]">
                   {service.name}
                 </div>
                 {#if service.error}
@@ -220,14 +220,14 @@
                 {:else}
                   <table class="w-full text-xs">
                     <thead>
-                      <tr class="text-left text-[#9ca3af] border-b border-[#e5e7eb]">
+                      <tr class="text-left text-[#9ca3af] border-b border-[var(--t-border)]">
                         <th class="px-3 py-1.5 font-medium">Metric</th>
                         <th class="px-3 py-1.5 font-medium text-right">Value</th>
                       </tr>
                     </thead>
                     <tbody>
                       {#each service.items as item (item.label)}
-                        <tr class="border-b border-[#e5e7eb] last:border-b-0">
+                        <tr class="border-b border-[var(--t-border)] last:border-b-0">
                           <td class="px-3 py-1.5">{item.label}</td>
                           <td class="px-3 py-1.5 text-right font-mono">{item.used}</td>
                         </tr>
@@ -242,20 +242,20 @@
           {/if}
         </div>
       {:else}
-        <div class="border border-[#e5e7eb] rounded-lg overflow-hidden" style="flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column">
-          <div class="divide-y divide-[#e5e7eb]" style="flex:1;display:flex;flex-direction:column">
+        <div class="border border-[var(--t-border)] rounded-lg overflow-hidden" style="flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column">
+          <div class="divide-y divide-[var(--t-border)]" style="flex:1;display:flex;flex-direction:column">
             {#each groups as group (group.name)}
               <div style="flex:1">
-                <div class="bg-[#f8f9fa] px-3 py-2 font-semibold text-sm border-b border-[#e5e7eb] text-[#111827]">
+                <div class="bg-[var(--t-surface-2)] px-3 py-2 font-semibold text-sm border-b border-[var(--t-border)] text-[var(--t-ink)]">
                   {group.name}
                 </div>
-                <div class="divide-y divide-[#e5e7eb]">
+                <div class="divide-y divide-[var(--t-border)]">
                   {#each group.items as item (item.url)}
                     <div class="flex items-center gap-2 px-3 py-1.5">
                       <span class="flex-1 text-xs font-mono text-[#2563eb] break-all">{item.url}</span>
                       <button
                         onclick={() => copyUrl(item.url)}
-                        class="shrink-0 text-xs font-semibold px-2 py-1 rounded border border-[#e5e7eb] text-[#6b7280] hover:bg-[#f8f9fa] transition-colors"
+                        class="shrink-0 text-xs font-semibold px-2 py-1 rounded border border-[var(--t-border)] text-[var(--t-muted)] hover:bg-[var(--t-surface-2)] transition-colors"
                       >{copied === item.url ? 'Copied!' : 'Copy'}</button>
                       <a
                         href={item.url}

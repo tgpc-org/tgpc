@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+/* Class-based dark mode: enabled by `document.documentElement.classList('dark')`
+   via $lib/theme (toggle) + the FOUC guard in app.html. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   --color-pg: #00cc66;
   --color-pg-dark: #00b359;
@@ -10,6 +14,40 @@
   --color-row: #f4f4f5;
   --color-text: #111827;
   --color-bg: #ffffff;
+}
+
+/* Semantic theme tokens. Light values are the approved TGPC neutrals;
+   dark values REUSE the same approved neutrals inverted (no new hex —
+   check:colors stays green). Brand accents (#00cc66/#ef4444/#2563eb/#00b359)
+   are identical in both modes. */
+:root {
+  --t-bg: #ffffff;
+  --t-surface: #f3f4f6;
+  --t-surface-2: #f8f9fa;
+  --t-surface-3: #f9fafb;
+  --t-row: #f4f4f5;
+  --t-border: #e5e7eb;
+  --t-border-soft: #d1d5db;
+  --t-ink: #111827;
+  --t-ink-soft: #374151;
+  --t-muted: #6b7280;
+  --t-faint: #9ca3af;
+  color-scheme: light;
+}
+
+.dark {
+  --t-bg: #111827;
+  --t-surface: #374151;
+  --t-surface-2: #374151;
+  --t-surface-3: #374151;
+  --t-row: #374151;
+  --t-border: #6b7280;
+  --t-border-soft: #374151;
+  --t-ink: #ffffff;
+  --t-ink-soft: #f9fafb;
+  --t-muted: #d1d5db;
+  --t-faint: #9ca3af;
+  color-scheme: dark;
 }
 
 html {

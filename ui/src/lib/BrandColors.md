@@ -45,3 +45,19 @@ backgrounds and soft borders).
 6. The palette is machine-enforced: `npm run check:colors`
    (`ui/scripts/check-colors.mjs`) fails CI/pre-commit on any off-palette
    literal. Add new approved values to both that script and this file.
+
+## Day/Night Mode
+
+The site ships a theme toggle (header, `$lib/theme.ts`). Implementation notes:
+
+- Semantic tokens live in `ui/src/app.css` (`:root` light, `.dark` night).
+  Dark values reuse the approved neutrals inverted — **no new hex was
+  added for night mode**, so the color gate covers both modes unchanged.
+- Night mapping: page `#111827`, surfaces/rows `#374151`, borders
+  `#6b7280`/`#374151`, text `#ffffff`/`#f9fafb`/`#d1d5db`, faint `#9ca3af`.
+  Brand accents are identical day and night.
+- Components reference tokens as `var(--t-*)` (inline styles) or
+  `bg-[var(--t-*)]` (Tailwind arbitrary values) — never raw neutrals.
+- Preference persists in `localStorage` (`tgpc-theme`), defaulting to the OS
+  scheme; a CSP-nonce'd guard in `app.html` applies it pre-paint (no flash).
+- Exports (CSV/PDF/email) intentionally stay light — they are print artifacts.

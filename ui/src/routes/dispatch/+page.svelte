@@ -77,7 +77,7 @@
       </svg>
       <input type="text" bind:value={query} placeholder="Search files"
         aria-label="Search"
-        class="w-full pl-9 pr-4 py-1.5 border-b-2 border-[#e5e7eb] text-[0.95rem] bg-transparent outline-none transition-colors focus:border-[#00cc66] max-sm:text-base" />
+        class="w-full pl-9 pr-4 py-1.5 border-b-2 border-[var(--t-border)] text-[0.95rem] bg-transparent outline-none transition-colors focus:border-[#00cc66] max-sm:text-base" />
     </div>
   </div>
 
@@ -85,7 +85,7 @@
     {#each years as y (y)}
       <button onclick={() => tab = y}
         class="px-2.5 py-1 rounded text-[0.7rem] font-medium transition-all cursor-pointer border-none"
-        style={y === tab ? 'background:#00cc66;color:#fff' : 'background:#f3f4f6;color:#6b7280'}>
+        style={y === tab ? 'background:#00cc66;color:#fff' : 'background:var(--t-surface);color:var(--t-muted)'}>
         {y} <span class="opacity-50">({files.filter(f => f.parsed?.y === y).length})</span>
       </button>
     {/each}
@@ -94,7 +94,7 @@
   {#if loading}
     <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
       {#each Array(8) as _, i (i)}
-        <div class="h-16 bg-[#f3f4f6] rounded"></div>
+        <div class="h-16 bg-[var(--t-surface)] rounded"></div>
       {/each}
     </div>
   {:else if filtered.length === 0}
@@ -108,7 +108,7 @@
             <div class="col-span-full text-[0.65rem] font-semibold text-[#9ca3af] uppercase tracking-wider py-2">{y} — {fy.length}</div>
             {#each fy as f (f.name)}
               <a href={`/api/dispatch/${f.name}`} target="_blank" rel="noopener"
-                class="flex items-center gap-2 p-2.5 border border-[#e5e7eb] rounded-lg no-underline text-[#111827] hover:bg-[#f9fafb] transition-colors">
+                class="flex items-center gap-2 p-2.5 border border-[var(--t-border)] rounded-lg no-underline text-[var(--t-ink)] hover:bg-[var(--t-surface-3)] transition-colors">
                 <img src="/pdf.svg" alt="" width="24" height="24" class="block flex-shrink-0" />
                 <div class="min-w-0">
                   <div class="text-[0.6rem] font-semibold uppercase tracking-widest text-[#9ca3af]">Dispatch List</div>
@@ -122,7 +122,7 @@
       {:else}
         {#each filtered as f (f.name)}
           <a href={`/api/dispatch/${f.name}`} target="_blank" rel="noopener"
-            class="flex items-center gap-2 p-2.5 border border-[#e5e7eb] rounded-lg no-underline text-[#111827] hover:bg-[#f9fafb] transition-colors">
+            class="flex items-center gap-2 p-2.5 border border-[var(--t-border)] rounded-lg no-underline text-[var(--t-ink)] hover:bg-[var(--t-surface-3)] transition-colors">
             <img src="/pdf.svg" alt="" width="24" height="24" class="block flex-shrink-0" />
             <div class="min-w-0">
               <div class="text-[0.6rem] font-semibold uppercase tracking-widest text-[#9ca3af]">Dispatch List</div>

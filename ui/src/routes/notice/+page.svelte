@@ -80,7 +80,7 @@
       </svg>
       <input type="text" bind:value={query} placeholder="Search notices"
         aria-label="Search"
-        class="w-full pl-9 pr-4 py-1.5 border-b-2 border-[#e5e7eb] text-[0.95rem] bg-transparent outline-none transition-colors focus:border-[#00cc66] max-sm:text-base" />
+        class="w-full pl-9 pr-4 py-1.5 border-b-2 border-[var(--t-border)] text-[0.95rem] bg-transparent outline-none transition-colors focus:border-[#00cc66] max-sm:text-base" />
     </div>
   </div>
 
@@ -88,7 +88,7 @@
     {#each years as y (y)}
       <button onclick={() => tab = y}
         class="px-2.5 py-1 rounded text-[0.7rem] font-medium transition-all cursor-pointer border-none"
-        style={y === tab ? 'background:#00cc66;color:#fff' : 'background:#f3f4f6;color:#6b7280'}>
+        style={y === tab ? 'background:#00cc66;color:#fff' : 'background:var(--t-surface);color:var(--t-muted)'}>
         {y} <span class="opacity-50">({notices.filter(n => getYr(n.date) === y).length})</span>
       </button>
     {/each}
@@ -97,7 +97,7 @@
   {#if loading}
     <div class="space-y-3 py-4">
       {#each Array(4) as _, i (i)}
-        <div class="h-4 bg-[#f3f4f6] rounded" style="width:{50 + Math.random() * 40}%"></div>
+        <div class="h-4 bg-[var(--t-surface)] rounded" style="width:{50 + Math.random() * 40}%"></div>
       {/each}
     </div>
   {:else if filtered.length === 0}
@@ -105,7 +105,7 @@
   {:else}
     <div style="max-height:calc(100vh - 240px);overflow-x:hidden;overflow-y:auto">
       <div class="hidden md:block">
-        <div style="display:grid;grid-template-columns:96px 1fr 160px;gap:12px;align-items:center;justify-items:center;padding:6px 0;border-bottom:1px solid #d1d5db;font-size:0.65rem;font-weight:600;color:#9ca3af;text-transform:uppercase;letter-spacing:0.5px">
+        <div style="display:grid;grid-template-columns:96px 1fr 160px;gap:12px;align-items:center;justify-items:center;padding:6px 0;border-bottom:1px solid var(--t-border-soft);font-size:0.65rem;font-weight:600;color:#9ca3af;text-transform:uppercase;letter-spacing:0.5px">
           <span>Date</span>
           <span>Title / Description</span>
           <span style="justify-self:start">Links</span>
@@ -116,8 +116,8 @@
             {#if fy.length > 0}
               <div class="text-[0.65rem] font-semibold text-[#9ca3af] uppercase tracking-wider py-2 px-1">{y} — {fy.length}</div>
               {#each fy as n (n.title)}
-                <div style="display:grid;grid-template-columns:96px 1fr 160px;gap:12px;padding:10px 0;border-bottom:1px solid #f3f4f6;font-size:0.875rem">
-                  <span class="text-[#6b7280] tabular-nums">{fmtDate(n.date)}</span>
+                <div style="display:grid;grid-template-columns:96px 1fr 160px;gap:12px;padding:10px 0;border-bottom:1px solid var(--t-surface);font-size:0.875rem">
+                  <span class="text-[var(--t-muted)] tabular-nums">{fmtDate(n.date)}</span>
                   <span style="min-width:0">{n.title}</span>
                   <span class="flex gap-1 flex-wrap" style="min-width:0">
                     {#if n.links?.length}
@@ -131,7 +131,7 @@
                         </a>
                       {/each}
                     {:else}
-                      <span class="text-[#d1d5db]">—</span>
+                      <span class="text-[var(--t-border-soft)]">—</span>
                     {/if}
                   </span>
                 </div>
@@ -140,8 +140,8 @@
           {/each}
         {:else}
           {#each filtered as n (n.title)}
-            <div style="display:grid;grid-template-columns:96px 1fr 160px;gap:12px;padding:10px 0;border-bottom:1px solid #f3f4f6;font-size:0.875rem">
-              <span class="text-[#6b7280] tabular-nums">{fmtDate(n.date)}</span>
+            <div style="display:grid;grid-template-columns:96px 1fr 160px;gap:12px;padding:10px 0;border-bottom:1px solid var(--t-surface);font-size:0.875rem">
+              <span class="text-[var(--t-muted)] tabular-nums">{fmtDate(n.date)}</span>
               <span style="min-width:0">{n.title}</span>
               <span class="flex gap-1 flex-wrap" style="min-width:0">
                 {#if n.links?.length}
@@ -155,7 +155,7 @@
                     </a>
                   {/each}
                 {:else}
-                  <span class="text-[#d1d5db]">—</span>
+                  <span class="text-[var(--t-border-soft)]">—</span>
                 {/if}
               </span>
             </div>
@@ -170,8 +170,8 @@
             {#if fy.length > 0}
               <div class="text-[0.65rem] font-semibold text-[#9ca3af] uppercase tracking-wider py-2">{y} — {fy.length}</div>
               {#each fy as n (n.title)}
-                <div class="py-2.5 border-b border-[#f3f4f6]">
-                  <div class="text-[0.75rem] text-[#6b7280] tabular-nums">{fmtDate(n.date)}</div>
+                <div class="py-2.5 border-b border-[var(--t-surface)]">
+                  <div class="text-[0.75rem] text-[var(--t-muted)] tabular-nums">{fmtDate(n.date)}</div>
                   <div class="text-[0.875rem] mt-0.5">{n.title}</div>
                   {#if n.links?.length}
                     <div class="flex gap-1.5 mt-1">
@@ -190,8 +190,8 @@
           {/each}
         {:else}
           {#each filtered as n (n.title)}
-            <div class="py-2.5 border-b border-[#f3f4f6]">
-              <div class="text-[0.75rem] text-[#6b7280] tabular-nums">{fmtDate(n.date)}</div>
+            <div class="py-2.5 border-b border-[var(--t-surface)]">
+              <div class="text-[0.75rem] text-[var(--t-muted)] tabular-nums">{fmtDate(n.date)}</div>
               <div class="text-[0.875rem] mt-0.5">{n.title}</div>
               {#if n.links?.length}
                 <div class="flex gap-1.5 mt-1">
