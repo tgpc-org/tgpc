@@ -6,8 +6,17 @@ import { PUBLIC_R2_PHOTO_BASE } from '$env/static/public';
  * place instead of being hardcoded across components and the Python pipeline.
  */
 
-const origin = new URL(PUBLIC_R2_PHOTO_BASE).origin;
+const origin = (() => {
+  // Never throw at module import: one bad Pages env var must degrade the
+  // photo/notice/dispatch URLs, not 500 every importing page.
+  try {
+    return new URL(PUBLIC_R2_PHOTO_BASE).origin;
+  } catch {
+    return '';
+  }
+})();
 
+export const R2_ORIGIN = origin;
 export const R2_PHOTOS = PUBLIC_R2_PHOTO_BASE;
 export const R2_DISPATCH = `${origin}/dispatch`;
 export const R2_NOTICES = `${origin}/notice`;

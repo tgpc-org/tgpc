@@ -153,12 +153,20 @@ def _load_from_files():
         try:
             with open(creds_file, "r") as f:
                 for line in f:
-                    if line.strip().startswith("export "):
-                        var, value = line.strip()[7:].split("=", 1)
-                        value = value.strip("\"'")
-                        if not os.environ.get(var):
-                            os.environ[var] = value
-                            loaded += 1
+                    stripped = line.strip()
+                    if not stripped.startswith("export "):
+                        continue
+                    # Per-line handling: one malformed line must not abort
+                    # the rest of the file.
+                    try:
+                        var, value = stripped[7:].split("=", 1)
+                    except ValueError:
+                        _creds_logger.warning("Skipping malformed line in %s: %s", creds_file, stripped)
+                        continue
+                    value = value.strip("\"'")
+                    if not os.environ.get(var):
+                        os.environ[var] = value
+                        loaded += 1
             if loaded:
                 _creds_logger.info("Loaded %d credential(s) from %s", loaded, creds_file)
         except Exception as e:

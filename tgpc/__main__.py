@@ -21,7 +21,7 @@ from tgpc.utils import (
 
 # --- Cloudflare WARP ---
 
-_warp_was_connected = False
+_warp_connected_by_us = False
 
 
 def _warp_available() -> bool:
@@ -33,16 +33,30 @@ def _warp_available() -> bool:
         return False
 
 
+def _warp_is_connected() -> bool:
+    """True if WARP is currently connected. False if unavailable."""
+    if not _warp_available():
+        return False
+    try:
+        r = subprocess.run(["warp-cli", "status"], capture_output=True, text=True, timeout=5)
+        return "Connected" in r.stdout
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+
+
 def _warp_connect() -> bool:
-    """Connect Cloudflare WARP. Returns True if connected (or already connected)."""
+    """Connect Cloudflare WARP. Returns True only if THIS call established
+    the connection (so the atexit handler knows it may disconnect).
+    Returns False when already connected — a pre-existing user connection
+    must never be torn down on exit."""
     if not _warp_available():
         return False
 
     try:
         r = subprocess.run(["warp-cli", "status"], capture_output=True, text=True, timeout=5)
         if "Connected" in r.stdout:
-            print("WARP: already connected")
-            return True
+            print("WARP: already connected (leaving it up on exit)")
+            return False
 
         r = subprocess.run(["warp-cli", "connect"], capture_output=True, text=True, timeout=15)
         if r.returncode == 0:
@@ -72,11 +86,12 @@ def _warp_disconnect():
 
 
 def _warp_ensure_disconnected():
-    """Ensure WARP is disconnected on exit. Registered with atexit."""
-    global _warp_was_connected
-    if _warp_was_connected:
+    """Disconnect WARP on exit, but only if this process established the
+    connection. Registered with atexit."""
+    global _warp_connected_by_us
+    if _warp_connected_by_us:
         _warp_disconnect()
-        _warp_was_connected = False
+        _warp_connected_by_us = False
 
 
 # --- Credential CLI commands ---
@@ -194,10 +209,10 @@ def main():
     manager = Manager()
 
     # Connect WARP for network-level routing (update and sync hit external services)
-    global _warp_was_connected
+    global _warp_connected_by_us
     if args.command in ("update", "sync", "enrich", "retry-photos"):
         atexit.register(_warp_ensure_disconnected)
-        _warp_was_connected = _warp_connect()
+        _warp_connected_by_us = _warp_connect()
 
     # Command dispatch. WARP disconnect on exit is handled solely by the
     # atexit handler registered above (_warp_ensure_disconnected), which also
@@ -215,14 +230,18 @@ def main():
                     all_records = manager.file_manager.load()
                     new_regs = getattr(manager, "_last_new_regs", set())
                     mod_regs = getattr(manager, "_last_modified_regs", set())
+                    removed_regs = getattr(manager, "_last_removed_regs", set())
                     delta_ids = new_regs | set(mod_regs)
                     delta = [r for r in all_records if r.registration_number in delta_ids] if delta_ids else []
                     sync_results = [manager.sync_to_supabase(delta_records=delta)]
                     # Delete orphans that were removed from source
-                    removed_regs = getattr(manager, "_last_removed_regs", set())
                     if removed_regs:
                         sync_results.append(manager.delete_removed_from_supabase(removed_regs))
-                    if delta_ids:
+                    # Any change — new, modified, OR removed — must propagate
+                    # to the file destinations and the email report. A
+                    # removals-only update has empty delta_ids, so gate on the
+                    # union including removals.
+                    if delta_ids or removed_regs:
                         sync_results += [
                             manager.sync_to_supabase_storage(),
                             manager.sync_to_r2(),
@@ -240,7 +259,6 @@ def main():
                         print(f"Enriching {len(new_regs)} new records...")
                         manager.enrich_new_records(force=args.force)
         return
-        raise SystemExit(1)
     elif args.command == "sync":
         with Phase("Sync to cloud destinations", 1, 1):
             sync_results = [

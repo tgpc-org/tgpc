@@ -17,17 +17,11 @@ export const GET: RequestHandler = async ({ params, platform }) => {
       const obj = await bucket.get(r2Key);
       if (obj) {
         const buf = await obj.arrayBuffer();
-        let bytes = new Uint8Array(buf);
-        // Rewrite PDF Title metadata so tab shows filename, not 858a…xlsx hash
-        try {
-          const text = new TextDecoder('latin1').decode(bytes);
-          let mod = text.replace(/\/Title\s*\([^)]*\)/g, `/Title (${name})`);
-          // Replace XMP dc:title rdf:li value
-          mod = mod.replace(/<dc:title>[\s\S]*?<\/dc:title>/g, `<dc:title><rdf:Alt><rdf:li xml:lang="x-default">${name}</rdf:li></rdf:Alt></dc:title>`);
-          if (mod !== text) {
-            bytes = Uint8Array.from(mod, (ch) => ch.charCodeAt(0) & 0xff);
-          }
-        } catch {}
+        // Serve bytes untouched: rewriting /Title in place changes the file
+        // length without rebuilding the PDF xref table, corrupting downloads
+        // for strict readers. Content-Disposition filename already gives the
+        // browser tab a sane title.
+        const bytes = new Uint8Array(buf);
         const headers = new Headers();
         headers.set('Content-Type', 'application/pdf');
         headers.set('Content-Disposition', `inline; filename="${name}"; filename*=UTF-8''${encodeURIComponent(name)}`);

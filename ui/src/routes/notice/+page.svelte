@@ -41,23 +41,35 @@
   }));
 
   const cached = browser && cachedOrNull<Notice[]>('tgpc_notices');
+  // An empty cached array means a past failed fetch — treat as absent so the
+  // page retries instead of skeleton-locking (and never cache empties below).
+  const cachedFresh = cached && cached.length > 0 ? cached : null;
   // svelte-ignore state_referenced_locally
-  const initial = cached || data.notices;
-  if (initial.length > 0) { notices = initial; buildYears(); loading = false; }
-
-  function buildYears() {
-    years = [...new Set(notices.map(n => getYr(n.date)))].sort((a, b) => +b - +a);
-    tab = years[0] || null;
-  }
-
-  if (!cached && browser) {
+  const initial = cachedFresh || data.notices;
+  if (initial.length > 0) {
+    notices = initial;
+    buildYears();
+    loading = false;
+  } else if (browser) {
+    // Nothing to show (SSR empty too) — this is the only case that fetches,
+    // so good SSR data is never wiped by a failed client request.
     fetchNotices().then(raw => {
+      if (!raw || raw.length === 0) { loading = false; return; }
       setCache('tgpc_notices', raw);
       notices = raw;
       buildYears();
       loading = false;
     });
+  } else {
+    loading = false;
   }
+
+  function buildYears() {
+    years = [...new Set(notices.map(n => getYr(n.date)))].sort((a, b) => +b - +a);
+    // Preserve the user's tab across background refetches.
+    if (!tab || !years.includes(tab)) tab = years[0] || null;
+  }
+
 </script>
 
 <div class="space-y-4">

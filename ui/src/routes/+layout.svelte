@@ -1,9 +1,9 @@
 <svelte:head>
   <title>TGPC RPh Index</title>
   <link rel="preconnect" href={PUBLIC_SUPABASE_URL} />
-  <link rel="preconnect" href={new URL(PUBLIC_R2_PHOTO_BASE).origin} />
+  {#if R2_ORIGIN}<link rel="preconnect" href={R2_ORIGIN} />{/if}
   <link rel="dns-prefetch" href={PUBLIC_SUPABASE_URL} />
-  <link rel="dns-prefetch" href={new URL(PUBLIC_R2_PHOTO_BASE).origin} />
+  {#if R2_ORIGIN}<link rel="dns-prefetch" href={R2_ORIGIN} />{/if}
 </svelte:head>
 
 <script lang="ts">
@@ -13,7 +13,9 @@
   import { supabase } from '$lib/supabase';
   import { page } from '$app/stores';
   import { CATEGORY_COLORS, CATEGORIES, CATEGORY_KEYS } from '$lib/colors';
-  import { PUBLIC_SUPABASE_URL, PUBLIC_R2_PHOTO_BASE } from '$env/static/public';
+  import { PUBLIC_SUPABASE_URL } from '$env/static/public';
+  import { R2_ORIGIN } from '$lib/r2';
+  import { setCache } from '$lib/cache';
 
   import Clock from '$lib/components/Clock.svelte';
 
@@ -26,10 +28,6 @@
   let status = $state<ConnectionStatus>(ssrStats ? 'Live' : 'Busy');
   let stats = $state<Stats | null>(ssrStats);
   let lastSync = $state<string>(ssrSync);
-
-  function setCache<T>(key: string, data: T, ttl = 300_000) {
-    try { localStorage.setItem(key, JSON.stringify({ data, expiry: Date.now() + ttl })); } catch {}
-  }
 
   async function loadStats() {
     status = 'Busy';

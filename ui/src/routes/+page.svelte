@@ -132,8 +132,10 @@
       results = res;
       category = 'all';
     } finally {
+      // Only the latest request clears loading. A superseded request does
+      // nothing — the in-flight/superseding request (or the debounced
+      // effect) owns the next fetch, so chaining here would duplicate it.
       if (mySeq === searchSeq) loading = false;
-      else void doSearch(); // keystroke arrived mid-flight — fetch latest
     }
   }
 
@@ -144,9 +146,12 @@
   let drawerError = $state<string | null>(null);
   let drawerPhoto = $derived(drawerRecord ? (drawerRecord.photo_url || `${PUBLIC_R2_PHOTO_BASE}/${drawerRecord.registration_number}.webp`) : '');
 
+  let drawerSeq = 0;
+
   async function openDrawer(reg: string) {
     const clean = reg.trim().toUpperCase();
     if (drawerOpen && drawerReg === clean) { closeDrawer(); return; }
+    const mySeq = ++drawerSeq;
     drawerReg = clean;
     drawerOpen = true;
     drawerLoading = true;
@@ -154,12 +159,16 @@
     drawerRecord = null;
     try {
       const rec = await getRecord(clean);
+      if (mySeq !== drawerSeq) return; // user clicked another profile meanwhile
       if (!rec) { drawerError = `No record found for ${clean}`; }
       else drawerRecord = rec;
-    } catch { drawerError = 'Failed to load profile'; }
-    finally { drawerLoading = false; }
+    } catch {
+      if (mySeq !== drawerSeq) return;
+      drawerError = 'Failed to load profile';
+    }
+    finally { if (mySeq === drawerSeq) drawerLoading = false; }
   }
-  function closeDrawer() { drawerOpen = false; drawerReg = null; }
+  function closeDrawer() { drawerSeq++; drawerOpen = false; drawerReg = null; }
 
   function clearAdvanced() {
     advFilters = { valid_till: '' };
@@ -207,17 +216,10 @@
     ]);
     const doc = new jsPDF({ format: 'a4', unit: 'mm' });
     const now = new Date();
-    const kw = query.trim() || '(all)';
+    const kw = cleanHeader(query.trim() || '(all)');
     const title = `TGPC RPh Index - Search: ${kw} - ${fmtDate(now)}`;
     const countLine = `Results: ${filtered.length.toLocaleString()} of ${results.length.toLocaleString()}${refinersActive || category !== 'all' ? ' (filtered)' : ''}`;
-    const filtParts: string[] = [];
-    if (category !== 'all') filtParts.push(`Category: ${category}`);
-    if (advFilters.registration_number?.trim()) filtParts.push(`RPC: ${advFilters.registration_number.trim()}`);
-    if (advFilters.name?.trim()) filtParts.push(`Name: ${advFilters.name.trim()}`);
-    if (advFilters.father_name?.trim()) filtParts.push(`Father: ${advFilters.father_name.trim()}`);
-    if (advFilters.gender) filtParts.push(`Gender: ${advFilters.gender}`);
-    if (advFilters.status) filtParts.push(`Status: ${advFilters.status}`);
-    if (advFilters.valid_till) filtParts.push(`Valid Till: ${advFilters.valid_till}`);
+    const filtParts = refinerParts();
     const filterLine = filtParts.length ? `Filters: ${filtParts.join(' | ')}` : 'Filters: none';
     const body = filtered.map(r => [r.registration_number, r.name, r.father_name || '—', r.gender || '—', r.category, r.validity_date || '—', r.status || '—']);
 
@@ -264,10 +266,33 @@
       doc.text('tgpc.pages.dev', doc.internal.pageSize.width / 2, ph - 10, { align: 'center' });
       doc.text(`Page ${i} / ${total}`, doc.internal.pageSize.width - 10, ph - 10, { align: 'right' });
     }
-    doc.save(`TGPC-RPH-SEARCH-${kw}-${fileDateStr(now)}.pdf`);
+    doc.save(`TGPC-RPH-SEARCH-${safeFilename(query.trim())}-${fileDateStr(now)}.pdf`);
   }
 
   const FORMULA_CHARS = ['=', '+', '-', '@', '\t', '\r'];
+
+  // Export header/filename hygiene: raw search/refiner input must not be able
+  // to split `#`-comment rows (CR/LF) or produce hostile filenames.
+  function cleanHeader(s: string): string {
+    return s.replace(/[\r\n]+/g, ' ');
+  }
+
+  function safeFilename(s: string): string {
+    const flat = s.replace(/[\r\n]+/g, ' ').replace(/[/\\?%*:|"<>]/g, '').trim();
+    return (flat || 'all').slice(0, 60);
+  }
+
+  function refinerParts(): string[] {
+    const parts: string[] = [];
+    if (category !== 'all') parts.push(`Category: ${category}`);
+    if (advFilters.registration_number?.trim()) parts.push(`RPC: ${cleanHeader(advFilters.registration_number.trim())}`);
+    if (advFilters.name?.trim()) parts.push(`Name: ${cleanHeader(advFilters.name.trim())}`);
+    if (advFilters.father_name?.trim()) parts.push(`Father: ${cleanHeader(advFilters.father_name.trim())}`);
+    if (advFilters.gender) parts.push(`Gender: ${advFilters.gender}`);
+    if (advFilters.status) parts.push(`Status: ${advFilters.status}`);
+    if (advFilters.valid_till) parts.push(`Valid Till: ${advFilters.valid_till}`);
+    return parts;
+  }
 
   function csvCell(value: unknown): string {
     const str = String(value ?? '');
@@ -279,16 +304,9 @@
   function exportCSV() {
     if (filtered.length === 0) return;
     const now = new Date();
-    const kw = query.trim() || '(all)';
+    const kw = cleanHeader(query.trim() || '(all)');
     const countLineCsv = `# Results: ${filtered.length.toLocaleString()} of ${results.length.toLocaleString()}${refinersActive || category !== 'all' ? ' (filtered)' : ''}`;
-    const filtPartsCsv: string[] = [];
-    if (category !== 'all') filtPartsCsv.push(`Category: ${category}`);
-    if (advFilters.registration_number?.trim()) filtPartsCsv.push(`RPC: ${advFilters.registration_number.trim()}`);
-    if (advFilters.name?.trim()) filtPartsCsv.push(`Name: ${advFilters.name.trim()}`);
-    if (advFilters.father_name?.trim()) filtPartsCsv.push(`Father: ${advFilters.father_name.trim()}`);
-    if (advFilters.gender) filtPartsCsv.push(`Gender: ${advFilters.gender}`);
-    if (advFilters.status) filtPartsCsv.push(`Status: ${advFilters.status}`);
-    if (advFilters.valid_till) filtPartsCsv.push(`Valid Till: ${advFilters.valid_till}`);
+    const filtPartsCsv = refinerParts();
     const filterLineCsv = filtPartsCsv.length ? `# Filters: ${filtPartsCsv.join(' | ')}` : '# Filters: none';
     const header = ['RPC NUMBER', 'NAME', 'FATHER NAME', 'GENDER', 'CATEGORY', 'VALID TILL', 'STATUS'];
     const rows = filtered.map(r => [
@@ -305,7 +323,7 @@
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `TGPC-RPH-SEARCH-${kw}-${fileDateStr(now)}.csv`;
+    a.download = `TGPC-RPH-SEARCH-${safeFilename(query.trim())}-${fileDateStr(now)}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

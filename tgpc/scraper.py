@@ -22,6 +22,16 @@ from tgpc.utils import Config, BlockedError, setup_logging
 
 logger = setup_logging("tgpc.scraper")
 
+
+class DetailError(Exception):
+    """Unexpected failure inside extract_detailed_info — NOT a genuine absence.
+
+    Genuine absence ("No Records Found", no tables) returns None. Anything
+    else (parse bug, transient error after _request retries) raises this so
+    callers count it as an error instead of laundering it as "not found".
+    """
+
+
 BLOCKED_MARKERS = (
     "access denied",
     "forbidden",
@@ -539,6 +549,8 @@ class Scraper:
 
             return record
 
+        except DetailError:
+            raise
         except Exception as e:
             logger.error(f"Failed to extract details for {reg_no}: {e}")
-            return None
+            raise DetailError(f"Failed to extract details for {reg_no}: {e}") from e

@@ -43,11 +43,14 @@ class FileManager:
             json.dump(data, f, indent=2, ensure_ascii=False, default=str)
             f.flush()
             os.fsync(f.fileno())
-        # Validate tmp before rename
+        # Validate tmp before rename: the round-trip must preserve every record.
         with open(tmp_path, "r", encoding="utf-8") as f:
             loaded = json.load(f)
-            if len(loaded) < 1000 and len(records) >= 1000:
-                raise ValueError(f"Tmp validation failed: {len(loaded)} < 1000")
+            if not isinstance(loaded, list) or len(loaded) != len(records):
+                raise ValueError(
+                    f"Tmp validation failed: wrote {len(records)} records, read back "
+                    f"{len(loaded) if isinstance(loaded, list) else 'non-list'}"
+                )
         tmp_path.replace(path)
         logger.info(f"Saved {len(records)} records to {path}")
         return path
@@ -141,7 +144,8 @@ class BackupManager:
         objects = sorted(data.get("Contents", []), key=lambda o: o["Key"], reverse=True)
         # Keep backups significantly larger than newest (avoid deleting good
         # large backups when a small one is created)
-        new_backup_size = data.get("Contents", [{}])[0].get("Size", 0) if data.get("Contents") else 0
+        # `objects` is sorted newest-first, so objects[0] is the newest backup.
+        new_backup_size = objects[0].get("Size", 0) if objects else 0
         for obj in objects[30:]:
             obj_size = obj.get("Size", 0)
             # Don't delete if this backup is >50% larger than the newest (likely a good full backup)
@@ -342,11 +346,9 @@ class Manager:
                 )
             except Exception as e:
                 logger.warning(f"data/rph.json failed validation ({e}) — restoring from R2...")
-            # Treat as missing, fall through to R2 restore
-            try:
-                rph_path.unlink(missing_ok=True)
-            except Exception:
-                pass
+            # Treat as missing, fall through to R2 restore. NOTE: the local
+            # file is intentionally NOT deleted here — it is only replaced
+            # after a downloaded backup has been validated (see below).
 
         logger.warning("data/rph.json not found — attempting restore from R2 backup...")
         endpoint = self.backup_manager._r2_endpoint()
@@ -393,6 +395,9 @@ class Manager:
             return False
 
         rph_path.parent.mkdir(parents=True, exist_ok=True)
+        # Download to a temp path first — never overwrite the local file
+        # with unvalidated remote content.
+        tmp_path = rph_path.with_suffix(".restore_tmp")
         r2 = subprocess.run(
             [
                 "aws",
@@ -406,7 +411,7 @@ class Manager:
                 "tgpc",
                 "--key",
                 backup_key,
-                str(rph_path),
+                str(tmp_path),
             ],
             capture_output=True,
             text=True,
@@ -414,10 +419,25 @@ class Manager:
             env=env,
         )
         if r2.returncode != 0:
-            rph_path.unlink(missing_ok=True)
+            tmp_path.unlink(missing_ok=True)
             logger.error(f"Failed to restore from {backup_key}: {r2.stderr.strip()}")
             return False
 
+        # Validate the downloaded backup before it replaces anything.
+        try:
+            with open(tmp_path, "r", encoding="utf-8") as f:
+                restored_data = json.load(f)
+            if not isinstance(restored_data, list) or len(restored_data) < expected_min_records:
+                raise ValueError(
+                    f"restored backup has {len(restored_data) if isinstance(restored_data, list) else 'non-list'} "
+                    f"records, expected >= {expected_min_records}"
+                )
+        except Exception as e:
+            tmp_path.unlink(missing_ok=True)
+            logger.error(f"Restored backup {backup_key} failed validation ({e}) — local file left untouched")
+            return False
+
+        tmp_path.replace(rph_path)
         size = rph_path.stat().st_size
         logger.info(f"Restored data/rph.json from {backup_key} ({size} bytes)")
         return True
@@ -429,7 +449,15 @@ class Manager:
         # 0a. Restore rph.json from backup if missing (safety against accidental deletion)
         with Phase("Restore rph.json from backup", 1, 5):
             with heartbeat("Restoring rph.json from R2 backup"):
-                self._restore_rph_from_backup()
+                restore_ok = self._restore_rph_from_backup()
+            if not restore_ok:
+                logger.error("data/rph.json is missing or invalid and restore failed — aborting update.")
+                self._write_update_outputs(
+                    update_status="restore_failed",
+                    success=False,
+                    total_records=0,
+                )
+                return "restore_failed"
 
         # 0b. Health check - abort if blocked
         with Phase("Health check", 2, 5) as p:
@@ -484,8 +512,8 @@ class Manager:
             )
             return "empty_scrape"
 
-        # Safety Check: Prevent massive data loss
-        if existing_records and len(fresh_records) < len(existing_records) * 0.9:
+        # Safety Check: Prevent massive data loss (--force overrides both caps)
+        if not force and existing_records and len(fresh_records) < len(existing_records) * 0.9:
             logger.error(
                 f"Safety Alert: New count ({len(fresh_records)}) < 90% of existing ({len(existing_records)}). Aborting."
             )
@@ -656,27 +684,42 @@ class Manager:
 
             logger.info("Supabase sync complete")
 
-            # Post-sync verification: compare counts
-            local_count = len(self.file_manager.load())
+            # Post-sync verification: compare counts. head=True keeps this a
+            # cheap COUNT query instead of fetching every row.
+            local_records = self.file_manager.load()
+            local_count = len(local_records)
             try:
-                result = supabase.table("rph").select("registration_number", count="exact").execute()
+                result = supabase.table("rph").select("registration_number", count="exact", head=True).execute()
                 remote_count = result.count
                 if local_count != remote_count:
                     logger.warning(
                         f"Supabase mismatch detected (local={local_count}, remote={remote_count}). "
                         f"Running full sync to fix..."
                     )
-                    all_records = self.file_manager.load()
+                    all_records = local_records
                     fix_batches = (len(all_records) + batch_size - 1) // batch_size
                     with ProgressBar(total=fix_batches, label="Full re-sync to Supabase") as bar:
                         for i in range(0, len(all_records), batch_size):
                             batch = [r.to_dict() for r in all_records[i : i + batch_size]]
                             supabase.table("rph").upsert(batch, on_conflict="registration_number").execute()
                             bar.update(1, detail=f"batch {i // batch_size + 1}/{fix_batches}")
-                    result = supabase.table("rph").select("registration_number", count="exact").execute()
+                    result = supabase.table("rph").select("registration_number", count="exact", head=True).execute()
                     remote_count = result.count
                     if local_count == remote_count:
                         logger.info(f"Full sync fixed mismatch. Supabase now has {remote_count} records")
+                    elif remote_count is not None and remote_count > local_count:
+                        # Upsert-only repair cannot remove remote orphans —
+                        # delete them explicitly so the drift actually heals.
+                        self._delete_supabase_orphans(supabase, {r.registration_number for r in all_records})
+                        result = supabase.table("rph").select("registration_number", count="exact", head=True).execute()
+                        remote_count = result.count
+                        if local_count == remote_count:
+                            logger.info(f"Orphan cleanup fixed mismatch. Supabase now has {remote_count} records")
+                        else:
+                            logger.critical(
+                                f"SUPABASE STILL MISMATCHED after full sync + orphan cleanup: "
+                                f"local={local_count}, remote={remote_count}"
+                            )
                     else:
                         logger.critical(
                             f"SUPABASE STILL MISMATCHED after full sync: local={local_count}, remote={remote_count}"
@@ -691,6 +734,44 @@ class Manager:
             return False
 
         return True
+
+    def _delete_supabase_orphans(self, supabase, local_ids: set) -> bool:
+        """Delete remote rows whose registration_number is not in local_ids.
+
+        Only called after an upsert-only repair still leaves remote ahead of
+        local, so the count drift actually heals instead of logging CRITICAL
+        on every run forever.
+        """
+        try:
+            orphans = []
+            page = 1000
+            start = 0
+            while True:
+                resp = (
+                    supabase.table("rph")
+                    .select("registration_number")
+                    .order("registration_number")
+                    .range(start, start + page - 1)
+                    .execute()
+                )
+                rows = resp.data or []
+                if not rows:
+                    break
+                orphans.extend(r["registration_number"] for r in rows if r["registration_number"] not in local_ids)
+                if len(rows) < page:
+                    break
+                start += page
+            if not orphans:
+                logger.info("Orphan scan found no extra remote rows")
+                return True
+            batch = 500
+            for i in range(0, len(orphans), batch):
+                supabase.table("rph").delete().in_("registration_number", orphans[i : i + batch]).execute()
+            logger.info(f"Deleted {len(orphans)} orphan rows from Supabase")
+            return True
+        except Exception as e:
+            logger.error(f"Orphan cleanup failed: {e}")
+            return False
 
     def delete_removed_from_supabase(self, removed_ids: set) -> bool:
         """Delete removed records from Supabase."""
@@ -983,19 +1064,24 @@ class Manager:
                 import base64
 
                 config_path.write_bytes(base64.b64decode(gdrive_config_b64))
-                result = subprocess.run(
-                    [
-                        "rclone",
-                        "copyto",
-                        str(self.file_manager.data_dir / "rph.json"),
-                        "gdrive:tgpc/rph.json",
-                    ],
-                    capture_output=True,
-                    text=True,
-                    timeout=300,
-                    env={**os.environ, "RCLONE_CONFIG": str(config_path)},
-                )
-                config_path.unlink(missing_ok=True)
+                try:
+                    result = subprocess.run(
+                        [
+                            "rclone",
+                            "copyto",
+                            str(self.file_manager.data_dir / "rph.json"),
+                            "gdrive:tgpc/rph.json",
+                        ],
+                        capture_output=True,
+                        text=True,
+                        timeout=300,
+                        env={**os.environ, "RCLONE_CONFIG": str(config_path)},
+                    )
+                finally:
+                    # Never leave the decoded service-account config behind,
+                    # even on timeout/crash. Fixed path also races concurrent
+                    # runs — removal keeps the window minimal.
+                    config_path.unlink(missing_ok=True)
                 if result.returncode == 0:
                     logger.info("GDrive sync complete")
                     return True
@@ -1054,25 +1140,34 @@ class Manager:
                 )
                 if result.returncode != 0:
                     logger.info(f"Creating release {tag}...")
-                    subprocess.run(
+                    create_result = subprocess.run(
                         ["gh", "release", "create", tag, "--repo", repo, "--title", title, "--notes", title],
                         capture_output=True,
                         text=True,
                         timeout=30,
                     )
+                    if create_result.returncode != 0:
+                        logger.error(f"Release create failed: {create_result.stderr.strip()}")
+                        return False
 
-                subprocess.run(
+                upload_result = subprocess.run(
                     ["gh", "release", "upload", tag, archive_path, "--repo", repo, "--clobber"],
                     capture_output=True,
                     text=True,
                     timeout=120,
                 )
-                subprocess.run(
+                if upload_result.returncode != 0:
+                    logger.error(f"Release upload failed: {upload_result.stderr.strip()}")
+                    return False
+                edit_result = subprocess.run(
                     ["gh", "release", "edit", tag, "--repo", repo, "--title", title, "--notes", title],
                     capture_output=True,
                     text=True,
                     timeout=30,
                 )
+                if edit_result.returncode != 0:
+                    logger.error(f"Release edit failed: {edit_result.stderr.strip()}")
+                    return False
                 logger.info(f"Release sync complete ({count:,} records)")
                 return True
             except ImportError:
@@ -1316,19 +1411,29 @@ class Manager:
         img_dir = Path(self.config.enrichment_directory) / "webp"
         img_dir.mkdir(parents=True, exist_ok=True)
 
-        # Filter by start/stop range - use serial_number from rph.json as position
+        # Filter by start/stop range on actual serial_number (not list position:
+        # serials have gaps and None values, so position != serial).
         if start != 1 or stop is not None:
             rph_records_all = self.file_manager.load("rph.json")
             rph_records_all.sort(key=lambda r: r.serial_number or 0)
 
             filtered = []
-            for i, r in enumerate(rph_records_all):
-                if start and i + 1 < start:
+            none_serial = 0
+            for r in rph_records_all:
+                s = r.serial_number
+                if s is None:
+                    none_serial += 1
                     continue
-                if stop and i + 1 > stop:
-                    break
+                if start and s < start:
+                    continue
+                if stop and s > stop:
+                    continue
                 if r.registration_number not in done_ids:
                     filtered.append(r)
+            if none_serial:
+                logger.warning(
+                    f"Skipped {none_serial} records with no serial_number (cannot be addressed by a serial range)"
+                )
             pending_records = filtered
 
             start_str = f"serial {start}" if start else "all"

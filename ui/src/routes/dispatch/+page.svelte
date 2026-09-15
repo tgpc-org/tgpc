@@ -27,12 +27,15 @@
   let sizes = $state<Record<string, number>>({});
 
   function build(raw: { name: string; size?: number; stale?: boolean }[]) {
+    // Reset each time: stale sizes from a previous fetch must not survive.
+    sizes = {};
     raw.forEach(f => { if (f.size) sizes[f.name] = f.size; });
     files = raw.map(f => ({ name: f.name, parsed: parse(f.name), size: f.size, stale: f.stale }))
       .filter(f => f.parsed)
       .sort((a, b) => b.parsed!.date.getTime() - a.parsed!.date.getTime());
     years = [...new Set(files.map(f => f.parsed!.y))].sort((a, b) => +b - +a);
-    tab = years[0] || null;
+    // Preserve the user's tab across background refetches.
+    if (!tab || !years.includes(tab)) tab = years[0] || null;
   }
 
   let filtered = $derived.by(() => files.filter(f => {
@@ -44,16 +47,25 @@
   }));
 
   const cached = browser && cachedOrNull<{ name: string; size?: number; stale?: boolean }[]>("tgpc_dispatch");
+  // An empty cached array means a past failed fetch — treat as absent so the
+  // page retries instead of skeleton-locking (and never cache empties below).
+  const cachedFresh = cached && cached.length > 0 ? cached : null;
   // svelte-ignore state_referenced_locally
-  const initial = cached || data.files;
-  if (initial.length > 0) { build(initial); loading = false; }
-
-  if (!cached && browser) {
+  const initial = cachedFresh || data.files;
+  if (initial.length > 0) {
+    build(initial);
+    loading = false;
+  } else if (browser) {
+    // Nothing to show (SSR empty too) — this is the only case that fetches,
+    // so good SSR data is never wiped by a failed client request.
     fetchDispatchFiles().then(raw => {
+      if (!raw || raw.length === 0) { loading = false; return; }
       setCache('tgpc_dispatch', raw);
       build(raw);
       loading = false;
     });
+  } else {
+    loading = false;
   }
 </script>
 
@@ -101,7 +113,7 @@
                 <div class="min-w-0">
                   <div class="text-[0.6rem] font-semibold uppercase tracking-widest text-[#9ca3af]">Dispatch List</div>
                   <div class="text-[0.8rem] font-medium truncate">{fmt(f.parsed!)}</div>
-                  <div class="text-[0.65rem] text-[#9ca3af]">{sizes[f.name] ? Math.round(sizes[f.name] / 1024) + ' KB' : ''}</div>
+                  <div class="text-[0.65rem] text-[#9ca3af]">{sizes[f.name] ? Math.round(sizes[f.name] / 1024) + ' KB' : ''}{f.stale ? ' · may be stale' : ''}</div>
                 </div>
               </a>
             {/each}
@@ -115,7 +127,7 @@
             <div class="min-w-0">
               <div class="text-[0.6rem] font-semibold uppercase tracking-widest text-[#9ca3af]">Dispatch List</div>
               <div class="text-[0.8rem] font-medium truncate">{fmt(f.parsed!)}</div>
-              <div class="text-[0.65rem] text-[#9ca3af]">{sizes[f.name] ? Math.round(sizes[f.name] / 1024) + ' KB' : ''}</div>
+              <div class="text-[0.65rem] text-[#9ca3af]">{sizes[f.name] ? Math.round(sizes[f.name] / 1024) + ' KB' : ''}{f.stale ? ' · may be stale' : ''}</div>
             </div>
           </a>
         {/each}

@@ -69,7 +69,10 @@ def main():
     supabase = _sb_client()
     img_dir = Path(mgr.config.enrichment_directory) / "webp"
     img_dir.mkdir(parents=True, exist_ok=True)
-    rph_lookup = {r.serial_number: r for r in records}
+    # Keyed by registration_number (the primary key). serial_number is
+    # nullable/non-unique — keying on it collides all None serials onto one
+    # entry and can attribute one pharmacist's identity to another's record.
+    rph_lookup = {r.registration_number: r for r in records}
 
     lock = threading.Lock()
     stats = {"processed": 0, "failed": 0, "no_photo": 0}
@@ -82,7 +85,7 @@ def main():
         sc.rate_limiter.current_delay = args.min_delay
         return sc
 
-    def enrich(sc, reg_no, serial):
+    def enrich(sc, reg_no):
         try:
             step(f"fetching details for {reg_no}")
             details = sc.extract_detailed_info(reg_no, img_dir)
@@ -111,7 +114,7 @@ def main():
                     stats["no_photo"] += 1
                 step(f"{reg_no}: no photo")
 
-            basic_info = rph_lookup.get(serial)
+            basic_info = rph_lookup.get(reg_no)
 
             # CRITICAL SAFETY CHECK - validate identity
             step(f"validating {reg_no}")
@@ -164,7 +167,7 @@ def main():
             sc = make_scraper()
             for r in records:
                 bar.set_detail(r.registration_number)
-                enrich(sc, r.registration_number, r.serial_number)
+                enrich(sc, r.registration_number)
                 bar.update(1, detail=r.registration_number)
         else:
 
@@ -175,7 +178,7 @@ def main():
                 sc = make_scraper()
                 for r in chunk:
                     bar.set_detail(r.registration_number)
-                    enrich(sc, r.registration_number, r.serial_number)
+                    enrich(sc, r.registration_number)
                     bar.update(1, detail=r.registration_number)
 
             chunks = [records[i :: args.workers] for i in range(args.workers)]
