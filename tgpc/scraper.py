@@ -177,16 +177,18 @@ class Scraper:
         self.session.mount("http://", adapter)
         self.session.mount("https://", adapter)
 
+        # Honor Config.proxy_url (TGPC_PROXY_URL / HTTPS_PROXY / HTTP_PROXY).
+        # Config.load() reads it, but without this nothing ever applied it,
+        # so proxy env vars were silently ignored.
+        if self.config.proxy_url:
+            self.session.proxies.update({"http": self.config.proxy_url, "https": self.config.proxy_url})
+
         self.session.headers.update(
             {
-                "User-Agent": random.choice(
-                    [
-                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                        "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-                        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-                        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                    ]
-                ),
+                # Single UA from Config (TGPC user_agent). The old
+                # random.choice between two hardcoded strings meant
+                # Config.user_agent was never sent at all.
+                "User-Agent": self.config.user_agent,
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
                 "Accept-Language": "en-IN,en;q=0.9",
                 "Connection": "keep-alive",

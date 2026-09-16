@@ -33,17 +33,6 @@ def _warp_available() -> bool:
         return False
 
 
-def _warp_is_connected() -> bool:
-    """True if WARP is currently connected. False if unavailable."""
-    if not _warp_available():
-        return False
-    try:
-        r = subprocess.run(["warp-cli", "status"], capture_output=True, text=True, timeout=5)
-        return "Connected" in r.stdout
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return False
-
-
 def _warp_connect() -> bool:
     """Connect Cloudflare WARP. Returns True only if THIS call established
     the connection (so the atexit handler knows it may disconnect).

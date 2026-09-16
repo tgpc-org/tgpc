@@ -175,6 +175,7 @@ Config is loaded via `Config.load()` classmethod (reads env vars for proxy and e
 
 **Scraper:**
 - Uses `requests.Session` with connection pooling (10 pools, 10 max)
+- Applies `Config.proxy_url` (TGPC_PROXY_URL / HTTPS_PROXY / HTTP_PROXY) to the session; sends the single `Config.user_agent` header
 - Two API endpoints (constructed from `config.base_url`):
   - `total`: `{base_url}/pharmacy/srchpharmacisttotal` — full listing table
   - `search`: `{base_url}/pharmacy/getsearchpharmacist` — detail search (POST with `registration_no`)
@@ -234,7 +235,7 @@ Config is loaded via `Config.load()` classmethod (reads env vars for proxy and e
 - Reads `_last_update_details` (set by `run_daily_update()`)
 - Builds HTML + plain text email with categorized change details (new/changed/removed by category)
 - Sends via Resend API using `requests` (POST to `https://api.resend.com/emails`)
-- Capped at 200 items per section in email
+- Sends all new/changed/removed records (no item cap)
 
 **`Manager.run_enrichment(start, stop)`**:
 - Health check → queries Supabase `rph` table for records missing enrichment fields
@@ -242,7 +243,7 @@ Config is loaded via `Config.load()` classmethod (reads env vars for proxy and e
 - Optionally restrict to `start`/`stop` serial range
 - Calls `_process_records_sequential()` → for each record: scrapes detail page, validates registration/name/father/category match (raises `DataIntegrityError` on mismatch), converts photo to WebP in `data/webp/`, uploads to R2 (`photos/{reg}.webp`) with size verification, deletes the local copy, then upserts all 10 fields directly to Supabase
 
-**`Manager.enrich_new_records(force)`** — auto-enriches records newly discovered by the last update (skips already-enriched via a Supabase check; aborts above 1000 records without `--force`).
+**`Manager.enrich_new_records(force)`** — auto-enriches records newly discovered by the last update (skips already-enriched via a Supabase check; aborts above 1000 records without `--force`). A standalone `python3 -m tgpc enrich` (fresh process, no `_last_new_regs`) checks all of `rph.json` under the same 1000-record cap.
 **`Manager.retry_photos()`** — retries R2 uploads for files left in `data/webp/` from a failed session.
 
 ### `tgpc/inactive_sweep.py` + `tgpc/enrich_actives.py` — reactivation pipeline

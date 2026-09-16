@@ -110,10 +110,12 @@ def check_supabase():
     if r["status"] == 200:
         result["api_requests"] = json.loads(r["body"]).get("count", 0)
 
-    # Database size via supabase SQL endpoint
+    # Database size via Supabase Management API. The endpoint is
+    # POST /v1/projects/{ref}/database/query (same as the /api/usage
+    # endpoint) — the old `/sql` path never matched and always fell through.
     sql = "SELECT (sum(pg_database_size(datname)) / 1073741824.0)::numeric(10,4) as size_gb FROM pg_database"
     r = _req_json(
-        f"{base}/sql",
+        f"{base}/database/query",
         headers,
         {"query": sql},
     )
@@ -126,7 +128,7 @@ def check_supabase():
     sql2 = (
         "SELECT (sum((metadata->>'size')::int) / (1024.0*1024.0*1024.0))::numeric(10,4) as size_gb FROM storage.objects"
     )
-    r = _req_json(f"{base}/sql", headers, {"query": sql2})
+    r = _req_json(f"{base}/database/query", headers, {"query": sql2})
     if r["status"] == 200:
         data = json.loads(r["body"])
         if data and data[0]["size_gb"]:

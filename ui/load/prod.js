@@ -65,14 +65,13 @@ function page(path, marker) {
 	});
 }
 
-function json(path, key) {
+function json(path, checkFn) {
 	const res = http.get(`${BASE}${path}`, { tags: { kind: 'api' } });
 	check(res, {
 		[`${path} 200`]: (r) => r.status === 200,
 		[`${path} json`]: (r) => {
 			try {
-				const b = JSON.parse(r.body || '');
-				return key in b || Array.isArray(b);
+				return checkFn(JSON.parse(r.body || ''));
 			} catch {
 				return false;
 			}
@@ -90,8 +89,10 @@ export function browse() {
 
 export function api() {
 	const r = Math.random();
-	if (r < 0.4) json('/api/notice?limit=5', 'title');
-	else if (r < 0.7) json('/api/dispatch?limit=1', 'name');
-	else json('/api/health', 'status');
+	// No query params: neither /api/notice nor /api/dispatch reads them —
+	// the old ?limit= checks passed but asserted nothing about the body.
+	if (r < 0.4) json('/api/notice', (b) => Array.isArray(b) && b.every((n) => 'title' in n));
+	else if (r < 0.7) json('/api/dispatch', (b) => Array.isArray(b) && b.every((f) => 'name' in f));
+	else json('/api/health', (b) => 'status' in b);
 	sleep(1 + Math.random() * 2);
 }

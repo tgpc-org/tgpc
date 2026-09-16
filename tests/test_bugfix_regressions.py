@@ -18,6 +18,7 @@ from unittest.mock import MagicMock, patch
 sys.modules["supabase"] = MagicMock()
 
 from tgpc import __main__ as cli
+from tgpc import quota
 from tgpc.manager import Manager
 from tgpc.scraper import DetailError, PharmacistRecord, Scraper
 from tgpc.utils import Config
@@ -215,6 +216,145 @@ class SaveValidationTests(unittest.TestCase):
             with patch("tgpc.manager.json.load", return_value=[{"only": "one"}]):
                 with self.assertRaises(ValueError):
                     manager.file_manager.save([record("R1", serial=1), record("R2", serial=2)])
+
+
+class ScraperConfigTests(unittest.TestCase):
+    def test_proxy_url_applied_to_session(self):
+        with patch(
+            "tgpc.scraper.Config.load",
+            return_value=Config(proxy_url="http://proxy:8080"),
+        ):
+            scraper = Scraper()
+        self.assertEqual(
+            scraper.session.proxies.get("https"),
+            "http://proxy:8080",
+        )
+
+    def test_no_proxy_leaves_session_alone(self):
+        with patch("tgpc.scraper.Config.load", return_value=Config(proxy_url=None)):
+            scraper = Scraper()
+        self.assertNotIn("https", scraper.session.proxies)
+
+    def test_user_agent_comes_from_config(self):
+        with patch(
+            "tgpc.scraper.Config.load",
+            return_value=Config(user_agent="TestAgent/1.0"),
+        ):
+            scraper = Scraper()
+        self.assertEqual(scraper.session.headers["User-Agent"], "TestAgent/1.0")
+
+
+class QuotaEndpointTests(unittest.TestCase):
+    def test_supabase_sql_uses_database_query_path(self):
+        seen = []
+
+        def fake_req_json(url, headers, data, timeout=15):
+            seen.append(url)
+            return {"status": 200, "body": '[{"size_gb": "0.1"}]', "headers": {}}
+
+        env = {
+            "SUPABASE_URL": "https://xyz999.supabase.co",
+            "SUPABASE_PAT": "pat",
+        }
+        with patch("tgpc.quota.os.environ", env):
+            with patch("tgpc.quota._req", return_value={"status": 404, "body": "", "headers": {}}):
+                with patch("tgpc.quota._req_json", side_effect=fake_req_json):
+                    quota.check_supabase()
+        self.assertTrue(seen, "expected at least one SQL query")
+        for url in seen:
+            self.assertIn("/database/query", url)
+            self.assertNotIn("/sql", url.replace("/database/query", ""))
+
+
+class StandaloneEnrichTests(unittest.TestCase):
+    def _details(self, reg_no):
+        return PharmacistRecord(
+            registration_number=reg_no,
+            name="Name",
+            father_name="Father",
+            category="BPharm",
+        )
+
+    def test_standalone_enrich_checks_all_records(self):
+        """Fresh Manager (no _last_new_regs) must not no-op."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            manager = make_manager(temp_dir)
+            manager.file_manager.save([record("RPH001"), record("RPH002", serial=2)])
+            manager.scraper = MagicMock()
+            manager.scraper.extract_detailed_info.side_effect = lambda reg, img=None: self._details(reg)
+            with patch("tgpc.manager.create_client", return_value=None):
+                manager.enrich_new_records()
+            calls = manager.scraper.extract_detailed_info.call_args_list
+            regs = sorted(c.args[0] for c in calls)
+            self.assertEqual(regs, ["RPH001", "RPH002"])
+
+    def test_standalone_enrich_safety_abort_above_1000(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            manager = make_manager(temp_dir)
+            manager.file_manager.save([record(f"RPH{i:05d}", serial=i) for i in range(1, 1002)])
+            manager.scraper = MagicMock()
+            with patch("tgpc.manager.create_client", return_value=None):
+                manager.enrich_new_records()
+            manager.scraper.extract_detailed_info.assert_not_called()
+
+    def test_update_path_zero_new_still_noops(self):
+        """An update that found zero new records must keep no-op behavior."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            manager = make_manager(temp_dir)
+            manager.file_manager.save([record("RPH001")])
+            manager._last_new_regs = set()
+            manager.scraper = MagicMock()
+            with patch("tgpc.manager.create_client", return_value=None):
+                manager.enrich_new_records()
+            manager.scraper.extract_detailed_info.assert_not_called()
+
+
+class EmailBrandColorTests(unittest.TestCase):
+    DETAILS = {
+        "new_details": ["RPH001 - Name (BPharm)"],
+        "modified_details": [],
+        "removed_details": [],
+        "new_cat_stats": {"BPharm": 1},
+        "rem_cat_stats": {},
+        "mod_cat_stats": {},
+        "total_records": 100,
+    }
+
+    def test_email_html_uses_only_brand_palette(self):
+        import re
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            manager = make_manager(temp_dir)
+            manager._last_update_details = dict(self.DETAILS)
+            env = {"RESEND_API_KEY": "k", "NOTIFICATION_EMAIL": "to@example.com"}
+            resp = MagicMock(ok=True, text='{"id":"abc"}')
+            with patch("tgpc.manager.os.environ", env):
+                with patch("tgpc.manager.requests.post", return_value=resp) as post:
+                    self.assertTrue(manager.sync_to_email())
+            html = post.call_args.kwargs["json"]["html"]
+            allowed = {
+                "00cc66",
+                "ef4444",
+                "9ca3af",
+                "2563eb",
+                "111827",
+                "6b7280",
+                "ffffff",
+                "374151",
+            }
+            for m in re.finditer(r"#([0-9a-fA-F]{3,6})\b", html):
+                self.assertIn(m.group(1).lower(), allowed, f"off-brand {m.group(0)} in email HTML")
+
+
+class OptimizeImagesTests(unittest.TestCase):
+    def test_main_noops_without_src_dir(self):
+        import scripts.optimize_images as opt
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch.object(opt, "SRC_DIR", Path(temp_dir) / "img"):
+                with patch.object(opt, "DST_DIR", Path(temp_dir) / "webp"):
+                    opt.main()  # must not raise
+            self.assertFalse((Path(temp_dir) / "webp").exists())
 
 
 if __name__ == "__main__":

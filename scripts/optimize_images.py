@@ -65,6 +65,10 @@ def convert(src: Path, dst: Path) -> tuple[bool, str, tuple[int, int] | None]:
 
 
 def main():
+    if not SRC_DIR.is_dir():
+        print(f"No {SRC_DIR}/ directory — nothing to convert")
+        return
+    DST_DIR.mkdir(parents=True, exist_ok=True)
     files = sorted(
         f for f in SRC_DIR.iterdir() if f.is_file() and f.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp")
     )

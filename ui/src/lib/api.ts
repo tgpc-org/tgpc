@@ -1,9 +1,6 @@
 import type { PharmacistRecord, Notice, DispatchFile, Stats, Category } from './types';
 import { supabase } from './supabase';
 
-// No cap — show all matching results (user requested). Keep constant for backwards compat but not used.
-export const SEARCH_CAP = 500;
-
 // Strip PostgREST filter syntax (,()) and LIKE wildcards (%_*) so raw input can
 // never alter the fallback .or() expression (CODE_REVIEW.md H4).
 function sanitizeQuery(s: string): string {
@@ -67,7 +64,7 @@ export async function searchCount(query: string): Promise<number | null> {
   const q = query.trim();
   if (q.length < 3) return null;
   try {
-    // Use count with head:true so we don't fetch rows — accurate total beyond SEARCH_CAP
+    // Use count with head:true so we don't fetch rows — accurate total
     // Do this for both RPC and fallback paths via the same fallback filter
     const safe = sanitizeQuery(q);
     const { count, error } = await supabase

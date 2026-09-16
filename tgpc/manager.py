@@ -1240,7 +1240,7 @@ class Manager:
             html = f'<div style="margin-bottom:35px;"><h4 style="margin:0 0 16px;color:{color};font-size:14px;font-weight:700;text-transform:uppercase;border-bottom:2px solid {color};padding-bottom:6px;display:inline-block;letter-spacing:.5px;">{title} ({len(items)})</h4>'  # noqa: E501
             for c in sorted(grouped):
                 recs = grouped[c]
-                html += f'<div style="margin-bottom:18px;"><div style="font-size:11px;font-weight:700;color:#111;text-transform:uppercase;margin-bottom:6px;letter-spacing:1px;">{c} ({len(recs)})</div>'  # noqa: E501
+                html += f'<div style="margin-bottom:18px;"><div style="font-size:11px;font-weight:700;color:#111827;text-transform:uppercase;margin-bottom:6px;letter-spacing:1px;">{c} ({len(recs)})</div>'  # noqa: E501
                 for r in sorted(recs, key=reg_no):
                     parts = r.split(" - ", 1)
                     reg = parts[0]
@@ -1254,13 +1254,13 @@ class Manager:
         text = f"TGPC RPh Index Sync Report\n{sync_time}\n\n"
         html = (
             '<!DOCTYPE html><html><head><meta charset="UTF-8"></head>'
-            '<body style="font-family:-apple-system,sans-serif;background:#fff;padding:15px 20px;color:#333;line-height:1.3;margin:0;">'  # noqa: E501
+            '<body style="font-family:-apple-system,sans-serif;background:#ffffff;padding:15px 20px;color:#374151;line-height:1.3;margin:0;">'  # noqa: E501
             '<div style="max-width:600px;">'
-            f'<h2 style="margin:0;font-size:17px;line-height:1.2;"><span style="color:#00cc66;">TGPC</span> <span style="color:#ef4444;">RPh</span> <span style="color:#808080;">Index</span> Sync Report</h2>'  # noqa: E501
-            f'<div style="color:#666;font-size:12px;margin-bottom:30px;font-weight:500;">{sync_time}</div>'
-            f"{fmt_html('🌱 NEW', new_t, '#00cc66')}{fmt_html('🌀 CHANGES', mod_t, '#3b82f6')}{fmt_html('❌ REMOVALS', rem_t, '#ef4444')}"  # noqa: E501
-            '<div style="margin-top:15px;font-size:11px;color:#888;padding-top:10px;">'
-            '<div style="font-weight:700;"><span style="color:#00cc66;">TGPC</span> <span style="color:#ef4444;">RPh</span> <span style="color:#808080;">Index</span></div>'  # noqa: E501
+            f'<h2 style="margin:0;font-size:17px;line-height:1.2;"><span style="color:#00cc66;">TGPC</span> <span style="color:#ef4444;">RPh</span> <span style="color:#9ca3af;">Index</span> Sync Report</h2>'  # noqa: E501
+            f'<div style="color:#6b7280;font-size:12px;margin-bottom:30px;font-weight:500;">{sync_time}</div>'
+            f"{fmt_html('🌱 NEW', new_t, '#00cc66')}{fmt_html('🌀 CHANGES', mod_t, '#2563eb')}{fmt_html('❌ REMOVALS', rem_t, '#ef4444')}"  # noqa: E501
+            '<div style="margin-top:15px;font-size:11px;color:#9ca3af;padding-top:10px;">'
+            '<div style="font-weight:700;"><span style="color:#00cc66;">TGPC</span> <span style="color:#ef4444;">RPh</span> <span style="color:#9ca3af;">Index</span></div>'  # noqa: E501
             "<div>Open-Source TGPC Pharmacist Data</div></div></div></body></html>"
         )
         for label, items, total in [("NEW", new_t, new), ("CHANGES", mod_t, mod), ("REMOVALS", rem_t, rem)]:
@@ -1461,10 +1461,23 @@ class Manager:
                    corrupt/missing rph.json causing full re-enrichment).
                    If True, enrich all records missing enrichment data.
         """
-        regs = getattr(self, "_last_new_regs", set())
-
-        # In force mode, enrich all records missing enrichment data
-        if force:
+        # Standalone `python3 -m tgpc enrich` runs in a fresh process where
+        # _last_new_regs was never set (vs. an update in the same process
+        # that found zero new records). Without this fallback the command
+        # always no-ops with "No new records to enrich".
+        if not hasattr(self, "_last_new_regs"):
+            records = self.file_manager.load()
+            # Same 1000-record safety cap as the update path: a standalone
+            # run with no Supabase credentials would otherwise treat all
+            # ~89k records as pending and scrape every one.
+            if len(records) > 1000 and not force:
+                logger.error(
+                    f"SAFETY ABORT: {len(records)} candidate records (limit 1000). "
+                    "Run with --force to enrich all records missing enrichment data."
+                )
+                return
+            logger.info(f"Standalone enrich: checking {len(records)} records for enrichment needs")
+        elif force:
             records = self.file_manager.load()
             logger.info(f"Force mode: checking {len(records)} records for enrichment needs")
         else:
