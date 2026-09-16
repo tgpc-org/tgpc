@@ -56,8 +56,8 @@ The site ships a theme toggle (header, `$lib/theme.ts`). Implementation notes:
 - Night mapping: page `#111827`, surfaces/rows `#374151`, borders
   `#6b7280`/`#374151`, text `#ffffff`/`#f9fafb`/`#d1d5db`, faint `#9ca3af`.
   Brand accents are identical day and night.
-- Components reference tokens as `var(--t-*)` (inline styles) or
-  `bg-[var(--t-*)]` (Tailwind arbitrary values) — never raw neutrals.
+- Components reference tokens as `var(--t-bg)` (inline styles) or
+  `bg-[var(--t-bg)]` (Tailwind arbitrary values) — never raw neutrals.
 - Preference persists in `localStorage` (`tgpc-theme`), defaulting to the OS
   scheme; a CSP-nonce'd guard in `app.html` applies it pre-paint (no flash).
 - Exports (CSV/PDF/email) intentionally stay light — they are print artifacts.
