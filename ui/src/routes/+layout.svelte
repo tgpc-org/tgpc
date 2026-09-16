@@ -122,6 +122,7 @@
   });
 </script>
 <div class="min-h-screen flex flex-col" style="background:var(--t-bg)">
+  <a href="#main-content" class="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[100] focus:rounded-lg focus:px-3 focus:py-2 focus:font-bold focus:no-underline" style="background:var(--t-surface-2);color:#00cc66">Skip to main content</a>
   <header class="sticky top-0 z-50" style="background:var(--t-bg)">
     <div class="w-full px-4 sm:px-6 py-2.5 flex items-center justify-between gap-4">
       <div class="flex flex-col">
@@ -178,7 +179,7 @@
         </div>
       </div>
     </div>
-    <div class="w-full px-4 sm:px-6 border-b" style="display:flex;align-items:center;gap:2px;font-size:0.7rem;padding-top:3px;padding-bottom:3px;overflow-x:auto;position:relative;border-color:var(--t-border)">
+    <nav aria-label="Primary" class="w-full px-4 sm:px-6 border-b" style="display:flex;align-items:center;gap:2px;font-size:0.7rem;padding-top:3px;padding-bottom:3px;overflow-x:auto;position:relative;border-color:var(--t-border)">
       <a href="/" bind:this={searchRef} style="text-decoration:none;padding:2px 4px;font-weight:700;color:{activeTab === 'search' ? '#00cc66' : 'var(--t-muted)'};white-space:nowrap">SEARCH</a>
       <span style="color:var(--t-border);font-weight:300;padding:0 2px;user-select:none">/</span>
       <a href="/notice" bind:this={noticeRef} style="text-decoration:none;padding:2px 4px;font-weight:700;color:{activeTab === 'notice' ? '#00cc66' : 'var(--t-muted)'};white-space:nowrap">NOTICES</a>
@@ -200,10 +201,10 @@
       {#if sliderStyle}
       <div style="position:absolute;bottom:0;left:0;height:2px;background:#00cc66;border-radius:1px;transition:transform 0.25s ease-out,width 0.25s ease-out;will-change:transform,width;{sliderStyle}"></div>
       {/if}
-    </div>
+    </nav>
   </header>
 
-  <main class="flex-1 w-full px-4 sm:px-6 pt-1 pb-9">
+  <main id="main-content" class="flex-1 w-full px-4 sm:px-6 pt-1 pb-9">
     {@render children()}
   </main>
 

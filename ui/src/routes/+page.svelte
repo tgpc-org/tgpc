@@ -344,6 +344,7 @@
 </script>
 
 <div class="space-y-2">
+  <h1 class="sr-only">Search Telangana State Pharmacy Council pharmacist records by name or RPC number</h1>
   <!-- Search + Chips row -->
   <div class="flex items-center gap-3">
     <div class="flex items-center min-w-0 border-b-2 border-[var(--t-border)] transition-colors focus-within:border-[#00cc66]"

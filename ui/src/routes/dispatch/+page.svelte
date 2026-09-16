@@ -69,7 +69,12 @@
   }
 </script>
 
+<svelte:head>
+  <title>Dispatch List — TGPC RPh Index</title>
+</svelte:head>
+
 <div class="space-y-4">
+  <h1 class="sr-only">TGPC dispatch list</h1>
   <div class="flex items-center gap-2">
     <div class="relative flex-1">
       <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#9ca3af] pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
