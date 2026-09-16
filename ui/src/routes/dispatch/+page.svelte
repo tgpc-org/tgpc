@@ -87,10 +87,10 @@
     </div>
   </div>
 
-  <div class="flex items-center gap-1 text-[0.75rem]">
+  <div class="-mx-1 px-1 flex-nowrap overflow-x-auto sm:flex-wrap gap-1 text-[0.75rem]" style="scrollbar-width:thin;scrollbar-color:var(--t-border) transparent;-webkit-overflow-scrolling:touch">
     {#each years as y (y)}
       <button onclick={() => tab = y}
-        class="px-2.5 py-1 rounded text-[0.7rem] font-medium transition-all cursor-pointer border-none"
+        class="px-2.5 py-1 rounded text-[0.7rem] font-medium transition-all cursor-pointer border-none whitespace-nowrap"
         style={y === tab ? 'background:#00cc66;color:#fff' : 'background:var(--t-surface);color:var(--t-muted)'}>
         {y} <span class="opacity-50">({files.filter(f => f.parsed?.y === y).length})</span>
       </button>
