@@ -75,8 +75,9 @@
       <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#9ca3af] pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
         <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
       </svg>
-      <input type="text" bind:value={query} placeholder="Search files"
-        aria-label="Search"
+      <label for="dispatch-search" class="sr-only">Search dispatch files</label>
+      <input id="dispatch-search" type="text" bind:value={query} placeholder="Search files"
+        aria-label="Search dispatch files"
         class="w-full pl-9 pr-4 py-1.5 border-b-2 border-[var(--t-border)] text-[0.95rem] bg-transparent outline-none transition-colors focus:border-[#00cc66] max-sm:text-base" />
     </div>
   </div>
