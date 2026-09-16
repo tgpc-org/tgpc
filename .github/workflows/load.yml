@@ -1,0 +1,36 @@
+name: Load Test
+
+# Weekly k6 proof against the live site (manual runs choose the profile).
+# Smoke is CI-quick; load ramps to 28 VUs. Thresholds (p95 < 3s, errors < 1%)
+# fail the run. Polite by design — see ui/load/prod.js header.
+on:
+  schedule:
+    - cron: '0 3 * * 0'
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: 'k6 profile'
+        required: false
+        default: 'smoke'
+        type: choice
+        options: [smoke, load]
+
+jobs:
+  k6:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ui
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install k6
+        run: |
+          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E34159
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update -qq && sudo apt-get install -y -qq k6
+      - name: Run k6 (smoke)
+        if: github.event.inputs.profile == '' || github.event.inputs.profile == 'smoke'
+        run: k6 run load/prod.js
+      - name: Run k6 (load)
+        if: github.event.inputs.profile == 'load' || github.event_name == 'schedule'
+        run: k6 run load/prod.js -e PROFILE=load
