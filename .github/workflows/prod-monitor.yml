@@ -1,0 +1,98 @@
+name: Prod Monitor
+
+# Synthetic uptime + freshness probe for the live Cloudflare Pages site.
+# Fails (and emails) when any page/API is down or the registry data goes stale.
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe production endpoints
+        run: |
+          BASE='https://tgpc.pages.dev'
+          FAIL=0
+
+          expect() {
+            local want="$1"; shift
+            local url="$1"; shift
+            local got
+            got=$(curl -s -o /dev/null -w '%{http_code}' --max-time 25 "$url") || got="000"
+            if [ "$got" = "$want" ]; then
+              echo "PASS $url -> $got"
+            else
+              echo "FAIL $url -> $got (want $want)"
+              FAIL=1
+            fi
+          }
+
+          expect 200 "$BASE/"
+          expect 200 "$BASE/notice"
+          expect 200 "$BASE/dispatch"
+          expect 200 "$BASE/sitemap.xml"
+          expect 200 "$BASE/robots.txt"
+          expect 404 "$BASE/rph/TEST123"
+          expect 403 "$BASE/api/usage"
+
+          HEALTH=$(curl -s --max-time 25 "$BASE/api/health") || { echo "FAIL $BASE/api/health unreachable"; FAIL=1; HEALTH=''; }
+          if [ -n "$HEALTH" ]; then
+            echo "$HEALTH" | python3 -c "
+          import json, sys
+          h = json.load(sys.stdin)
+          ok = True
+          if h.get('status') not in ('ok', 'degraded'):
+              print(f\"FAIL health status={h.get('status')}\"); ok = False
+          if h.get('checks', {}).get('supabase', {}).get('status') != 'ok':
+              print(f\"FAIL supabase={h.get('checks', {}).get('supabase')}\"); ok = False
+          hrs = h.get('checks', {}).get('last_sync', {}).get('hours_ago')
+          if hrs is None or hrs >= 48:
+              print(f'FAIL last_sync hours_ago={hrs}'); ok = False
+          if ok:
+              print(f\"PASS health status={h.get('status')} supabase_ok sync_hours_ago={hrs}\")
+          sys.exit(0 if ok else 1)
+          " || FAIL=1
+          fi
+
+          exit $FAIL
+
+      - name: Notify on failure
+        if: failure()
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          NOTIFICATION_EMAIL: ${{ secrets.NOTIFICATION_EMAIL }}
+          GH_REPO: ${{ github.repository }}
+          GH_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -n "$RESEND_API_KEY" ] && [ -n "$NOTIFICATION_EMAIL" ]; then
+            SUBJECT="🚨 TGPC Prod Monitor Failed"
+            BODY=$(cat <<'EOF'
+            <html>
+              <body style="font-family: system-ui, sans-serif; line-height: 1.6; color: #111;">
+                <h2 style="color: #ef4444;">TGPC Prod Monitor Failed</h2>
+                <p>A production probe for <strong>tgpc.pages.dev</strong> failed — a page/API may be down or the registry data may be stale.</p>
+                <p><strong>Repository:</strong> {{GH_REPO}}</p>
+                <p><strong>Run:</strong> <a href="{{GH_RUN_URL}}">View logs</a></p>
+                <hr style="border-color: #e5e7eb;">
+                <p style="color: #6b7280; font-size: 0.875rem;">This is an automated notification from GitHub Actions.</p>
+              </body>
+            </html>
+            EOF
+            )
+            BODY="${BODY//\{\{GH_REPO\}\}/$GH_REPO}"
+            BODY="${BODY//\{\{GH_RUN_URL\}\}/$GH_RUN_URL}"
+
+            curl -s -X POST 'https://api.resend.com/emails' \
+              -H "Authorization: Bearer $RESEND_API_KEY" \
+              -H "Content-Type: application/json" \
+              -d "{
+                \"from\": \"TGPC Sync <onboarding@resend.dev>\",
+                \"to\": [\"$NOTIFICATION_EMAIL\"],
+                \"subject\": \"$SUBJECT\",
+                \"html\": \"$BODY\"
+              }" || echo "Failed to send notification email"
+          else
+            echo "Notification not configured — skipping email"
+          fi
