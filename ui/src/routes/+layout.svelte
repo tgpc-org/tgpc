@@ -1,5 +1,15 @@
 <svelte:head>
   <title>TGPC RPh Index</title>
+  <meta name="description" content="Unofficial open-source index of the Telangana State Pharmacy Council pharmacist registry. Search pharmacists by name or RPC number, browse notices and dispatch lists." />
+  <link rel="canonical" href={$page.url.origin + $page.url.pathname} />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="TGPC RPh Index" />
+  <meta property="og:title" content="TGPC RPh Index" />
+  <meta property="og:description" content="Unofficial open-source index of the Telangana State Pharmacy Council pharmacist registry. Search pharmacists by name or RPC number, browse notices and dispatch lists." />
+  <meta property="og:url" content={$page.url.origin + $page.url.pathname} />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="TGPC RPh Index" />
+  <meta name="twitter:description" content="Unofficial open-source index of the Telangana State Pharmacy Council pharmacist registry. Search pharmacists by name or RPC number, browse notices and dispatch lists." />
   <link rel="preconnect" href={PUBLIC_SUPABASE_URL} />
   {#if R2_ORIGIN}<link rel="preconnect" href={R2_ORIGIN} />{/if}
   <link rel="dns-prefetch" href={PUBLIC_SUPABASE_URL} />

@@ -354,7 +354,9 @@
           <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
         </svg>
         <span class="col-start-1 row-start-1 invisible whitespace-nowrap pl-9 {searched ? 'pr-36' : 'pr-16'} py-1.5 text-[0.95rem] max-sm:text-base min-w-0 overflow-hidden">{query || 'Search by Name or Registered Pharmacist Certificate (RPC) Number'}</span>
+        <label for="tgpc-search" class="sr-only">Search by name or Registered Pharmacist Certificate (RPC) number</label>
         <input
+          id="tgpc-search"
           type="text"
           bind:value={query}
           onkeydown={onSearchKeydown}
