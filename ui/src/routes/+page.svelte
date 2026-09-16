@@ -20,6 +20,7 @@
   const CATEGORY_FILTERS: CategoryFilter[] = ['all', ...CAT_NAMES];
 
   let advFilters = $state<AdvancedFilters>({ valid_till: '' });
+  let refinersOpen = $state(false);
 
   function hasAnyRefiner(): boolean {
     return (advFilters.name ?? '').trim() !== '' || (advFilters.father_name ?? '').trim() !== '' || (advFilters.registration_number ?? '').trim() !== ''
@@ -346,10 +347,8 @@
 <div class="space-y-2">
   <h1 class="sr-only">Search Telangana State Pharmacy Council pharmacist records by name or RPC number</h1>
   <!-- Search + Chips row -->
-  <div class="flex items-center gap-3">
-    <div class="flex items-center min-w-0 border-b-2 border-[var(--t-border)] transition-colors focus-within:border-[#00cc66]"
-         class:flex-1={!searched}
-         class:max-w-[25vw]={searched}>
+  <div class="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+    <div class="flex items-center w-full min-w-0 border-b-2 border-[var(--t-border)] transition-colors focus-within:border-[#00cc66]">
       <div class="relative min-w-0 min-h-[2rem] flex-1" style="display:{searched ? 'inline-grid' : 'grid'};grid-template-columns:1fr">
         <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#9ca3af] pointer-events-none z-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
           <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
@@ -388,21 +387,21 @@
     </div>
 
     {#if searched}
-      <div class="flex flex-wrap items-center gap-1 min-w-0 flex-1" transition:fly={{ y: 6, duration: 200, opacity: 0 }}>
+      <div class="flex flex-wrap items-center gap-1 min-w-0 w-full sm:w-auto sm:flex-1" transition:fly={{ y: 6, duration: 200, opacity: 0 }}>
         <span class="text-[0.75rem] text-[#9ca3af] tabular-nums flex-shrink-0">{filtered.length.toLocaleString()} results</span>
         {#if refinersActive}
           <span class="text-[0.65rem] font-semibold uppercase rounded px-1.5 py-0.5 flex-shrink-0" style="background:rgba(0,204,102,0.08);color:#00cc66">Filtered</span>
         {/if}
-        <span class="ml-auto flex flex-wrap items-center gap-1.5">
+        <span class="-mx-1 px-1 flex-nowrap overflow-x-auto sm:mx-0 sm:px-0 sm:flex-wrap sm:ml-auto flex items-center gap-1.5" style="scrollbar-width:thin;scrollbar-color:var(--t-border) transparent;-webkit-overflow-scrolling:touch">
           {#each CATEGORY_FILTERS as cat (cat)}
             <button onclick={() => { category = cat; }}
-              class="px-2.5 py-1 rounded text-[0.7rem] font-medium transition-all cursor-pointer border-none"
+              class="px-2.5 py-1 rounded text-[0.7rem] font-medium transition-all cursor-pointer border-none whitespace-nowrap"
               style={chipStyle(cat)}>
               {cat === 'all' ? 'All' : cat} <span class="opacity-60">({(categoryCounts[cat] || 0).toLocaleString()})</span>
             </button>
           {/each}
-          <button onclick={exportCSV} class="flex items-center gap-1 px-2.5 py-1 rounded text-[0.65rem] font-medium cursor-pointer border-none transition-colors" style="background:rgba(0,204,102,0.08);color:#00cc66">EXPORT CSV</button>
-          <button onclick={exportPDF} class="flex items-center gap-1 px-2.5 py-1 rounded text-[0.65rem] font-medium cursor-pointer border-none transition-colors" style="background:rgba(239,68,68,0.06);color:#ef4444">EXPORT PDF</button>
+          <button onclick={exportCSV} class="flex items-center gap-1 px-2.5 py-1 rounded text-[0.65rem] font-medium cursor-pointer border-none transition-colors whitespace-nowrap" style="background:rgba(0,204,102,0.08);color:#00cc66">EXPORT CSV</button>
+          <button onclick={exportPDF} class="flex items-center gap-1 px-2.5 py-1 rounded text-[0.65rem] font-medium cursor-pointer border-none transition-colors whitespace-nowrap" style="background:rgba(239,68,68,0.06);color:#ef4444">EXPORT PDF</button>
         </span>
       </div>
     {/if}
@@ -419,8 +418,23 @@
       </div>
     {:else}
       {#if results.length > 0}
-        <!-- Result filters — slim modern single row (persistent when filtering) -->
-      <div class="mb-2 flex flex-wrap items-end gap-2 rounded-lg border bg-[var(--t-bg)] p-2 transition-colors lg:flex-nowrap" style="border-color:{refinersActive ? '#00cc66' : 'var(--t-border)'}">
+        <!-- Result filters — mobile: collapsed behind a toggle; desktop: slim single row -->
+      <div class="mb-2 rounded-lg border bg-[var(--t-bg)] p-2 transition-colors" style="border-color:{refinersActive ? '#00cc66' : 'var(--t-border)'}">
+        <button
+          type="button"
+          onclick={() => refinersOpen = !refinersOpen}
+          aria-expanded={refinersOpen}
+          aria-controls="refiner-fields"
+          class="lg:hidden w-full flex items-center justify-between gap-2 text-[0.7rem] font-semibold uppercase tracking-widest text-[#9ca3af] cursor-pointer border-none bg-transparent p-0"
+        >
+          <span class="flex items-center gap-1.5">
+            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 6h18M7 12h10M10 18h4"/></svg>
+            Refine
+            {#if refinersActive}<span class="rounded px-1.5 py-0.5 text-[0.6rem] normal-case tracking-normal" style="background:rgba(0,204,102,0.08);color:#00cc66">Active</span>{/if}
+          </span>
+          <svg class="w-4 h-4 transition-transform {refinersOpen ? 'rotate-180' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+        <div id="refiner-fields" class="{refinersOpen ? 'flex' : 'hidden'} lg:flex flex-wrap items-end gap-2 mt-2 lg:mt-0 lg:flex-nowrap">
         <label class="flex min-w-[92px] flex-1 flex-col gap-1">
           <span class="text-[0.6rem] font-semibold uppercase tracking-widest text-[#9ca3af]">RPC</span>
           <input type="text" bind:value={advFilters.registration_number} placeholder="TG..."
@@ -459,6 +473,7 @@
         {#if refinersActive}
           <button onclick={clearAdvanced} class="h-7 self-end rounded-full border border-[rgba(239,68,68,0.2)] bg-[var(--t-bg)] px-3 text-xs font-semibold text-[#ef4444] transition-colors hover:bg-[rgba(239,68,68,0.06)]">Clear</button>
         {/if}
+        </div>
       </div>
       {/if}
       {#if filtered.length === 0}
@@ -508,21 +523,23 @@
         </table>
         </div>
       </div>
-      <div class="md:hidden space-y-0.5">
+      <div class="md:hidden space-y-1.5">
           {#each filtered as r (r.registration_number)}
-            <div class="flex gap-3 py-2 border-b border-[var(--t-surface)] text-[0.875rem]" style="content-visibility:auto;contain-intrinsic-size:110px">
-              <img src={photoUrl(r)} alt="" loading="lazy" decoding="async" width="40" height="48" class="w-10 h-12 rounded object-cover bg-[var(--t-surface)] flex-shrink-0" />
-              <div class="min-w-0">
-                <a href="/rph/{r.registration_number}" onclick={(e) => { e.preventDefault(); openDrawer(r.registration_number); }} class="text-[var(--t-link)] hover:underline no-underline cursor-pointer" style="font-weight:600" aria-label="View profile for {r.registration_number}">{r.registration_number}</a>
-                <div class="mt-0.5 text-[var(--t-ink-soft)] truncate">{r.name}</div>
-                <div class="mt-0.5 text-[var(--t-ink-soft)] truncate">{r.father_name || '—'}</div>
-                <div class="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1 text-[var(--t-ink-soft)]">
-                  {#if r.gender}<span>{r.gender}</span>{/if}
-                  <span style="color:{CATEGORY_COLORS[r.category] === '#111827' ? 'var(--t-ink)' : CATEGORY_COLORS[r.category]}">{r.category}</span>
-                  {#if r.validity_date}<span>Valid till: {r.validity_date}</span>{/if}
+            <div class="flex gap-3 p-2.5 rounded-lg border border-[var(--t-surface)] bg-[var(--t-surface-3)] text-[0.875rem]" style="content-visibility:auto;contain-intrinsic-size:140px">
+              <img src={photoUrl(r)} alt="" loading="lazy" decoding="async" width="48" height="58" class="w-12 h-14 rounded-md object-cover bg-[var(--t-surface)] flex-shrink-0" />
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center justify-between gap-2">
+                  <a href="/rph/{r.registration_number}" onclick={(e) => { e.preventDefault(); openDrawer(r.registration_number); }} class="text-[var(--t-link)] hover:underline no-underline cursor-pointer tabular-nums" style="font-weight:600" aria-label="View profile for {r.registration_number}">{r.registration_number}</a>
                   {#if r.status}
-                    <span style="color:{r.status === 'Active' ? 'var(--t-ink)' : '#ef4444'}">{r.status}</span>
+                    <span class="flex-shrink-0 rounded-full px-2 py-0.5 text-[0.6rem] font-semibold uppercase tracking-wider" style="background:{r.status === 'Active' ? 'rgba(0,204,102,0.1)' : 'rgba(239,68,68,0.1)'};color:{r.status === 'Active' ? '#00cc66' : '#ef4444'}">{r.status}</span>
                   {/if}
+                </div>
+                <div class="mt-1 text-[var(--t-ink)] font-medium leading-snug">{r.name}</div>
+                <div class="mt-0.5 text-[var(--t-muted)] text-[0.8rem] leading-snug">{r.father_name || '—'}</div>
+                <div class="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1.5 text-[0.75rem]">
+                  <span class="rounded-full px-2 py-0.5 font-semibold uppercase tracking-wider text-[0.6rem]" style="background:color-mix(in srgb, {CATEGORY_COLORS[r.category] === '#111827' ? 'var(--t-ink)' : CATEGORY_COLORS[r.category]} 10%, transparent);color:{CATEGORY_COLORS[r.category] === '#111827' ? 'var(--t-ink)' : CATEGORY_COLORS[r.category]}">{r.category}</span>
+                  {#if r.gender}<span class="text-[var(--t-muted)]">{r.gender}</span>{/if}
+                  {#if r.validity_date}<span class="text-[var(--t-muted)]">Valid till {r.validity_date}</span>{/if}
                 </div>
               </div>
             </div>

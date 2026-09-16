@@ -124,7 +124,7 @@
 <div class="min-h-screen flex flex-col" style="background:var(--t-bg)">
   <a href="#main-content" class="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[100] focus:rounded-lg focus:px-3 focus:py-2 focus:font-bold focus:no-underline" style="background:var(--t-surface-2);color:#00cc66">Skip to main content</a>
   <header class="sticky top-0 z-50" style="background:var(--t-bg)">
-    <div class="w-full px-4 sm:px-6 py-2.5 flex items-center justify-between gap-4">
+    <div class="w-full px-4 sm:px-6 py-2.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-4">
       <div class="flex flex-col">
           <div style="display:table;width:0">
             <a href="/" class="no-underline" style="display:table-row;white-space:nowrap;width:1px">
@@ -147,8 +147,8 @@
             </div>
           </div>
       </div>
-      <div style="background:var(--t-surface-2);border:1px solid var(--t-border);border-radius:8px;padding:6px 10px 4px 10px;display:flex;flex-direction:column;gap:0;min-width:0;max-width:100%">
-        <div style="display:flex;flex-wrap:wrap;gap:10px 12px;align-items:center;justify-content:center">
+      <div style="background:var(--t-surface-2);border:1px solid var(--t-border);border-radius:8px;padding:6px 10px 4px 10px;display:flex;flex-direction:column;gap:0;min-width:0;width:100%;max-width:100%">
+        <div class="flex-nowrap overflow-x-auto sm:flex-wrap" style="display:flex;gap:10px 12px;align-items:center;justify-content:center;padding-bottom:4px;scrollbar-width:thin;scrollbar-color:var(--t-border) transparent;-webkit-overflow-scrolling:touch">
           <div style="border-right:1px solid var(--t-border);padding-right:12px">
               <div style="display:flex;flex-direction:column;gap:4px;text-align:center">
               <div style="font-size:0.8rem;font-weight:500;letter-spacing:0.5px;color:#9ca3af">TOTAL <span style="color:#ef4444">RPh</span></div>
@@ -204,15 +204,15 @@
     </nav>
   </header>
 
-  <main id="main-content" class="flex-1 w-full px-4 sm:px-6 pt-1 pb-9">
+  <main id="main-content" class="flex-1 w-full px-4 sm:px-6 pt-1 pb-4 sm:pb-16">
     {@render children()}
   </main>
 
-  <footer class="fixed bottom-0 w-full border-t py-1 text-[0.5rem] leading-tight"
+  <footer class="relative mt-4 sm:mt-0 sm:fixed sm:bottom-0 w-full border-t py-1 text-[0.5rem] leading-tight"
           style="background:var(--t-bg);border-color:var(--t-border);color:#9ca3af;padding-bottom:calc(0.25rem + env(safe-area-inset-bottom, 0px))">
-    <div class="w-full px-4 sm:px-6 flex items-center justify-between gap-4">
-      <span class="text-left flex-1 pr-4" style="text-wrap:balance"><span style="color:#ef4444">DISCLAIMER:</span> This is an unofficial, third-party tool not affiliated with TGPC or any government body. Data is for reference only — verify all information from official sources before use. Users assume all risk.<br>No warranty as to accuracy, completeness, or timeliness. No liability for errors, omissions, or actions taken based on this content. Operated under fair dealing (Indian Copyright Act, 1957, Section 52).</span>
-      <span class="text-right whitespace-nowrap font-semibold flex-shrink-0 text-[0.7rem]">TGPC RPh Index &copy; {new Date().getFullYear()}</span>
+    <div class="w-full px-4 sm:px-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1 sm:gap-4">
+      <span class="text-left flex-1 sm:pr-4" style="text-wrap:balance"><span style="color:#ef4444">DISCLAIMER:</span> This is an unofficial, third-party tool not affiliated with TGPC or any government body. Data is for reference only — verify all information from official sources before use. Users assume all risk.<br>No warranty as to accuracy, completeness, or timeliness. No liability for errors, omissions, or actions taken based on this content. Operated under fair dealing (Indian Copyright Act, 1957, Section 52).</span>
+      <span class="text-left sm:text-right whitespace-nowrap font-semibold flex-shrink-0 text-[0.7rem]">TGPC RPh Index &copy; {new Date().getFullYear()}</span>
     </div>
   </footer>
 </div>
