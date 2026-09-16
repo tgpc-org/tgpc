@@ -1,5 +1,6 @@
 import { browser } from '$app/environment';
 import { writable } from 'svelte/store';
+import { TGPC } from './colors';
 
 export type Theme = 'light' | 'dark';
 
@@ -26,7 +27,7 @@ function apply(theme: Theme) {
   } catch {}
   // Keep the mobile browser chrome in sync with the page.
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute('content', theme === 'dark' ? '#111827' : '#00cc66');
+  if (meta) meta.setAttribute('content', theme === 'dark' ? '#111827' : TGPC.green);
 }
 
 export const themeName = writable<Theme>('light');
