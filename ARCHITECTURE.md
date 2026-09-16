@@ -76,14 +76,15 @@ tgpc/
 │   │   ├── pdf.svg, notice.json, manifest.json
 │   ├── wrangler.toml              # R2 DISPATCH bucket binding
 │   └── svelte.config.js
-├── tests/                          # 62 tests, 7 files (all mocked — no real HTTP/Supabase)
+├── tests/                          # 71 tests, 8 files (all mocked — no real HTTP/Supabase)
 │   ├── test_scraper.py             # 10: timeouts, WAF/blocked detection, table fallback, bad rows, detail parsing, legacy headers, missing tables
 │   ├── test_manager_update.py      # 7: safety guard, dedup/sort/GITHUB_OUTPUT, deterministic ordering, source-unavailable, +3 sync return-value regressions
 │   ├── test_manager_enrichment.py  # 3: enrichment save, registration mismatch, null serial_number regression
 │   ├── test_manager_sync.py        # 17: every sync destination's fail-closed/success/failure contract
 │   ├── test_manager_photos.py      # 11: photo upload/verify/retry pipeline, batch error isolation
 │   ├── test_quota.py               # 8: quota reporter helpers + fail-closed paths
-│   └── test_inactive_sweep.py      # 6: JSONL parsing, checkpoint roundtrip, resume/partial runs
+│   ├── test_inactive_sweep.py      # 6: JSONL parsing, checkpoint roundtrip, resume/partial runs
+│   └── test_bugfix_regressions.py  # 9: restore/backup/release/force regressions
 └── (credentials stored in macOS Keychain, not files)
 ```
 
@@ -485,7 +486,7 @@ Dependabot was removed (2026-09) in favour of manual bumps. CVE coverage comes f
 python3 -m pytest tests/ -v
 ```
 
-62 tests across 7 files:
+71 tests across 8 files:
 
 | File | Tests | What's tested |
 |---|---|---|
@@ -496,6 +497,7 @@ python3 -m pytest tests/ -v
 | `test_manager_photos.py` | 11 | Photo upload→verify→local-delete pipeline, retry/backoff, size-mismatch rejection, batch error isolation (scrape/upsert failures don't abort the batch), `retry_photos` |
 | `test_quota.py` | 8 | Quota reporter helpers (ref parsing, formatting) and every `check_*` fail-closed path on missing credentials |
 | `test_inactive_sweep.py` | 6 | JSONL parsing (good/bad lines), checkpoint save/load roundtrip, resume skipping completed batches, partial-run slicing |
+| `test_bugfix_regressions.py` | 9 | Restore-to-temp validation, backup rotation, release return codes, `--force` overrides, DetailError vs absence |
 
 All tests use mocking (no real HTTP or Supabase calls). The `supabase` module is mocked globally before imports.
 
