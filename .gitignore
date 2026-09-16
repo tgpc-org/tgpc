@@ -76,3 +76,6 @@ node_modules/
 .ruff_cache/
 tgpc-creds.sh
 .claude/
+test-results/
+playwright-report/
+playwright/.cache/

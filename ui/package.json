@@ -11,10 +11,15 @@
     "check": "svelte-check --threshold error",
     "check:colors": "node scripts/check-colors.mjs",
     "lint": "eslint src",
-    "test:unit": "node --experimental-strip-types --test 'src/**/*.test.ts'"
+    "test:unit": "node --experimental-strip-types --test 'src/**/*.test.ts'",
+    "test:e2e": "playwright test",
+    "test:e2e:update-baseline": "node ./e2e/update-baseline.mjs",
+    "check:e2e": "tsc -p e2e/tsconfig.json --noEmit"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.63.0",
     "@sveltejs/adapter-cloudflare": "^5.0.0",
     "@sveltejs/kit": "^2.20.0",
     "@sveltejs/vite-plugin-svelte": "^5.0.0",
