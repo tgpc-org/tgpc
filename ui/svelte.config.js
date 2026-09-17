@@ -15,13 +15,13 @@ const config = {
       directives: {
         'default-src': ['self'],
         'script-src': ['self'],
-        // Svelte transitions + inline style attributes need unsafe-inline;
+        // Cloud-only fonts: Google Fonts CDN stylesheets + woff2.
         // SvelteKit appends nonces alongside it.
-        'style-src': ['self', 'unsafe-inline'],
+        'style-src': ['self', 'unsafe-inline', 'https://fonts.googleapis.com'],
         'img-src': ['self', 'data:', 'https://*.r2.dev'],
         // wss: for Supabase realtime channel
         'connect-src': ['self', 'https://*.supabase.co', 'wss://*.supabase.co'],
-        'font-src': ['self'],
+        'font-src': ['self', 'https://fonts.gstatic.com'],
         'object-src': ['none'],
         'base-uri': ['self'],
         'form-action': ['self'],

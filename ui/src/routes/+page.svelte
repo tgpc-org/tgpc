@@ -4,6 +4,8 @@
   import DatePicker from '$lib/DatePicker.svelte';
   import { CATEGORY_COLORS, CATEGORIES as CAT_NAMES } from '$lib/colors';
   import ProfileSidebar from '$lib/components/ProfileSidebar.svelte';
+  import SkeletonRows from '$lib/components/SkeletonRows.svelte';
+  import EmptyState from '$lib/components/EmptyState.svelte';
   import { getRecord } from '$lib/api';
   import { PUBLIC_R2_PHOTO_BASE } from '$env/static/public';
   import { fly } from 'svelte/transition';
@@ -347,8 +349,11 @@
 <div class="space-y-2">
   <h1 class="sr-only">Search Telangana State Pharmacy Council pharmacist records by name or RPC number</h1>
   <!-- Search + Chips row -->
-  <div class="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-    <div class="flex items-center w-full min-w-0 border-b-2 border-[var(--t-border)] transition-colors focus-within:border-[#00cc66]">
+  <div class="flex flex-col sm:flex-row items-start sm:items-center gap-3" role="search">
+    <div
+      class="flex items-center w-full min-w-0 transition-colors focus-within:border-[#00cc66]"
+      style="min-height:3rem;border:1px solid var(--t-border);border-radius:var(--radius-md);background:var(--t-bg);box-shadow:var(--shadow-sm)"
+    >
       <div class="relative min-w-0 min-h-[2rem] flex-1" style="display:{searched ? 'inline-grid' : 'grid'};grid-template-columns:1fr">
         <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#9ca3af] pointer-events-none z-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
           <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
@@ -361,9 +366,10 @@
           bind:value={query}
           onkeydown={onSearchKeydown}
           placeholder="Search by Name or Registered Pharmacist Certificate (RPC) Number"
-          aria-label="Search"
+          aria-label="Search by name or Registered Pharmacist Certificate (RPC) number"
           autocomplete="off"
-          class="col-start-1 row-start-1 w-full pl-9 {searched ? 'pr-36' : 'pr-16'} py-1.5 text-[0.95rem] bg-transparent outline-none max-sm:text-base"
+          enterkeyhint="search"
+          class="col-start-1 row-start-1 w-full pl-9 {searched ? 'pr-36' : 'pr-16'} py-3 text-[0.95rem] bg-transparent outline-none max-sm:text-base"
         />
         {#if query.trim()}
           <div class="absolute right-0.5 top-1/2 -translate-y-1/2 z-10 flex items-center gap-1">
@@ -395,6 +401,7 @@
         <span class="-mx-1 px-1 flex-nowrap overflow-x-auto sm:mx-0 sm:px-0 sm:flex-wrap sm:ml-auto flex items-center gap-1.5" style="scrollbar-width:thin;scrollbar-color:var(--t-border) transparent;-webkit-overflow-scrolling:touch">
           {#each CATEGORY_FILTERS as cat (cat)}
             <button onclick={() => { category = cat; }}
+              aria-pressed={category === cat}
               class="px-2.5 py-1 rounded text-[0.7rem] font-medium transition-all cursor-pointer border-none whitespace-nowrap"
               style={chipStyle(cat)}>
               {cat === 'all' ? 'All' : cat} <span class="opacity-60">({(categoryCounts[cat] || 0).toLocaleString()})</span>
@@ -411,11 +418,7 @@
   {#if searched}
     <div transition:fly={{ y: 10, duration: 250, opacity: 0 }}>
     {#if loading}
-      <div class="space-y-3 py-4">
-        {#each Array(8) as _, i (i)}
-          <div class="h-4 bg-[var(--t-surface)] rounded animate-pulse" style="width:{40 + Math.random() * 60}%"></div>
-        {/each}
-      </div>
+      <SkeletonRows rows={8} />
     {:else}
       {#if results.length > 0}
         <!-- Result filters — mobile: collapsed behind a toggle; desktop: slim single row -->
@@ -477,7 +480,7 @@
       </div>
       {/if}
       {#if filtered.length === 0}
-        <p class="text-[0.85rem] text-[#9ca3af] py-8 text-center">No results</p>
+        <EmptyState title={results.length === 0 ? 'No records found' : 'No matches in this filter'} hint="Try a longer name, a full RPC number, or clear the refiners." />
       {:else}
         <div class="hidden md:block">
         <div style="max-height:{resultsMaxH};min-height:{resultsMinH};overflow-y:auto;overflow-x:auto" bind:this={resultsBox}>
@@ -500,7 +503,7 @@
                 <td class="py-1.5">
                   <img src={photoUrl(r)} alt="" loading="lazy" decoding="async" width="36" height="44" class="w-9 h-11 rounded object-cover bg-[var(--t-surface)]" />
                 </td>
-                <td class="py-2.5 text-[var(--t-link)]" style="font-weight:600">
+                <td class="py-2.5 text-[var(--t-link)] mono tabular" style="font-weight:600">
                   <a href="/rph/{r.registration_number}" onclick={(e) => { e.preventDefault(); openDrawer(r.registration_number); }} class="hover:underline no-underline cursor-pointer" aria-label="View profile for {r.registration_number}">
                     {r.registration_number}
                   </a>
@@ -529,7 +532,7 @@
               <img src={photoUrl(r)} alt="" loading="lazy" decoding="async" width="48" height="58" class="w-12 h-14 rounded-md object-cover bg-[var(--t-surface)] flex-shrink-0" />
               <div class="min-w-0 flex-1">
                 <div class="flex items-center justify-between gap-2">
-                  <a href="/rph/{r.registration_number}" onclick={(e) => { e.preventDefault(); openDrawer(r.registration_number); }} class="text-[var(--t-link)] hover:underline no-underline cursor-pointer tabular-nums" style="font-weight:600" aria-label="View profile for {r.registration_number}">{r.registration_number}</a>
+                  <a href="/rph/{r.registration_number}" onclick={(e) => { e.preventDefault(); openDrawer(r.registration_number); }} class="text-[var(--t-link)] hover:underline no-underline cursor-pointer tabular-nums mono" style="font-weight:600" aria-label="View profile for {r.registration_number}">{r.registration_number}</a>
                   {#if r.status}
                     <span class="flex-shrink-0 rounded-full px-2 py-0.5 text-[0.6rem] font-semibold uppercase tracking-wider" style="background:{r.status === 'Active' ? 'rgba(0,204,102,0.1)' : 'rgba(239,68,68,0.1)'};color:{r.status === 'Active' ? '#00cc66' : '#ef4444'}">{r.status}</span>
                   {/if}

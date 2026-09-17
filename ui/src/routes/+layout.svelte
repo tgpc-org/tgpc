@@ -22,13 +22,15 @@
   import { getStats } from '$lib/api';
   import { supabase } from '$lib/supabase';
   import { page } from '$app/stores';
-  import { CATEGORY_COLORS, CATEGORIES, CATEGORY_KEYS } from '$lib/colors';
   import { PUBLIC_SUPABASE_URL } from '$env/static/public';
   import { R2_ORIGIN } from '$lib/r2';
   import { setCache } from '$lib/cache';
   import { initTheme, themeName, toggleTheme } from '$lib/theme';
 
-  import Clock from '$lib/components/Clock.svelte';
+  import BrandLockup from '$lib/components/BrandLockup.svelte';
+  import StatusPill from '$lib/components/StatusPill.svelte';
+  import StatsBar from '$lib/components/StatsBar.svelte';
+  import NavTabs from '$lib/components/NavTabs.svelte';
 
   let { children, data } = $props();
   // svelte-ignore state_referenced_locally
@@ -85,123 +87,21 @@
     return () => { supabase.removeChannel(channel); };
   });
 
-  let statusConfig = $derived.by(() => ({
-    Live: { bg: 'rgba(0,204,102,0.05)', border: 'rgba(0,204,102,0.35)', text: '#00b359', dot: '#00cc66' },
-    Busy: { bg: 'rgba(239,68,68,0.05)', border: 'rgba(239,68,68,0.35)', text: '#ef4444', dot: '#ef4444' },
-    Offline: { bg: 'rgba(239,68,68,0.05)', border: 'rgba(239,68,68,0.35)', text: '#ef4444', dot: '#ef4444' }
-  })[status]);
-
-  function val(key: keyof Stats): string {
-    return stats ? stats[key].toLocaleString() : '0';
-  }
-
-  let sortedCategories = $derived.by(() => {
-    if (!stats) return CATEGORIES;
-    const s = stats;
-    return [...CATEGORIES].sort((a, b) => {
-      const ka = CATEGORY_KEYS[CATEGORIES.indexOf(a)] as keyof Stats;
-      const kb = CATEGORY_KEYS[CATEGORIES.indexOf(b)] as keyof Stats;
-      return (s[kb] ?? 0) - (s[ka] ?? 0);
-    });
-  });
-
   let activeTab = $derived($page.url.pathname === '/' ? 'search' : $page.url.pathname === '/notice' ? 'notice' : $page.url.pathname === '/dispatch' ? 'dispatch' : '');
-
-  let searchRef: HTMLAnchorElement | undefined;
-  let noticeRef: HTMLAnchorElement | undefined;
-  let dispatchRef: HTMLAnchorElement | undefined;
-  let sliderStyle = $state('');
-
-  $effect(() => {
-    const tab = activeTab;
-    if (!tab) { sliderStyle = ''; return; }
-    let el = tab === 'search' ? searchRef : tab === 'notice' ? noticeRef : dispatchRef;
-    if (el) {
-      sliderStyle = `transform:translateX(${el.offsetLeft}px);width:${el.offsetWidth}px`;
-    }
-  });
 </script>
 <div class="min-h-screen flex flex-col" style="background:var(--t-bg)">
   <a href="#main-content" class="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[100] focus:rounded-lg focus:px-3 focus:py-2 focus:font-bold focus:no-underline" style="background:var(--t-surface-2);color:#00cc66">Skip to main content</a>
-  <header class="sticky top-0 z-50" style="background:var(--t-bg)">
+  <header class="sticky top-0 z-50" style="background:var(--t-bg);box-shadow:var(--shadow-sm)">
     <div class="w-full px-4 sm:px-6 py-2.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-4">
-      <div class="flex flex-col">
-          <div style="display:table;width:0">
-            <a href="/" class="no-underline" style="display:table-row;white-space:nowrap;width:1px">
-              <span class="text-[1.65rem] font-bold tracking-tight inline-flex items-center gap-1" style="color:var(--t-ink);white-space:nowrap">
-                <span style="color:#00cc66">TGPC</span><span style="color:#ef4444">RPh</span><span class="text-[#9ca3af]">Index</span>
-              </span>
-            </a>
-            <span class="text-[0.65rem] text-[#9ca3af] font-medium truncate mb-0.5" style="display:table-row;width:100%;white-space:nowrap;overflow:hidden">Open-Source TGPC Pharmacist Data</span>
-            <div style="display:table-row;width:100%;white-space:nowrap;overflow:hidden">
-              <div class="flex items-center gap-2 text-[0.7rem] w-full">
-                <span class="flex w-full items-center justify-center gap-px h-5 px-1.5 rounded-full text-[0.75rem] font-medium box-border overflow-hidden"
-                      style="background:{statusConfig.bg};border:1px solid {statusConfig.border};color:{statusConfig.text}">
-                  <span class="w-1.5 h-1.5 rounded-full flex-shrink-0" style="background:{statusConfig.dot}"></span>
-                  <span class="text-[10px] font-medium leading-[18px] inline-block w-[28px] text-center">{status}</span>
-                  {#if status !== 'Offline'}
-                  <Clock/>
-                  {/if}
-                </span>
-              </div>
-            </div>
-          </div>
-      </div>
-      <div style="background:var(--t-surface-2);border:1px solid var(--t-border);border-radius:8px;padding:6px 10px 4px 10px;display:flex;flex-direction:column;gap:0;min-width:0;width:100%;max-width:100%">
-        <div class="tgpc-stats flex-nowrap overflow-x-auto sm:flex-wrap" style="display:flex;gap:10px 12px;align-items:center;justify-content:center;padding-bottom:4px;scrollbar-width:thin;scrollbar-color:var(--t-border) transparent;-webkit-overflow-scrolling:touch">
-          <div style="border-right:1px solid var(--t-border);padding-right:12px">
-              <div style="display:flex;flex-direction:column;gap:4px;text-align:center">
-              <div style="font-size:0.8rem;font-weight:500;letter-spacing:0.5px;color:#9ca3af">TOTAL <span style="color:#ef4444">RPh</span></div>
-              <div style="font-size:1.25rem;font-weight:700;color:var(--t-ink);line-height:1;font-variant-numeric:tabular-nums">{val('total')}</div>
-            </div>
-          </div>
-          {#each sortedCategories as cat, i (cat)}
-            <div style="border-right:{i < 5 ? '1px solid var(--t-border)' : 'none'};padding-right:{i < 5 ? '12px' : '0'}">
-              <div style="display:flex;flex-direction:column;gap:4px;text-align:center">
-                <div style="font-size:0.8rem;font-weight:500;letter-spacing:0.5px;color:{CATEGORY_COLORS[cat] === '#111827' ? 'var(--t-ink)' : CATEGORY_COLORS[cat]}">{cat}</div>
-                <div style="font-size:1.25rem;font-weight:700;color:var(--t-ink);line-height:1;font-variant-numeric:tabular-nums">{val(CATEGORY_KEYS[CATEGORIES.indexOf(cat)] as keyof Stats)}</div>
-              </div>
-            </div>
-          {/each}
-        </div>
-              <div style="font-size:0.5rem;color:#9ca3af;font-weight:500;letter-spacing:0.3px;text-transform:uppercase;margin-top:4px;padding-top:4px;border-top:1px solid var(--t-border);display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-          <span style="display:inline-flex;align-items:center;gap:3px;background:rgba(0,204,102,0.1);padding:1px 6px 1px 4px;border-radius:10px">
-            <span style="display:inline-flex;align-items:center;justify-content:center;width:10px;height:10px;background:#00cc66;border-radius:50%;color:white;font-size:6px;font-weight:bold">&#10003;</span>
-            <span style="color:#00cc66;font-size:0.45rem;font-weight:600;text-transform:uppercase;letter-spacing:0.3px">Synced</span>
-          </span>
-          <span style="color:var(--t-link);font-weight:600">{lastSync || '—'}</span>
-          <span style="opacity:0.4">|</span>
-          <span>Active: <span style="color:#00cc66;font-weight:600">{val('active')}</span></span>
-          <span style="opacity:0.4">|</span>
-          <span>Inactive: <span style="color:#ef4444;font-weight:600">{val('inactive')}</span></span>
-          <span style="opacity:0.4">|</span>
-          <span style="color:#9ca3af">Unofficial data — Not for legal use</span>
+      <div class="flex flex-col gap-1">
+        <BrandLockup />
+        <div class="flex items-center gap-2 text-[0.7rem] w-full">
+          <StatusPill status={status} />
         </div>
       </div>
+      <StatsBar stats={stats} lastSync={lastSync} />
     </div>
-    <nav aria-label="Primary" class="w-full px-4 sm:px-6 border-b" style="display:flex;align-items:center;gap:2px;font-size:0.7rem;padding-top:3px;padding-bottom:3px;overflow-x:auto;position:relative;border-color:var(--t-border)">
-      <a href="/" bind:this={searchRef} style="text-decoration:none;padding:2px 4px;font-weight:700;color:{activeTab === 'search' ? '#00cc66' : 'var(--t-muted)'};white-space:nowrap">SEARCH</a>
-      <span style="color:var(--t-border);font-weight:300;padding:0 2px;user-select:none">/</span>
-      <a href="/notice" bind:this={noticeRef} style="text-decoration:none;padding:2px 4px;font-weight:700;color:{activeTab === 'notice' ? '#00cc66' : 'var(--t-muted)'};white-space:nowrap">NOTICES</a>
-      <span style="color:var(--t-border);font-weight:300;padding:0 2px;user-select:none">/</span>
-      <a href="/dispatch" bind:this={dispatchRef} style="text-decoration:none;padding:2px 4px;font-weight:700;color:{activeTab === 'dispatch' ? '#00cc66' : 'var(--t-muted)'};white-space:nowrap">DISPATCH LIST</a>
-      <button
-        onclick={() => toggleTheme()}
-        aria-pressed={$themeName === 'dark'}
-        aria-label="Toggle day and night mode"
-        title={$themeName === 'dark' ? 'Switch to day mode' : 'Switch to night mode'}
-        style="margin-left:auto;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;border:1px solid var(--t-border);background:var(--t-surface-2);color:var(--t-muted);cursor:pointer"
-      >
-        {#if $themeName === 'dark'}
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
-        {:else}
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
-        {/if}
-      </button>
-      {#if sliderStyle}
-      <div style="position:absolute;bottom:0;left:0;height:2px;background:#00cc66;border-radius:1px;transition:transform 0.25s ease-out,width 0.25s ease-out;will-change:transform,width;{sliderStyle}"></div>
-      {/if}
-    </nav>
+    <NavTabs activeTab={activeTab} isDark={$themeName === 'dark'} onToggleTheme={() => toggleTheme()} />
   </header>
 
   <main id="main-content" class="flex-1 w-full px-4 sm:px-6 pt-1 pb-4 sm:pb-16">

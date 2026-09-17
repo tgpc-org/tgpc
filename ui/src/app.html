@@ -9,6 +9,13 @@
     <link rel="apple-touch-icon" sizes="192x192" href="/favicon-192.png">
     <link rel="manifest" href="/manifest.json">
     <meta name="theme-color" content="#00cc66">
+    <!-- Cloud-only fonts (Google Fonts CDN, no self-hosted binaries).
+      Preconnect keeps first-paint fast; display=swap avoids invisible text. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500;600;700&display=swap"
+      rel="stylesheet">
     <!-- Theme FOUC guard: applies the saved/OS scheme before first paint so
       the page never flashes the wrong mode. CSP nonce placeholder is filled
       by SvelteKit (csp.mode 'auto'); if CSP ever blocks this, the app simply
