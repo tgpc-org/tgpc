@@ -1,7 +1,5 @@
 {
   "/": [
-    "color-contrast::.flex-nowrap > div:nth-child(1) > div > div:nth-child(1)",
-    "color-contrast::.flex-nowrap > div:nth-child(1) > div > div:nth-child(1) > span",
     "color-contrast::.opacity-80",
     "color-contrast::.sm\\:pr-4",
     "color-contrast::.sm\\:pr-4 > span",
@@ -10,6 +8,8 @@
     "color-contrast::.text-\\[10px\\]",
     "color-contrast::.text-\\[1\\.65rem\\] > .text-\\[\\#9ca3af\\]",
     "color-contrast::.text-\\[1\\.65rem\\] > span:nth-child(1)",
+    "color-contrast::.tgpc-stats > div:nth-child(1) > div > div:nth-child(1)",
+    "color-contrast::.tgpc-stats > div:nth-child(1) > div > div:nth-child(1) > span",
     "color-contrast::div:nth-child(2) > span:nth-child(1) > span:nth-child(2)",
     "color-contrast::div:nth-child(2) > span:nth-child(4)",
     "color-contrast::div:nth-child(3) > div > div:nth-child(1)",
@@ -23,8 +23,6 @@
     "color-contrast::span:nth-child(8)"
   ],
   "/notice": [
-    "color-contrast::.flex-nowrap > div:nth-child(1) > div > div:nth-child(1)",
-    "color-contrast::.flex-nowrap > div:nth-child(1) > div > div:nth-child(1) > span",
     "color-contrast::.opacity-80",
     "color-contrast::.sm\\:pr-4",
     "color-contrast::.sm\\:pr-4 > span",
@@ -33,6 +31,8 @@
     "color-contrast::.text-\\[10px\\]",
     "color-contrast::.text-\\[1\\.65rem\\] > .text-\\[\\#9ca3af\\]",
     "color-contrast::.text-\\[1\\.65rem\\] > span:nth-child(1)",
+    "color-contrast::.tgpc-stats > div:nth-child(1) > div > div:nth-child(1)",
+    "color-contrast::.tgpc-stats > div:nth-child(1) > div > div:nth-child(1) > span",
     "color-contrast::a[href$=\"notice\"]",
     "color-contrast::div:nth-child(2) > span:nth-child(1) > span:nth-child(2)",
     "color-contrast::div:nth-child(2) > span:nth-child(4)",
@@ -47,8 +47,6 @@
     "color-contrast::span:nth-child(8)"
   ],
   "/dispatch": [
-    "color-contrast::.flex-nowrap > div:nth-child(1) > div > div:nth-child(1)",
-    "color-contrast::.flex-nowrap > div:nth-child(1) > div > div:nth-child(1) > span",
     "color-contrast::.opacity-80",
     "color-contrast::.sm\\:pr-4",
     "color-contrast::.sm\\:pr-4 > span",
@@ -57,6 +55,8 @@
     "color-contrast::.text-\\[10px\\]",
     "color-contrast::.text-\\[1\\.65rem\\] > .text-\\[\\#9ca3af\\]",
     "color-contrast::.text-\\[1\\.65rem\\] > span:nth-child(1)",
+    "color-contrast::.tgpc-stats > div:nth-child(1) > div > div:nth-child(1)",
+    "color-contrast::.tgpc-stats > div:nth-child(1) > div > div:nth-child(1) > span",
     "color-contrast::a[href$=\"dispatch\"]",
     "color-contrast::div:nth-child(2) > span:nth-child(1) > span:nth-child(2)",
     "color-contrast::div:nth-child(2) > span:nth-child(4)",

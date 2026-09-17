@@ -148,7 +148,7 @@
           </div>
       </div>
       <div style="background:var(--t-surface-2);border:1px solid var(--t-border);border-radius:8px;padding:6px 10px 4px 10px;display:flex;flex-direction:column;gap:0;min-width:0;width:100%;max-width:100%">
-        <div class="flex-nowrap overflow-x-auto sm:flex-wrap" style="display:flex;gap:10px 12px;align-items:center;justify-content:center;padding-bottom:4px;scrollbar-width:thin;scrollbar-color:var(--t-border) transparent;-webkit-overflow-scrolling:touch">
+        <div class="tgpc-stats flex-nowrap overflow-x-auto sm:flex-wrap" style="display:flex;gap:10px 12px;align-items:center;justify-content:center;padding-bottom:4px;scrollbar-width:thin;scrollbar-color:var(--t-border) transparent;-webkit-overflow-scrolling:touch">
           <div style="border-right:1px solid var(--t-border);padding-right:12px">
               <div style="display:flex;flex-direction:column;gap:4px;text-align:center">
               <div style="font-size:0.8rem;font-weight:500;letter-spacing:0.5px;color:#9ca3af">TOTAL <span style="color:#ef4444">RPh</span></div>
