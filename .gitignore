@@ -42,6 +42,9 @@ data/dg_captcha_tmp.jpg
 data/dg_captcha_bench/
 data/dg_live.json
 data/dg_fetch.log
+data/dg_fetch_run.log
+data/dg_fetch.pid
+data/dg_ids_dash.txt
 data/dg_stop
 *.backup
 *.bak

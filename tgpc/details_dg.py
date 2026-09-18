@@ -22,14 +22,15 @@ import json
 import os
 import re
 import subprocess
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
 import requests
 from bs4 import BeautifulSoup
-from tenacity import retry, stop_after_attempt, wait_exponential
 
 from tgpc.progress import ProgressBar, step
 from tgpc.scraper import _TGPCTLSAdapter
@@ -390,8 +391,12 @@ class DgFetcher:
             }
         )
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10), reraise=True)
     def _get(self, url: str, **kwargs) -> requests.Response:
+        """Single-shot GET — no in-run retries (policy: one try, move to next).
+
+        Transient failures stay in the checkpoint as non-terminal and are
+        revisited on a later run; nothing is permanently lost by not looping.
+        """
         time.sleep(self.min_delay)
         resp = self.session.get(url, timeout=(self.config.connect_timeout, self.config.read_timeout), **kwargs)
         resp.raise_for_status()
@@ -403,9 +408,13 @@ class DgFetcher:
         self,
         reg_no: str,
         captcha_solver: Optional[Callable[[bytes], str]] = None,
-        max_captcha_attempts: int = 3,
+        max_captcha_attempts: int = 1,
     ) -> Tuple[str, Dict]:
-        """Fetch the details-view HTML for one reg. Returns (html, meta)."""
+        """Fetch the details-view HTML for one reg. Returns (html, meta).
+
+        Single-try policy: one captcha attempt; a miss is recorded as a
+        transient failure for a later run instead of looping here.
+        """
         reg_no = normalize_reg(reg_no)
         meta: Dict = {"reg": reg_no, "attempts": 0}
         last_error: Optional[Exception] = None
@@ -463,16 +472,74 @@ class DgFetcher:
             try:
                 parse_dg_html(resp.text, reg_no)
             except DgDetailError as e:
-                # Captcha rejected -> form re-render; retry with a fresh session state.
+                # Captcha rejected -> form re-render; recorded for a later run
+                # (single-try policy: no in-run loop).
                 if "Captcha-fail" in str(e):
                     last_error = e
                     continue
                 e.html = resp.text
                 raise
             return resp.text, meta
-        err = DgDetailError(f"Captcha failed after {max_captcha_attempts} attempts: {last_error}")
+        err = DgDetailError(f"Captcha failed after {max_captcha_attempts} attempt(s): {last_error}")
         err.html = ""
         raise err
+
+
+# --- WARP rotation gate ------------------------------------------------------
+# Verified 2026-09-18: `warp-cli disconnect/connect` on this machine keeps the
+# SAME egress IP (sticky per account), so cycling alone proves nothing. These
+# helpers verify a DIFFERENT egress IP and the run halts rather than proceed
+# unrotated when rotation is required. IPs are never written to pushed files.
+
+WARP_EGRESS_URL = "https://api.ipify.org"
+
+
+def warp_available() -> bool:
+    try:
+        r = subprocess.run(["warp-cli", "status"], capture_output=True, text=True, timeout=10)
+        return r.returncode == 0
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+
+
+def egress_ip(timeout: int = 15) -> str:
+    """Current egress IP via WARP tunnel ("" on any failure — never raises)."""
+    try:
+        resp = requests.get(WARP_EGRESS_URL, timeout=timeout)
+        ip = resp.text.strip()
+        return ip if re.match(r"^[0-9a-fA-F.:]+$", ip) else ""
+    except Exception:
+        return ""
+
+
+def cycle_warp(connect_timeout: int = 20) -> bool:
+    """Disconnect+reconnect WARP. True only if tunnel reports connected after."""
+    try:
+        subprocess.run(["warp-cli", "disconnect"], capture_output=True, text=True, timeout=15)
+        time.sleep(2)
+        subprocess.run(["warp-cli", "connect"], capture_output=True, text=True, timeout=connect_timeout)
+        time.sleep(5)
+        r = subprocess.run(["warp-cli", "status"], capture_output=True, text=True, timeout=10)
+        return "Connected" in (r.stdout or "")
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+    except Exception:
+        return False
+
+
+def ensure_rotated_ip(previous_ip: str, max_cycles: int = 3) -> Tuple[str, bool]:
+    """Cycle until egress IP differs from previous_ip. Returns (ip, rotated).
+
+    rotated=False when the IP never changed (sticky egress) or WARP/cycle
+    failed — caller must halt, not proceed unrotated.
+    """
+    for _ in range(max(1, max_cycles)):
+        if not cycle_warp():
+            return previous_ip, False
+        current = egress_ip()
+        if current and current != previous_ip:
+            return current, True
+    return egress_ip() or previous_ip, False
 
 
 def _fresh_state() -> Dict:
@@ -685,7 +752,7 @@ def run_fetch(
     reference: Optional[Dict[str, Dict[str, str]]] = None,
     workers: int = 1,
     min_delay: float = 3.0,
-    max_captcha_attempts: int = 3,
+    max_captcha_attempts: int = 1,
     resume: bool = True,
     retry_terminal: bool = False,
     captcha_solver: Optional[Callable[[bytes], str]] = None,
@@ -694,6 +761,8 @@ def run_fetch(
     sync_cloud: bool = False,
     sync_every: int = 50,
     max_records: Optional[int] = None,
+    warp_rotate_every: int = 0,
+    warp_max_cycles: int = 3,
 ) -> Dict:
     """Fetch + validate + save L1 for a list of reg IDs. Returns stats dict.
 
@@ -708,10 +777,18 @@ def run_fetch(
       dg_live.json  overwritten per record — `watch -n1 cat` it.
       dg_stop       `touch` it to halt after the current record (checkpoint-safe).
     """
-    if workers != 1:
-        raise ValueError("Slice 1 supports workers=1 only (slow-safe pilot)")
+    if workers not in (1, 2):
+        raise ValueError("workers must be 1 or 2 (politeness cap for the council site)")
     if sync_cloud and reference is None:
         raise ValueError("sync_cloud requires reference (rph.json) — refusing orphan-row inserts")
+    warp_ip = ""
+    if warp_rotate_every > 0:
+        if not warp_available():
+            raise ValueError("warp_rotate_every set but warp-cli unavailable — refusing unrotated run")
+        warp_ip = egress_ip()
+        if not warp_ip:
+            raise ValueError("could not read egress IP — refusing unrotated run")
+        logger.info("WARP rotation gate armed: verify new IP every %d records", warp_rotate_every)
     live_path = checkpoint_path.parent / "dg_live.json"
     stop_path = checkpoint_path.parent / "dg_stop"
     log_path = checkpoint_path.parent / "dg_fetch.log"
@@ -797,18 +874,30 @@ def run_fetch(
         tmp.write_text(json.dumps(stats, indent=2), encoding="utf-8")
         tmp.replace(stats_path)
 
-    fetcher = fetcher_factory() if fetcher_factory else DgFetcher(min_delay=min_delay)
     start_all = time.monotonic()
     processed = 0
+    tls = threading.local()
+
+    def do_fetch(reg_no: str):
+        """Run fetch_one on this thread's own session (never shared)."""
+        sess = getattr(tls, "fetcher", None)
+        if sess is None:
+            sess = fetcher_factory() if fetcher_factory else DgFetcher(min_delay=min_delay)
+            tls.fetcher = sess
+        return sess.fetch_one(reg_no, captcha_solver=captcha_solver, max_captcha_attempts=max_captcha_attempts)
 
     def live_snapshot(current_reg: str, event: str) -> None:
         elapsed = time.monotonic() - start_all
         rate = processed / elapsed * 60 if elapsed > 0 else 0
         remaining = len(todo) - processed
+        upcoming = todo[processed] if processed < len(todo) else ""
         write_live(
             status="running",
             current_reg=current_reg,
             serial_number=serial_of(current_reg),
+            next_reg=upcoming,
+            next_serial=serial_of(upcoming) if upcoming else None,
+            remaining_in_batch=remaining,
             index=f"{processed}/{len(todo)}",
             event=event,
             done=stats["done"],
@@ -843,27 +932,63 @@ def run_fetch(
 
     write_live(status="running", total=len(todo), already_done=stats["already_done"], event="started")
     logger.info(f"DG fetch started: {len(todo)} to process ({stats['already_done']} already done)")
+    # Prefetch pool: only the slow network fetch runs concurrently (one session
+    # per thread); the loop below stays sequential so state, gates, checkpoint,
+    # stats and cloud batches need no locks. With workers=1 this degrades to
+    # exactly the old behavior (fetch current while handling previous: none).
+    ex = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="dgfetch")
+    inflight = {}
+    submitted = 0
+
+    def ensure_submitted(upto: int) -> None:
+        nonlocal submitted
+        while submitted < min(upto, len(todo)):
+            inflight[submitted] = ex.submit(do_fetch, todo[submitted])
+            submitted += 1
+
     with ProgressBar(total=len(todo), label="DG fetch", cadence=1) as bar:
-        for reg in todo:
+        for idx, reg in enumerate(todo):
             if stop_path.exists():
                 try:
                     stop_path.unlink()
                 except OSError:
                     pass
                 stats["stopped"] = True
+                stats["stop_reason"] = "stop file"
                 logger.warning(f"STOP requested — halting after {processed} records (checkpoint-safe)")
                 write_live(status="stopped", event="stop requested")
                 bar.update(0, detail="stopped")
                 break
+            if warp_rotate_every > 0:
+                # Cumulative across resumed runs (not per-run): verify whenever
+                # the all-time processed count sits on a multiple — including
+                # the first record of a resume that starts exactly on one.
+                cumulative = stats["already_done"] + processed
+                if cumulative > 0 and cumulative % warp_rotate_every == 0 and stats.get("_gated_at") != cumulative:
+                    stats["_gated_at"] = cumulative
+                    step("verifying IP rotation")
+                    new_ip, rotated = ensure_rotated_ip(warp_ip, warp_max_cycles)
+                    if rotated:
+                        warp_ip = new_ip
+                        stats["warp_rotations"] = stats.get("warp_rotations", 0) + 1
+                        logger.info(f"IP rotated ({cumulative} records in) — proceeding")
+                        write_live(event="IP rotated — proceeding")
+                    else:
+                        stats["stopped"] = True
+                        stats["stop_reason"] = "ip_rotation_failed"
+                        logger.error("IP did NOT rotate after cycling — halting, not proceeding unrotated")
+                        write_live(status="stopped", event="IP did not rotate — halted")
+                        bar.update(0, detail="ip-rotation-failed")
+                        break
             bar.set_detail(reg)
             step(f"fetching {reg}")
             logger.info(f"fetching {reg} ({processed + 1}/{len(todo)})")
             live_snapshot(reg, "fetching")
             t0 = time.monotonic()
+            ensure_submitted(idx + workers)
+            fut = inflight.pop(idx)
             try:
-                html, meta = fetcher.fetch_one(
-                    reg, captcha_solver=captcha_solver, max_captcha_attempts=max_captcha_attempts
-                )
+                html, meta = fut.result()
             except CaptchaNeeded as e:
                 stats["failed"] += 1
                 state["failed"][reg] = "captcha_solver_missing"
@@ -876,26 +1001,16 @@ def run_fetch(
                 save_checkpoint_atomic(checkpoint_path, state)
                 processed += 1
                 live_snapshot(reg, "solver-missing")
-                record_history(reg, "failed", "captcha_solver_missing", serial=serial_of(reg))
                 continue
             except (BlockedError, DgDetailError) as e:
                 stats["failed"] += 1
                 reason = str(e)[:200] or type(e).__name__
                 _record_failure(state, stats, reg, reason, getattr(e, "terminal", False))
-                html = getattr(e, "html", "")
-                if html:
-                    failed_dir = checkpoint_path.parent / "dg_failed"
-                    failed_dir.mkdir(parents=True, exist_ok=True)
-                    (failed_dir / f"{reg}.html").write_text(html, encoding="utf-8")
-                    logger.error(f"{reg}: {e} (page saved to {failed_dir / f'{reg}.html'})")
-                else:
-                    logger.error(f"{reg}: {e}")
                 bar.update(1, detail=f"{reg} {type(e).__name__}")
                 save_stats()
                 save_checkpoint_atomic(checkpoint_path, state)
                 processed += 1
                 live_snapshot(reg, type(e).__name__)
-                record_history(reg, "failed", reason, serial=serial_of(reg))
                 continue
             except Exception as e:
                 stats["failed"] += 1
@@ -907,7 +1022,6 @@ def run_fetch(
                 save_checkpoint_atomic(checkpoint_path, state)
                 processed += 1
                 live_snapshot(reg, "unexpected")
-                record_history(reg, "failed", "unexpected", serial=serial_of(reg))
                 continue
 
             if meta.get("attempts", 1) == 1:
@@ -921,15 +1035,11 @@ def run_fetch(
                 stats["failed"] += 1
                 reason = str(e)[:200] or type(e).__name__
                 _record_failure(state, stats, reg, reason, getattr(e, "terminal", False))
-                failed_dir = checkpoint_path.parent / "dg_failed"
-                failed_dir.mkdir(parents=True, exist_ok=True)
-                (failed_dir / f"{reg}.html").write_text(html, encoding="utf-8")
                 bar.update(1, detail=f"{reg} parse-fail")
                 save_stats()
                 save_checkpoint_atomic(checkpoint_path, state)
                 processed += 1
                 live_snapshot(reg, "parse-fail")
-                record_history(reg, "failed", reason, serial=serial_of(reg))
                 continue
 
             problems = validate_parsed(parsed)
@@ -942,10 +1052,6 @@ def run_fetch(
             if problems or not guard_ok:
                 extra = [f"guard:{n}" for n in guard_notes if not guard_ok]
                 reason = ";".join([*problems, *extra]) or "identity_mismatch"
-                append_jsonl(
-                    quarantine_path,
-                    {"registration_number": reg, "reason": reason, "parsed": parsed, "fetched_at": utcnow()},
-                )
                 state["quarantined"] = sorted(set(state.get("quarantined", [])) | {reg})
                 state["completed"] = sorted(set(state.get("completed", [])) | {reg})
                 stats["quarantined"] += 1
@@ -956,7 +1062,6 @@ def run_fetch(
                 processed += 1
                 live_snapshot(reg, f"quarantined:{reason}")
                 logger.warning(f"{reg}: quarantined ({reason})")
-                record_history(reg, "quarantined", reason, serial=serial_of(reg))
                 continue
 
             # L1 saves — raw snapshot first (re-parseable without re-fetch).
@@ -1011,6 +1116,9 @@ def run_fetch(
             )
 
     stats["finished_at"] = utcnow()
+    for fut in inflight.values():
+        fut.cancel()  # drop prefetches orphaned by STOP/gate breaks
+    ex.shutdown(wait=True)
     if sync_cloud:
         flush_supabase_batch()
         retry_deferred()
@@ -1018,7 +1126,7 @@ def run_fetch(
         stats["cloud_snapshot"] = sync_cloud_snapshot(out_jsonl, raw_dir, done_regs)
     save_stats()
     if push_r2:
-        paths = [out_jsonl, quarantine_path, stats_path, checkpoint_path]
+        paths = [out_jsonl, stats_path, checkpoint_path]
         push_dg_to_r2([p for p in paths if p.exists()])
     status = "stopped" if stats.get("stopped") else "finished"
     write_live(

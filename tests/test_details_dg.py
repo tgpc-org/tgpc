@@ -518,5 +518,172 @@ class LiveWatchTests(unittest.TestCase):
             self.assertNotIn("stopped", stats_d2)
 
 
+class WarpGateTests(unittest.TestCase):
+    def _paths(self, tmp):
+        d = Path(tmp)
+        return d / "o.jsonl", d / "r", d / "c.json", d / "s.json", d / "q.jsonl"
+
+    def _fetcher(self):
+        class FakeFetcher:
+            def fetch_one(self, reg, captcha_solver=None, max_captcha_attempts=1):
+                return DG_HTML.replace("TS003261", reg), {"captcha_text": "X", "attempts": 1, "ms": {}}
+
+        return FakeFetcher
+
+    def test_ensure_rotated_success_on_retry(self):
+        import tgpc.details_dg as dg
+
+        orig_cycle, orig_egress = dg.cycle_warp, dg.egress_ip
+        seen = {"n": 0}
+
+        def fake_cycle():
+            seen["n"] += 1
+            return True
+
+        dg.cycle_warp = fake_cycle
+        dg.egress_ip = lambda timeout=15: "B" if seen["n"] >= 2 else "A"
+        try:
+            ip, rotated = dg.ensure_rotated_ip("A", max_cycles=3)
+        finally:
+            dg.cycle_warp, dg.egress_ip = orig_cycle, orig_egress
+        self.assertTrue(rotated)
+        self.assertEqual(ip, "B")
+
+    def test_ensure_rotated_gives_up(self):
+        import tgpc.details_dg as dg
+
+        orig_cycle, orig_egress = dg.cycle_warp, dg.egress_ip
+        dg.cycle_warp = lambda: True
+        dg.egress_ip = lambda timeout=15: "A"
+        try:
+            ip, rotated = dg.ensure_rotated_ip("A", max_cycles=2)
+        finally:
+            dg.cycle_warp, dg.egress_ip = orig_cycle, orig_egress
+        self.assertFalse(rotated)
+        self.assertEqual(ip, "A")
+
+    def test_gate_halts_when_unrotated(self):
+        import tgpc.details_dg as dg
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out, raw, cp, stats, quar = self._paths(tmp)
+            orig_avail, orig_egress, orig_ensure = dg.warp_available, dg.egress_ip, dg.ensure_rotated_ip
+            dg.warp_available = lambda: True
+            dg.egress_ip = lambda timeout=15: "A"
+            dg.ensure_rotated_ip = lambda prev, max_cycles=3: ("A", False)
+            try:
+                stats_d = run_fetch(
+                    ["TS711", "TS712", "TS713"],
+                    out,
+                    raw,
+                    cp,
+                    stats,
+                    quar,
+                    resume=False,
+                    warp_rotate_every=2,
+                    fetcher_factory=self._fetcher(),
+                )
+            finally:
+                dg.warp_available, dg.egress_ip = orig_avail, orig_egress
+                dg.ensure_rotated_ip = orig_ensure
+            self.assertTrue(stats_d.get("stopped"))
+            self.assertEqual(stats_d.get("stop_reason"), "ip_rotation_failed")
+            self.assertEqual(stats_d["done"], 2)  # gate fires before 3rd (cumulative 2)
+
+    def test_gate_passes_when_rotated(self):
+        import tgpc.details_dg as dg
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out, raw, cp, stats, quar = self._paths(tmp)
+            orig_avail, orig_egress, orig_ensure = dg.warp_available, dg.egress_ip, dg.ensure_rotated_ip
+            dg.warp_available = lambda: True
+            dg.egress_ip = lambda timeout=15: "A"
+            dg.ensure_rotated_ip = lambda prev, max_cycles=3: ("B", True)
+            try:
+                stats_d = run_fetch(
+                    ["TS721", "TS722", "TS723"],
+                    out,
+                    raw,
+                    cp,
+                    stats,
+                    quar,
+                    resume=False,
+                    warp_rotate_every=2,
+                    fetcher_factory=self._fetcher(),
+                )
+            finally:
+                dg.warp_available, dg.egress_ip = orig_avail, orig_egress
+                dg.ensure_rotated_ip = orig_ensure
+            self.assertEqual(stats_d["done"], 3)
+            self.assertEqual(stats_d.get("warp_rotations"), 1)  # fired once before 3rd (cumulative 2)
+            self.assertNotIn("stopped", stats_d)
+
+    def test_gate_counts_across_resumed_runs(self):
+        import tgpc.details_dg as dg
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out, raw, cp, stats, quar = (
+                Path(tmp) / "o.jsonl",
+                Path(tmp) / "r",
+                Path(tmp) / "c.json",
+                Path(tmp) / "s.json",
+                Path(tmp) / "q.jsonl",
+            )
+            # Two regs done in a previous run; gate every=2 must fire before the
+            # very first new record (cumulative already sits on a multiple).
+            save_checkpoint_atomic(
+                cp, {"completed": ["TS700", "TS701"], "failed": {}, "failed_terminal": {}, "quarantined": []}
+            )
+
+            class FakeFetcher:
+                def fetch_one(self, reg, captcha_solver=None, max_captcha_attempts=1):
+                    return DG_HTML.replace("TS003261", reg), {"captcha_text": "X", "attempts": 1, "ms": {}}
+
+            orig_avail, orig_egress, orig_ensure = dg.warp_available, dg.egress_ip, dg.ensure_rotated_ip
+            dg.warp_available = lambda: True
+            dg.egress_ip = lambda timeout=15: "A"
+            dg.ensure_rotated_ip = lambda prev, max_cycles=3: ("B", True)
+            try:
+                stats_d = run_fetch(
+                    ["TS700", "TS701", "TS702"],
+                    out,
+                    raw,
+                    cp,
+                    stats,
+                    quar,
+                    resume=True,
+                    warp_rotate_every=2,
+                    fetcher_factory=FakeFetcher,
+                )
+            finally:
+                dg.warp_available, dg.egress_ip = orig_avail, orig_egress
+                dg.ensure_rotated_ip = orig_ensure
+            self.assertEqual(stats_d["done"], 1)
+            self.assertEqual(stats_d.get("warp_rotations"), 1)
+
+    def test_gate_refuses_without_warp(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out, raw, cp, stats, quar = self._paths(tmp)
+            import tgpc.details_dg as dg
+
+            orig_avail = dg.warp_available
+            dg.warp_available = lambda: False
+            try:
+                with self.assertRaises(ValueError):
+                    run_fetch(
+                        ["TS731"],
+                        out,
+                        raw,
+                        cp,
+                        stats,
+                        quar,
+                        resume=False,
+                        warp_rotate_every=5,
+                        fetcher_factory=self._fetcher(),
+                    )
+            finally:
+                dg.warp_available = orig_avail
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -28,6 +28,9 @@ python3 scripts/dg_dashboard.py --port 8765               # live monitor → htt
 python3 scripts/dg_captcha_bench.py --n 12                # OCR accuracy bench
 touch data/dg_stop                                        # halt after current record
 ```
+Dashboard START button (`POST /api/start`, count default 500) launches the
+next batch itself: retryable failures first, then fresh IDs in serial order,
+`--sync-cloud` on, one run at a time (second press refused while active).
 
 ## Code map
 
@@ -61,6 +64,10 @@ Storage `tgpc/dg_contacts.jsonl`. Local is a ≤50-record crash buffer only.
 
 ## Hard rules (from production incidents)
 
+* Single-try policy (primary objective: save whatever is available): one
+  captcha attempt + one shot per HTTP call, no in-run retry loops. Misses land
+  in checkpoint as transient failures for a later run. Tune via
+  `--max-captcha-attempts` (default 1) only if deliberately overriding.
 * Supabase writes go to `rph_dg_contacts` only — no DG code path may touch `rph`.
 * `sync_cloud` requires `rph.json` reference (fail-closed, no orphan rows).
 * Unknown/guard-failing rows → quarantine, never silent overwrite.
@@ -72,6 +79,9 @@ Storage `tgpc/dg_contacts.jsonl`. Local is a ≤50-record crash buffer only.
 * Tests must mock ALL cloud seams (`upsert_dg_batch`, `sync_cloud_snapshot`,
   `push_file_to_r2`) — an unmocked seam once overwrote R2's rolling snapshot.
 * Block markers exclude `"captcha"` (DG form pages mention it legitimately).
+* WARP reconnect does NOT rotate egress IP here (verified: same IP across
+  reconnect). `--warp-rotate-every N` requires a *verified different* IP every
+  N records and halts (`ip_rotation_failed`) instead of proceeding unrotated.
 * No commits without explicit ask (repo rule); `data/` never enters git.
 
 ## Yield reference (legacy serials)

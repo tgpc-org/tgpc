@@ -172,9 +172,9 @@ def main():
     fetch_dg_parser.add_argument("--stats", default="data/dg_stats.json")
     fetch_dg_parser.add_argument("--quarantine", default="data/dg_quarantine.jsonl")
     fetch_dg_parser.add_argument("--reference", default="data/rph.json", help="rph.json for identity guard")
-    fetch_dg_parser.add_argument("--workers", type=int, default=1, help="Slice 1 supports 1 only")
+    fetch_dg_parser.add_argument("--workers", type=int, default=1, help="1 or 2 fetch threads (politeness cap)")
     fetch_dg_parser.add_argument("--min-delay", type=float, default=3.0)
-    fetch_dg_parser.add_argument("--max-captcha-attempts", type=int, default=3)
+    fetch_dg_parser.add_argument("--max-captcha-attempts", type=int, default=1)
     fetch_dg_parser.add_argument("--no-resume", action="store_true", help="Ignore existing checkpoint")
     fetch_dg_parser.add_argument(
         "--retry-terminal", action="store_true", help="Re-attempt terminal failures (not-authorized/not-found)"
@@ -190,6 +190,15 @@ def main():
     )
     fetch_dg_parser.add_argument("--sync-every", type=int, default=50, help="Supabase batch size for --sync-cloud")
     fetch_dg_parser.add_argument("--max-records", type=int, default=None, help="Stop after N newly processed records")
+    fetch_dg_parser.add_argument(
+        "--warp-rotate-every",
+        type=int,
+        default=0,
+        help="Verified new egress IP every N records (0=off); halts if IP won't rotate",
+    )
+    fetch_dg_parser.add_argument(
+        "--warp-max-cycles", type=int, default=3, help="WARP reconnect tries per rotation gate"
+    )
 
     # Quota command
     subparsers.add_parser("quota", help="Show free quota usage for all services")
@@ -355,6 +364,8 @@ def main():
                 sync_cloud=args.sync_cloud,
                 sync_every=args.sync_every,
                 max_records=args.max_records,
+                warp_rotate_every=args.warp_rotate_every,
+                warp_max_cycles=args.warp_max_cycles,
             )
         print(json.dumps(stats, indent=2))
     elif args.command == "quota":
