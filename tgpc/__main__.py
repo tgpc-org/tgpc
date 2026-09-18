@@ -173,6 +173,35 @@ def main():
     # Retry-photos command
     subparsers.add_parser("retry-photos", help="Retry uploading failed photos from data/webp/ to R2")
 
+    # Fetch-dg command (getdetailsdg captcha flow: capture + save contact details)
+    fetch_dg_parser = subparsers.add_parser("fetch-dg", help="Fetch getdetailsdg records with captcha")
+    fetch_dg_parser.add_argument("--ids", nargs="*", default=[], help="Registration IDs (e.g. TS003261)")
+    fetch_dg_parser.add_argument("--ids-file", default=None, help="File with one reg ID per line")
+    fetch_dg_parser.add_argument("--out", default="data/dg_contacts.jsonl", help="Streamlined jsonl output")
+    fetch_dg_parser.add_argument("--raw-dir", default="data/dg_raw", help="Per-record raw snapshot dir")
+    fetch_dg_parser.add_argument("--checkpoint", default="data/dg_fetch_checkpoint.json")
+    fetch_dg_parser.add_argument("--stats", default="data/dg_stats.json")
+    fetch_dg_parser.add_argument("--quarantine", default="data/dg_quarantine.jsonl")
+    fetch_dg_parser.add_argument("--reference", default="data/rph.json", help="rph.json for identity guard")
+    fetch_dg_parser.add_argument("--workers", type=int, default=1, help="Slice 1 supports 1 only")
+    fetch_dg_parser.add_argument("--min-delay", type=float, default=3.0)
+    fetch_dg_parser.add_argument("--max-captcha-attempts", type=int, default=3)
+    fetch_dg_parser.add_argument("--no-resume", action="store_true", help="Ignore existing checkpoint")
+    fetch_dg_parser.add_argument(
+        "--retry-terminal", action="store_true", help="Re-attempt terminal failures (not-authorized/not-found)"
+    )
+    fetch_dg_parser.add_argument(
+        "--captcha", choices=["auto", "manual"], default="auto", help="auto=OCR, manual=prompt per record"
+    )
+    fetch_dg_parser.add_argument("--push-r2", action="store_true", help="Best-effort R2 push of artifacts")
+    fetch_dg_parser.add_argument(
+        "--sync-cloud",
+        action="store_true",
+        help="Upsert to rph_dg_contacts + push R2/GDrive/SB snapshots (needs dg_migration.sql)",
+    )
+    fetch_dg_parser.add_argument("--sync-every", type=int, default=50, help="Supabase batch size for --sync-cloud")
+    fetch_dg_parser.add_argument("--max-records", type=int, default=None, help="Stop after N newly processed records")
+
     # Quota command
     subparsers.add_parser("quota", help="Show free quota usage for all services")
 
@@ -210,7 +239,7 @@ def main():
 
     # Connect WARP for network-level routing (update and sync hit external services)
     global _warp_connected_by_us
-    if args.command in ("update", "sync", "enrich", "retry-photos"):
+    if args.command in ("update", "sync", "enrich", "retry-photos", "fetch-dg"):
         atexit.register(_warp_ensure_disconnected)
         _warp_connected_by_us = _warp_connect()
 
@@ -278,6 +307,67 @@ def main():
     elif args.command == "retry-photos":
         with Phase("Retry failed photos", 1, 1):
             manager.retry_photos()
+    elif args.command == "fetch-dg":
+        import json
+        from pathlib import Path
+
+        from tgpc.details_dg import CaptchaNeeded, run_fetch
+        from tgpc.utils import load_credentials
+
+        load_credentials()  # keychain -> env (R2/GDrive/Supabase), same as Manager
+
+        ids = list(args.ids or [])
+        if args.ids_file:
+            ids += [ln.strip() for ln in Path(args.ids_file).read_text().splitlines() if ln.strip()]
+        if not ids:
+            print("fetch-dg: no IDs (pass --ids or --ids-file)", file=sys.stderr)
+            raise SystemExit(2)
+        reference = None
+        ref_path = Path(args.reference)
+        if ref_path.exists():
+            try:
+                rows = json.loads(ref_path.read_text())
+                reference = {r.get("registration_number", "").upper(): r for r in rows if r.get("registration_number")}
+                print(f"fetch-dg: identity guard vs {len(reference)} reference rows")
+            except Exception as e:
+                print(f"fetch-dg: ignoring unreadable reference ({e})", file=sys.stderr)
+        solver = None
+        if args.captcha == "manual":
+
+            def solver(image_bytes: bytes) -> str:  # noqa: F811
+                tmp = Path("data/dg_captcha_tmp.jpg")
+                tmp.parent.mkdir(parents=True, exist_ok=True)
+                tmp.write_bytes(image_bytes)
+                try:
+                    code = input(f"Captcha saved to {tmp} — enter code: ")
+                except EOFError as e:
+                    raise CaptchaNeeded("no TTY for manual captcha") from e
+                code = "".join(code.split()).upper()
+                if not code:
+                    raise CaptchaNeeded("empty manual captcha")
+                return code
+
+        with Phase(f"Fetch {len(ids)} getdetailsdg record(s)", 1, 1):
+            stats = run_fetch(
+                ids,
+                out_jsonl=Path(args.out),
+                raw_dir=Path(args.raw_dir),
+                checkpoint_path=Path(args.checkpoint),
+                stats_path=Path(args.stats),
+                quarantine_path=Path(args.quarantine),
+                reference=reference,
+                workers=args.workers,
+                min_delay=args.min_delay,
+                max_captcha_attempts=args.max_captcha_attempts,
+                resume=not args.no_resume,
+                retry_terminal=args.retry_terminal,
+                captcha_solver=solver,
+                push_r2=args.push_r2,
+                sync_cloud=args.sync_cloud,
+                sync_every=args.sync_every,
+                max_records=args.max_records,
+            )
+        print(json.dumps(stats, indent=2))
     elif args.command == "quota":
         with Phase("Show service quotas", 1, 1):
             show_quotas()

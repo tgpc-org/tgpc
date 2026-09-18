@@ -292,6 +292,17 @@ CREATE TABLE rph (
   photo_url TEXT               -- R2 public URL, only set after a verified upload
 );
 
+-- DG contact details live in a SEPARATE table (never new columns on rph,
+-- so DG writes cannot touch base rows; migration: tgpc/dg_migration.sql):
+-- CREATE TABLE rph_dg_contacts (
+--   registration_number TEXT PRIMARY KEY,  -- 1:1 with rph, no FK (DG must not block rph deletes)
+--   serial_number TEXT,                    -- tracker from rph (human-friendly ordering)
+--   dob TEXT, date_of_registration TEXT, renewal_validity TEXT,  -- verbatim DD-MM-YYYY
+--   home_address TEXT, home_state TEXT,
+--   work_study_address TEXT, work_study_state TEXT,
+--   mobile_no TEXT, email_id TEXT, dg_fetched_at TIMESTAMPTZ
+-- );  -- anon SELECT-only RLS, same posture as rph
+
 CREATE TABLE metadata (
   key TEXT PRIMARY KEY,
   value TEXT
