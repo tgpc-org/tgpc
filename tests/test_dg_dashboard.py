@@ -66,6 +66,13 @@ class DashboardTests(unittest.TestCase):
             (Path(tmp) / "dg_stop").write_text("")
             self.assertTrue(build_status(Path(tmp))["stop_armed"])
 
+    def test_theme_toggle_wired(self):
+        from scripts.dg_dashboard import PAGE
+
+        html = PAGE.read_text(encoding="utf-8")
+        for needle in ('id="theme-toggle"', "toggleTheme()", "dg-theme", 'data-theme="dark"', "prefers-color-scheme"):
+            self.assertIn(needle, html)
+
     def test_tail(self):
         with tempfile.TemporaryDirectory() as tmp:
             p = Path(tmp) / "dg_fetch.log"

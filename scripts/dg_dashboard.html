@@ -6,8 +6,19 @@
 <title>DG Fetch — Live</title>
 <style>
   :root { color-scheme: light; }
-  body { font-family: system-ui, -apple-system, sans-serif; margin: 0; background: #f9fafb; color: #111827; }
+  :root, [data-theme="light"] {
+    --bg: #f9fafb; --card: #ffffff; --border: #e5e7eb;
+    --ink: #111827; --ink-soft: #374151; --muted: #9ca3af; --log-border: #111827;
+  }
+  [data-theme="dark"] {
+    --bg: #111827; --card: #374151; --border: #6b7280;
+    --ink: #ffffff; --ink-soft: #e5e7eb; --muted: #9ca3af; --log-border: #6b7280;
+  }
+  body { font-family: system-ui, -apple-system, sans-serif; margin: 0; background: var(--bg); color: var(--ink); }
   header { background: #111827; color: #ffffff; padding: 12px 20px; display: flex; align-items: center; gap: 12px; }
+  header .spacer { flex: 1; }
+  #theme-toggle { background: transparent; border: 1px solid #6b7280; color: #ffffff; border-radius: 6px;
+                  padding: 6px 12px; font-size: 13px; cursor: pointer; }
   header .dot { width: 12px; height: 12px; border-radius: 50%; background: #9ca3af; }
   header .dot.running { background: #00cc66; }
   header .dot.stopped { background: #ef4444; }
@@ -15,10 +26,10 @@
   header h1 span { color: #9ca3af; font-weight: 400; }
   main { max-width: 900px; margin: 0 auto; padding: 16px 20px 40px; }
   .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 14px; }
-  .card { background: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px 12px; }
-  .card .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: #9ca3af; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+  .card .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
   .card .value { font-size: 22px; font-weight: 700; margin-top: 2px; }
-  .green { color: #00cc66; } .red { color: #ef4444; } .blue { color: #2563eb; } .muted { color: #6b7280; }
+  .green { color: #00cc66; } .red { color: #ef4444; } .blue { color: #2563eb; } .muted { color: var(--muted); }
   .bar-wrap { background: #e5e7eb; border-radius: 6px; height: 14px; overflow: hidden; margin: 4px 0 14px; }
   .bar { background: #00cc66; height: 100%; width: 0%; transition: width 0.5s; }
   .row { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
@@ -26,16 +37,20 @@
   .current b { color: #2563eb; }
   button { background: #ef4444; color: #ffffff; border: 0; border-radius: 6px; padding: 8px 16px; font-size: 14px; cursor: pointer; }
   button:disabled { background: #9ca3af; cursor: default; }
-  pre { background: #111827; color: #e5e7eb; border-radius: 8px; padding: 12px; font-size: 12px; line-height: 1.5;
+  pre { background: #111827; color: #e5e7eb; border: 1px solid var(--log-border); border-radius: 8px;
+        padding: 12px; font-size: 12px; line-height: 1.5;
         max-height: 320px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }
-  .reasons { font-size: 13px; color: #374151; }
-  footer { font-size: 12px; color: #9ca3af; margin-top: 10px; }
+  .reasons { font-size: 13px; color: var(--ink-soft); }
+  h3 { color: var(--ink); }
+  footer { font-size: 12px; color: var(--muted); margin-top: 10px; }
 </style>
 </head>
 <body>
 <header>
   <div class="dot" id="dot"></div>
   <h1>DG Fetch <span>— live extraction monitor</span></h1>
+  <div class="spacer"></div>
+  <button id="theme-toggle" onclick="toggleTheme()">Dark</button>
 </header>
 <main>
   <div class="row">
@@ -61,6 +76,23 @@
   <footer id="updated"></footer>
 </main>
 <script>
+function applyTheme(name) {
+  document.documentElement.setAttribute('data-theme', name);
+  try { localStorage.setItem('dg-theme', name); } catch (e) {}
+  document.getElementById('theme-toggle').textContent = name === 'dark' ? 'Light' : 'Dark';
+}
+function toggleTheme() {
+  const cur = document.documentElement.getAttribute('data-theme') || 'light';
+  applyTheme(cur === 'dark' ? 'light' : 'dark');
+}
+(function initTheme() {
+  let saved = null;
+  try { saved = localStorage.getItem('dg-theme'); } catch (e) {}
+  if (saved !== 'dark' && saved !== 'light') {
+    saved = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+  }
+  applyTheme(saved);
+})();
 async function refresh() {
   try {
     const s = await (await fetch('/api/status')).json();
