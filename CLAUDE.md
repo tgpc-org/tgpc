@@ -1,4 +1,5 @@
 # CLAUDE.md — Quick Context for Claude Code
+<!-- DG pipeline: see DG_PIPELINE.md (getdetailsdg captcha capture; fetch-dg CLI; dashboard :8765) -->
 
 ## Project
 
@@ -19,7 +20,7 @@ cd ui && npm run lint    # ESLint (0 errors required)
 cd ui && npm run check:colors  # Brand-color gate (0 offenders)
 
 # Tests
-python3 -m pytest tests/ -v   # Python tests (71 tests)
+python3 -m pytest tests/ -v   # Python tests (101 tests)
 cd ui && npm run test:unit    # Frontend unit tests (18 tests)
 ```
 

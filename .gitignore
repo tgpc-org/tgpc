@@ -32,6 +32,17 @@ data/webp/
 data/progress/
 data/update_details.json
 data/*.jsonl
+# DG captcha-flow artifacts (per-record snapshots — redundant in R2/Supabase, never in git)
+data/dg_raw/
+data/dg_failed/
+data/dg_fetch_checkpoint.json
+data/dg_stats.json
+data/dg_ids_*.txt
+data/dg_captcha_tmp.jpg
+data/dg_captcha_bench/
+data/dg_live.json
+data/dg_fetch.log
+data/dg_stop
 *.backup
 *.bak
 *.tmp

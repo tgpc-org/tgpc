@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DG Fetch — Live</title>
+<style>
+  :root { color-scheme: light; }
+  :root, [data-theme="light"] {
+    --bg: #f9fafb; --card: #ffffff; --border: #e5e7eb;
+    --ink: #111827; --ink-soft: #374151; --muted: #9ca3af; --log-border: #111827;
+  }
+  [data-theme="dark"] {
+    --bg: #111827; --card: #374151; --border: #6b7280;
+    --ink: #ffffff; --ink-soft: #e5e7eb; --muted: #9ca3af; --log-border: #6b7280;
+  }
+  body { font-family: system-ui, -apple-system, sans-serif; margin: 0; background: var(--bg); color: var(--ink); }
+  header { background: #111827; color: #ffffff; padding: 12px 20px; display: flex; align-items: center; gap: 12px; }
+  header .spacer { flex: 1; }
+  #theme-toggle { background: transparent; border: 1px solid #6b7280; color: #ffffff; border-radius: 6px;
+                  padding: 6px 12px; font-size: 13px; cursor: pointer; }
+  header .dot { width: 12px; height: 12px; border-radius: 50%; background: #9ca3af; }
+  header .dot.running { background: #00cc66; }
+  header .dot.stopped { background: #ef4444; }
+  header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+  header h1 span { color: #9ca3af; font-weight: 400; }
+  main { max-width: 900px; margin: 0 auto; padding: 16px 20px 40px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 14px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+  .card .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+  .card .value { font-size: 22px; font-weight: 700; margin-top: 2px; }
+  .green { color: #00cc66; } .red { color: #ef4444; } .blue { color: #2563eb; } .muted { color: var(--muted); }
+  .bar-wrap { background: #e5e7eb; border-radius: 6px; height: 14px; overflow: hidden; margin: 4px 0 14px; }
+  .bar { background: #00cc66; height: 100%; width: 0%; transition: width 0.5s; }
+  .row { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
+  .current { font-size: 15px; }
+  .current b { color: #2563eb; }
+  button { background: #ef4444; color: #ffffff; border: 0; border-radius: 6px; padding: 8px 16px; font-size: 14px; cursor: pointer; }
+  button:disabled { background: #9ca3af; cursor: default; }
+  pre { background: #111827; color: #e5e7eb; border: 1px solid var(--log-border); border-radius: 8px;
+        padding: 12px; font-size: 12px; line-height: 1.5;
+        max-height: 320px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }
+  .reasons { font-size: 13px; color: var(--ink-soft); }
+  h3 { color: var(--ink); }
+  footer { font-size: 12px; color: var(--muted); margin-top: 10px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="dot" id="dot"></div>
+  <h1>DG Fetch <span>— live extraction monitor</span></h1>
+  <div class="spacer"></div>
+  <button id="theme-toggle" onclick="toggleTheme()">Dark</button>
+</header>
+<main>
+  <div class="row">
+    <div class="current">Current: <b id="current">—</b> <span class="muted" id="event"></span></div>
+  </div>
+  <div class="bar-wrap"><div class="bar" id="bar"></div></div>
+  <div class="row"><span class="muted" id="alltime"></span></div>
+  <div class="cards">
+    <div class="card"><div class="label">Done</div><div class="value green" id="done">0</div></div>
+    <div class="card"><div class="label">Failed</div><div class="value red" id="failed">0</div></div>
+    <div class="card"><div class="label">Quarantined</div><div class="value" id="quar">0</div></div>
+    <div class="card"><div class="label">Supabase rows</div><div class="value blue" id="sb">0</div></div>
+    <div class="card"><div class="label">Rate / min</div><div class="value" id="rate">—</div></div>
+    <div class="card"><div class="label">ETA min</div><div class="value" id="eta">—</div></div>
+  </div>
+  <div class="row">
+    <button id="stop" onclick="stopRun()">STOP after current record</button>
+    <span class="muted" id="stopmsg"></span>
+  </div>
+  <div class="reasons" id="reasons"></div>
+  <h3>Live log</h3>
+  <pre id="log">waiting for run…</pre>
+  <footer id="updated"></footer>
+</main>
+<script>
+function applyTheme(name) {
+  document.documentElement.setAttribute('data-theme', name);
+  try { localStorage.setItem('dg-theme', name); } catch (e) {}
+  document.getElementById('theme-toggle').textContent = name === 'dark' ? 'Light' : 'Dark';
+}
+function toggleTheme() {
+  const cur = document.documentElement.getAttribute('data-theme') || 'light';
+  applyTheme(cur === 'dark' ? 'light' : 'dark');
+}
+(function initTheme() {
+  let saved = null;
+  try { saved = localStorage.getItem('dg-theme'); } catch (e) {}
+  if (saved !== 'dark' && saved !== 'light') {
+    saved = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+  }
+  applyTheme(saved);
+})();
+async function refresh() {
+  try {
+    const s = await (await fetch('/api/status')).json();
+    const dot = document.getElementById('dot');
+    dot.className = 'dot ' + (s.status === 'running' ? 'running' : s.status === 'stopped' ? 'stopped' : '');
+    document.getElementById('current').textContent =
+      s.current_reg ? s.current_reg + (s.serial_number != null ? ' (#' + s.serial_number + ')' : '') : '—';
+    document.getElementById('event').textContent = s.event || '';
+    document.getElementById('done').textContent = s.done;
+    document.getElementById('failed').textContent = s.failed;
+    document.getElementById('quar').textContent = s.quarantined;
+    document.getElementById('sb').textContent = s.sb_upserted;
+    document.getElementById('rate').textContent = s.records_per_min ?? '—';
+    document.getElementById('eta').textContent = s.eta_mins ?? '—';
+    const pct = s.total ? Math.round(100 * s.processed / s.total) : 0;
+    document.getElementById('bar').style.width = pct + '%';
+    const at = s.all_time || {};
+    document.getElementById('alltime').textContent =
+      'All time: ' + (at.saved || 0) + ' saved · ' + (at.failed || 0) + ' failed · ' +
+      (at.quarantined || 0) + ' quarantined (' + (s.history_records || 0) + ' records remembered)';
+    const reasons = Object.entries(s.fail_by_reason || {}).map(([k, v]) => k + ': ' + v).join(' · ');
+    document.getElementById('reasons').textContent = reasons;
+    document.getElementById('updated').textContent = 'updated ' + (s.updated_at || '—') +
+      ' · checkpoint: ' + s.completed + ' done, ' + s.terminal + ' terminal';
+    const stopBtn = document.getElementById('stop');
+    if (s.stop_armed) { stopBtn.disabled = true; document.getElementById('stopmsg').textContent = 'stop armed…'; }
+    else { stopBtn.disabled = s.status !== 'running'; document.getElementById('stopmsg').textContent = ''; }
+    const lines = await (await fetch('/api/log')).json();
+    const pre = document.getElementById('log');
+    pre.textContent = lines.join('\n') || 'waiting for run…';
+    pre.scrollTop = pre.scrollHeight;
+  } catch (e) { /* server restarting? retry next tick */ }
+}
+async function stopRun() {
+  if (!confirm('Stop after the current record? Checkpoint stays safe.')) return;
+  await fetch('/api/stop', {method: 'POST'});
+  refresh();
+}
+setInterval(refresh, 2000);
+refresh();
+</script>
+</body>
+</html>
