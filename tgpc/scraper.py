@@ -7,6 +7,7 @@ import time
 import random
 import re
 import ssl
+from urllib.parse import urlparse
 from pathlib import Path
 from typing import List, Dict, Optional
 from dataclasses import dataclass
@@ -392,17 +393,26 @@ class Scraper:
                 elif src.startswith("/") or src.startswith("http"):
                     try:
                         photo_url = src if src.startswith("http") else f"{self.config.base_url}{src}"
+                        parsed = urlparse(photo_url)
+                        base_parsed = urlparse(self.config.base_url)
+                        if parsed.scheme not in ("http", "https"):
+                            raise ValueError(f"Unsupported scheme in photo URL: {parsed.scheme}")
+                        if parsed.hostname and parsed.hostname != base_parsed.hostname:
+                            raise ValueError(f"External host in photo URL: {parsed.hostname}")
+                        if parsed.path and ".." in parsed.path.split("/"):
+                            raise ValueError(f"Path traversal in photo URL: {parsed.path}")
                         photo_response = self._request("GET", photo_url)
                         if photo_response.status_code == 200:
                             image_bytes = photo_response.content
                     except Exception as e:
                         logger.warning(f"Failed to download photo from {src}: {e}")
 
-                if image_bytes and len(image_bytes) > 100:
+                if image_bytes and 100 < len(image_bytes) <= 10_000_000:
                     step(f"processing photo for {reg_no}")
                     try:
                         from PIL import Image, ImageOps
 
+                        Image.MAX_IMAGE_PIXELS = 25_000_000
                         im = Image.open(BytesIO(image_bytes))
 
                         # Animated? Grab first frame only

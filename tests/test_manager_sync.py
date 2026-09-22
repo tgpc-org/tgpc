@@ -96,20 +96,22 @@ class SyncToR2Tests(unittest.TestCase):
             manager = make_manager(temp_dir)
             manager.file_manager.save([record("RPH001")])
             with patch("tgpc.manager.os.environ", self._env()):
-                result = MagicMock(returncode=0)
-                with patch("tgpc.manager.subprocess.run", return_value=result) as run:
+                with patch("tgpc.manager.R2Client") as mock_r2_cls:
+                    mock_client = MagicMock()
+                    mock_r2_cls.return_value = mock_client
                     self.assertTrue(manager.sync_to_r2())
-                    args = run.call_args.args[0]
-                    self.assertEqual(args[:4], ["aws", "s3api", "put-object", "--endpoint-url"])
-                    self.assertEqual(args[args.index("--key") + 1], "rph.json")
+                    mock_client.put_object.assert_called_once()
+                    self.assertEqual(mock_client.put_object.call_args[0][0], "rph.json")
 
-    def test_returns_false_when_aws_fails(self):
+    def test_returns_false_when_r2_fails(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             manager = make_manager(temp_dir)
             manager.file_manager.save([record("RPH001")])
             with patch("tgpc.manager.os.environ", self._env()):
-                result = MagicMock(returncode=1, stderr="boom")
-                with patch("tgpc.manager.subprocess.run", return_value=result):
+                with patch("tgpc.manager.R2Client") as mock_r2_cls:
+                    mock_client = MagicMock()
+                    mock_client.put_object.side_effect = Exception("boom")
+                    mock_r2_cls.return_value = mock_client
                     self.assertFalse(manager.sync_to_r2())
 
 

@@ -168,6 +168,9 @@ def solve_captcha(image_bytes: bytes) -> str:
         raise CaptchaNeeded("Pillow not installed") from e
 
     whitelist = " -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+    if not image_bytes or len(image_bytes) > 1_000_000:
+        raise DgDetailError("Invalid CAPTCHA image size")
+    Image.MAX_IMAGE_PIXELS = 1_000_000
     base = Image.open(BytesIO(image_bytes)).convert("L")
     votes = []
     # Threshold 180 won the bench 10/12 (2026-09-17); pooling other
@@ -613,39 +616,24 @@ def push_file_to_r2(local_path: Path, key: str) -> bool:
         logger.warning("R2 credentials missing — skipping R2 push (L1 local retained)")
         return False
     endpoint = f"https://{account}.r2.cloudflarestorage.com"
-    env = {**os.environ, "AWS_ACCESS_KEY_ID": access_key or "", "AWS_SECRET_ACCESS_KEY": secret_key or ""}
     try:
-        result = subprocess.run(
-            [
-                "aws",
-                "s3api",
-                "put-object",
-                "--endpoint-url",
-                endpoint,
-                "--region",
-                "auto",
-                "--bucket",
-                "tgpc",
-                "--key",
-                key,
-                "--body",
-                str(local_path),
-            ],
-            capture_output=True,
-            text=True,
-            timeout=120,
-            env=env,
+        import boto3
+        from botocore.config import Config as BotocoreConfig
+
+        client = boto3.client(
+            "s3",
+            endpoint_url=endpoint,
+            region_name="auto",
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_key,
+            config=BotocoreConfig(signature_version="s3v4"),
         )
-    except FileNotFoundError:
-        logger.error("aws CLI not found — skipping R2 push")
-        return False
+        with open(local_path, "rb") as f:
+            client.put_object(Bucket="tgpc", Key=key, Body=f)
+        return True
     except Exception as e:
         logger.error(f"R2 push error for {key}: {e}")
         return False
-    if result.returncode != 0:
-        logger.error(f"R2 push failed for {key}: {result.stderr.strip()}")
-        return False
-    return True
 
 
 def push_dg_to_gdrive(local_path: Path, remote_name: str) -> bool:

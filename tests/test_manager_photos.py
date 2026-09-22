@@ -6,7 +6,6 @@ per-record error isolation inside a batch, `retry_photos`, and the
 `upload_and_verify_photo` retry contract.
 """
 
-import json
 import sys
 import tempfile
 import unittest
@@ -206,20 +205,30 @@ class PhotoPathTests(unittest.TestCase):
 
     # --- _verify_photo_on_r2 size check -------------------------------
 
-    @patch("tgpc.manager.os.environ", {"CLOUDFLARE_ACCOUNT_ID": "acct"})
+    @patch(
+        "tgpc.manager.os.environ",
+        {"CLOUDFLARE_ACCOUNT_ID": "acct", "R2_ACCESS_KEY_ID": "k", "R2_SECRET_ACCESS_KEY": "s"},
+    )
     def test_verify_accepts_matching_size(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             manager = self._make_manager(temp_dir)
-            head = MagicMock(returncode=0, stdout=json.dumps({"ContentLength": 123}))
-            with patch("tgpc.manager.subprocess.run", return_value=head):
+            with patch("tgpc.manager.R2Client") as mock_r2_cls:
+                mock_client = MagicMock()
+                mock_client.head_object.return_value = {"ContentLength": 123}
+                mock_r2_cls.return_value = mock_client
                 self.assertTrue(manager._verify_photo_on_r2("photos/a.webp", 123))
 
-    @patch("tgpc.manager.os.environ", {"CLOUDFLARE_ACCOUNT_ID": "acct"})
+    @patch(
+        "tgpc.manager.os.environ",
+        {"CLOUDFLARE_ACCOUNT_ID": "acct", "R2_ACCESS_KEY_ID": "k", "R2_SECRET_ACCESS_KEY": "s"},
+    )
     def test_verify_rejects_size_mismatch(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             manager = self._make_manager(temp_dir)
-            head = MagicMock(returncode=0, stdout=json.dumps({"ContentLength": 456}))
-            with patch("tgpc.manager.subprocess.run", return_value=head):
+            with patch("tgpc.manager.R2Client") as mock_r2_cls:
+                mock_client = MagicMock()
+                mock_client.head_object.return_value = {"ContentLength": 456}
+                mock_r2_cls.return_value = mock_client
                 self.assertFalse(manager._verify_photo_on_r2("photos/a.webp", 123))
 
     # --- retry_photos --------------------------------------------------

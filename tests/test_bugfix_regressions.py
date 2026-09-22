@@ -6,7 +6,6 @@ DetailError vs genuine absence, WARP pre-existing connection, exact-count
 save validation.
 """
 
-import json
 import os
 import sys
 import tempfile
@@ -88,29 +87,31 @@ class RestoreTests(unittest.TestCase):
             manager.file_manager.save([])
             before = (Path(temp_dir) / "rph.json").read_text()
 
-            def fake_run(*args, **kwargs):
-                cmd = args[0]
-                if "get-object" in cmd:
-                    # Simulate a truncated/HTML error page download (>100 bytes).
-                    dest = Path(cmd[-1])
-                    dest.write_text("<html>error</html>" * 20)
-                    return MagicMock(returncode=0, stdout="", stderr="")
-                if "list-objects-v2" in cmd:
-                    payload = {
-                        "Contents": [
-                            {
-                                "Key": "backups/rph_backup_20200101_000000.json",
-                                "LastModified": "2020-01-01",
-                                "Size": 5000,
-                            }
-                        ]
-                    }
-                    return MagicMock(returncode=0, stdout=json.dumps(payload), stderr="")
-                raise AssertionError(f"unexpected aws call: {cmd}")
+            def fake_get(key, dest):
+                dest = Path(dest)
+                dest.write_text("<html>error</html>" * 20)
+                return True
 
-            env = {"CLOUDFLARE_ACCOUNT_ID": "x", "TGPC_ALLOW_SMALL_RPH": "1"}
+            mock_contents = [
+                {
+                    "Key": "backups/rph_backup_20200101_000000.json",
+                    "LastModified": "2020-01-01",
+                    "Size": 5000,
+                }
+            ]
+
+            env = {
+                "CLOUDFLARE_ACCOUNT_ID": "x",
+                "R2_ACCESS_KEY_ID": "a",
+                "R2_SECRET_ACCESS_KEY": "b",
+                "TGPC_ALLOW_SMALL_RPH": "1",
+            }
             with patch("tgpc.manager.os.environ", env):
-                with patch("tgpc.manager.subprocess.run", side_effect=fake_run):
+                with patch("tgpc.manager.R2Client") as mock_r2_cls:
+                    mock_client = MagicMock()
+                    mock_client.list_objects.return_value = mock_contents
+                    mock_client.get_object.side_effect = fake_get
+                    mock_r2_cls.return_value = mock_client
                     self.assertFalse(manager._restore_rph_from_backup())
             self.assertEqual((Path(temp_dir) / "rph.json").read_text(), before)
 
@@ -121,24 +122,13 @@ class RotationBaselineTests(unittest.TestCase):
             manager = make_manager(temp_dir)
             deleted = []
 
-            def fake_run(*args, **kwargs):
-                cmd = args[0]
-                if "list-objects" in cmd:
-                    # Oldest is HUGE, newest is tiny; candidate is 2x newest.
-                    contents = [
-                        {"Key": "backups/rph_backup_20200101_000000.json", "Size": 20_000_000},
-                        *[
-                            {"Key": f"backups/rph_backup_202101{i:02d}_000000.json", "Size": 1_000_000}
-                            for i in range(1, 30)
-                        ],
-                        {"Key": "backups/rph_backup_20260101_000000.json", "Size": 1_000_000},  # newest
-                        {"Key": "backups/rph_backup_20200301_000000.json", "Size": 2_000_000},  # candidate past #30
-                    ]
-                    return MagicMock(returncode=0, stdout=json.dumps({"Contents": contents}), stderr="")
-                if "delete-object" in cmd:
-                    deleted.append(cmd[cmd.index("--key") + 1])
-                    return MagicMock(returncode=0, stdout="", stderr="")
-                return MagicMock(returncode=0, stdout="", stderr="")
+            # Oldest is HUGE, newest is tiny; candidate is 2x newest.
+            contents = [
+                {"Key": "backups/rph_backup_20200101_000000.json", "Size": 20_000_000},
+                *[{"Key": f"backups/rph_backup_202101{i:02d}_000000.json", "Size": 1_000_000} for i in range(1, 30)],
+                {"Key": "backups/rph_backup_20260101_000000.json", "Size": 1_000_000},  # newest
+                {"Key": "backups/rph_backup_20200301_000000.json", "Size": 2_000_000},  # candidate past #30
+            ]
 
             env = {
                 "CLOUDFLARE_ACCOUNT_ID": "x",
@@ -146,7 +136,11 @@ class RotationBaselineTests(unittest.TestCase):
                 "R2_SECRET_ACCESS_KEY": "b",
             }
             with patch("tgpc.manager.os.environ", env):
-                with patch("tgpc.manager.subprocess.run", side_effect=fake_run):
+                with patch("tgpc.manager.R2Client") as mock_r2_cls:
+                    mock_client = MagicMock()
+                    mock_client.list_objects.return_value = contents
+                    mock_client.delete_object.side_effect = lambda key: deleted.append(key)
+                    mock_r2_cls.return_value = mock_client
                     self.assertTrue(manager.backup_manager._upload_to_r2(Path(temp_dir) / "rph.json"))
             # 2M > 1.5x newest (1M) so it must be KEPT. Old code used the
             # 20M oldest as baseline and would have deleted it.

@@ -8,10 +8,14 @@ import shutil
 import os
 import subprocess
 import requests
+import re
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from typing import List, Iterable
 from collections import Counter
+
+import boto3
+from botocore.config import Config as BotocoreConfig
 
 from supabase import create_client
 
@@ -21,6 +25,42 @@ from tgpc.progress import ProgressBar, Phase, heartbeat, step
 
 
 logger = setup_logging("tgpc.manager")
+
+
+class R2Client:
+    """Small boto3 wrapper for Cloudflare R2 S3 operations."""
+
+    BUCKET = "tgpc"
+    REGION = "auto"
+
+    def __init__(self, endpoint: str, access_key: str, secret_key: str):
+        self.endpoint = endpoint
+        self.client = boto3.client(
+            "s3",
+            endpoint_url=endpoint,
+            region_name=self.REGION,
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_key,
+            config=BotocoreConfig(signature_version="s3v4"),
+        )
+
+    def put_object(self, key: str, path: Path) -> bool:
+        with open(path, "rb") as data:
+            self.client.put_object(Bucket=self.BUCKET, Key=key, Body=data)
+        return True
+
+    def list_objects(self, prefix: str) -> list:
+        return self.client.list_objects_v2(Bucket=self.BUCKET, Prefix=prefix).get("Contents", [])
+
+    def delete_object(self, key: str) -> None:
+        self.client.delete_object(Bucket=self.BUCKET, Key=key)
+
+    def get_object(self, key: str, destination: Path) -> bool:
+        self.client.download_file(self.BUCKET, key, str(destination))
+        return True
+
+    def head_object(self, key: str) -> dict:
+        return self.client.head_object(Bucket=self.BUCKET, Key=key)
 
 
 class DataIntegrityError(RuntimeError):
@@ -85,92 +125,46 @@ class BackupManager:
 
     def _upload_to_r2(self, local_path: Path) -> bool:
         endpoint = self._r2_endpoint()
-        env = self._r2_env()
         if not endpoint:
             logger.warning("Missing CLOUDFLARE_ACCOUNT_ID — skipping R2 backup upload")
             return False
 
-        r2_key = f"backups/{local_path.name}"
-        result = subprocess.run(
-            [
-                "aws",
-                "s3api",
-                "put-object",
-                "--endpoint-url",
-                endpoint,
-                "--region",
-                "auto",
-                "--bucket",
-                "tgpc",
-                "--key",
-                r2_key,
-                "--body",
-                str(local_path),
-            ],
-            capture_output=True,
-            text=True,
-            timeout=120,
-            env=env,
-        )
-        if result.returncode != 0:
-            logger.warning(f"R2 backup upload failed for {r2_key}: {result.stderr.strip()}")
+        access_key = os.environ.get("R2_ACCESS_KEY_ID")
+        secret_key = os.environ.get("R2_SECRET_ACCESS_KEY")
+        if not all([access_key, secret_key]):
+            logger.warning("Missing R2 credentials — skipping R2 backup upload")
             return False
 
-        logger.info(f"Backup uploaded to R2: {r2_key}")
+        client = R2Client(endpoint, access_key, secret_key)
+        r2_key = f"backups/{local_path.name}"
 
-        result = subprocess.run(
-            [
-                "aws",
-                "s3api",
-                "list-objects",
-                "--endpoint-url",
-                endpoint,
-                "--region",
-                "auto",
-                "--bucket",
-                "tgpc",
-                "--prefix",
-                "backups/",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=30,
-            env=env,
-        )
-        if result.returncode != 0:
-            return True
+        try:
+            client.put_object(r2_key, local_path)
+            logger.info(f"Backup uploaded to R2: {r2_key}")
+        except Exception as e:
+            logger.warning(f"R2 backup upload failed for {r2_key}: {e}")
+            return False
 
-        data = json.loads(result.stdout)
-        objects = sorted(data.get("Contents", []), key=lambda o: o["Key"], reverse=True)
-        # Keep backups significantly larger than newest (avoid deleting good
-        # large backups when a small one is created)
-        # `objects` is sorted newest-first, so objects[0] is the newest backup.
-        new_backup_size = objects[0].get("Size", 0) if objects else 0
-        for obj in objects[30:]:
-            obj_size = obj.get("Size", 0)
-            # Don't delete if this backup is >50% larger than the newest (likely a good full backup)
-            if obj_size > new_backup_size * 1.5:
-                logger.info(f"Keeping large R2 backup (size {obj_size} vs newest {new_backup_size}): {obj['Key']}")
-                continue
-            subprocess.run(
-                [
-                    "aws",
-                    "s3api",
-                    "delete-object",
-                    "--endpoint-url",
-                    endpoint,
-                    "--region",
-                    "auto",
-                    "--bucket",
-                    "tgpc",
-                    "--key",
-                    obj["Key"],
-                ],
-                capture_output=True,
-                timeout=30,
-                env=env,
-            )
-            logger.info(f"Removed old R2 backup: {obj['Key']}")
+        # List backups and delete old ones (keep newest 30, skip very large ones)
+        try:
+            objects = client.list_objects("backups/")
+            objects = sorted(objects, key=lambda o: o["Size"], reverse=True)  # largest first
+            if len(objects) > 30:
+                new_backup_size = objects[0]["Size"] if objects else 0
+                for obj in objects[30:]:
+                    obj_size = obj["Size"]
+                    # Don't delete if this backup is >50% larger than the newest (likely a good full backup)
+                    if obj_size > new_backup_size * 1.5:
+                        logger.info(
+                            f"Keeping large R2 backup (size {obj_size} vs newest {new_backup_size}): {obj['Key']}"
+                        )
+                        continue
+                    client.delete_object(obj["Key"])
+                    logger.info(f"Removed old R2 backup: {obj['Key']}")
+        except Exception as e:
+            logger.warning(f"Failed to list/delete old R2 backups: {e}")
+            # Don't fail the upload for cleanup errors
+
         return True
 
     def create(self, source: Path) -> str:
@@ -352,37 +346,21 @@ class Manager:
 
         logger.warning("data/rph.json not found — attempting restore from R2 backup...")
         endpoint = self.backup_manager._r2_endpoint()
-        env = self.backup_manager._r2_env()
-        if not endpoint:
-            logger.error("Cannot restore: missing CLOUDFLARE_ACCOUNT_ID")
+        access_key = os.environ.get("R2_ACCESS_KEY_ID")
+        secret_key = os.environ.get("R2_SECRET_ACCESS_KEY")
+        if not endpoint or not access_key or not secret_key:
+            logger.error("Cannot restore: missing CLOUDFLARE_ACCOUNT_ID or R2 credentials")
             return False
+
+        client = R2Client(endpoint, access_key, secret_key)
 
         # List backups to find latest
-        r = subprocess.run(
-            [
-                "aws",
-                "s3api",
-                "list-objects-v2",
-                "--endpoint-url",
-                endpoint,
-                "--region",
-                "auto",
-                "--bucket",
-                "tgpc",
-                "--prefix",
-                "backups/",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=30,
-            env=env,
-        )
-        if r.returncode != 0:
-            logger.error(f"Cannot list R2 backups: {r.stderr.strip()}")
+        try:
+            contents = client.list_objects("backups/")
+        except Exception as e:
+            logger.error(f"Cannot list R2 backups: {e}")
             return False
 
-        data = json.loads(r.stdout)
-        contents = data.get("Contents", [])
         if not contents:
             logger.error("No backups found in R2")
             return False
@@ -398,29 +376,11 @@ class Manager:
         # Download to a temp path first — never overwrite the local file
         # with unvalidated remote content.
         tmp_path = rph_path.with_suffix(".restore_tmp")
-        r2 = subprocess.run(
-            [
-                "aws",
-                "s3api",
-                "get-object",
-                "--endpoint-url",
-                endpoint,
-                "--region",
-                "auto",
-                "--bucket",
-                "tgpc",
-                "--key",
-                backup_key,
-                str(tmp_path),
-            ],
-            capture_output=True,
-            text=True,
-            timeout=60,
-            env=env,
-        )
-        if r2.returncode != 0:
+        try:
+            client.get_object(backup_key, tmp_path)
+        except Exception as e:
             tmp_path.unlink(missing_ok=True)
-            logger.error(f"Failed to restore from {backup_key}: {r2.stderr.strip()}")
+            logger.error(f"Failed to restore from {backup_key}: {e}")
             return False
 
         # Validate the downloaded backup before it replaces anything.
@@ -843,41 +803,15 @@ class Manager:
             logger.error("Missing R2 credentials")
             return False
 
-        file_path = str(self.file_manager.data_dir / "rph.json")
+        file_path = self.file_manager.data_dir / "rph.json"
+        client = R2Client(endpoint, access_key, secret_key)
 
         # Upload rph.json
         with heartbeat("Uploading rph.json to R2"):
             try:
-                result = subprocess.run(
-                    [
-                        "aws",
-                        "s3api",
-                        "put-object",
-                        "--endpoint-url",
-                        endpoint,
-                        "--region",
-                        "auto",
-                        "--bucket",
-                        "tgpc",
-                        "--key",
-                        "rph.json",
-                        "--body",
-                        file_path,
-                    ],
-                    capture_output=True,
-                    text=True,
-                    timeout=120,
-                    env=self._get_r2_env(),
-                )
-                if result.returncode == 0:
-                    logger.info("R2 rph.json sync complete")
-                    return True
-                else:
-                    logger.error(f"R2 rph.json sync failed: {result.stderr.strip()}")
-                    return False
-            except FileNotFoundError:
-                logger.error("awscli not installed. Run: pip install awscli")
-                return False
+                client.put_object("rph.json", file_path)
+                logger.info("R2 rph.json sync complete")
+                return True
             except Exception as e:
                 logger.error(f"R2 rph.json sync error: {e}")
                 return False
@@ -901,7 +835,8 @@ class Manager:
         with ProgressBar(total=len(webp_files), label="Retrying photos to R2") as bar:
             for photo_file in webp_files:
                 reg_no = photo_file.stem
-                r2_key = f"photos/{reg_no}.webp"
+                safe_reg = re.sub(r"[^A-Za-z0-9._-]", "", reg_no)
+                r2_key = f"photos/{safe_reg}.webp"
 
                 if self.upload_and_verify_photo(photo_file, r2_key):
                     photo_file.unlink()
@@ -970,39 +905,24 @@ class Manager:
             logger.error("Missing CLOUDFLARE_ACCOUNT_ID for R2 upload")
             return False
 
+        access_key = os.environ.get("R2_ACCESS_KEY_ID")
+        secret_key = os.environ.get("R2_SECRET_ACCESS_KEY")
+        if not all([access_key, secret_key]):
+            logger.error("Missing R2 credentials")
+            return False
+
+        client = R2Client(endpoint, access_key, secret_key)
+
         try:
-            result = subprocess.run(
-                [
-                    "aws",
-                    "s3api",
-                    "put-object",
-                    "--endpoint-url",
-                    endpoint,
-                    "--region",
-                    "auto",
-                    "--bucket",
-                    "tgpc",
-                    "--key",
-                    r2_key,
-                    "--body",
-                    str(local_path),
-                    "--content-type",
-                    "image/webp",
-                    "--cache-control",
-                    "public, max-age=86400",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=120,
-                env=self._get_r2_env(),
-            )
-            if result.returncode == 0:
-                return True
-            logger.error(f"R2 upload failed for {r2_key}: {result.stderr.strip()}")
-            return False
-        except FileNotFoundError:
-            logger.error("awscli not installed. Run: pip install awscli")
-            return False
+            with open(local_path, "rb") as f:
+                client.client.put_object(
+                    Bucket=R2Client.BUCKET,
+                    Key=r2_key,
+                    Body=f,
+                    ContentType="image/webp",
+                    CacheControl="public, max-age=86400",
+                )
+            return True
         except Exception as e:
             logger.error(f"R2 upload error for {r2_key}: {e}")
             return False
@@ -1013,36 +933,19 @@ class Manager:
         if not endpoint:
             return False
 
+        access_key = os.environ.get("R2_ACCESS_KEY_ID")
+        secret_key = os.environ.get("R2_SECRET_ACCESS_KEY")
+        if not all([access_key, secret_key]):
+            return False
+
+        client = R2Client(endpoint, access_key, secret_key)
+
         try:
-            result = subprocess.run(
-                [
-                    "aws",
-                    "s3api",
-                    "head-object",
-                    "--endpoint-url",
-                    endpoint,
-                    "--region",
-                    "auto",
-                    "--bucket",
-                    "tgpc",
-                    "--key",
-                    r2_key,
-                ],
-                capture_output=True,
-                text=True,
-                timeout=30,
-                env=self._get_r2_env(),
-            )
-            if result.returncode == 0:
-                head = json.loads(result.stdout)
-                actual_size = head.get("ContentLength", -1)
-                if actual_size == expected_size:
-                    return True
-                logger.warning(
-                    f"R2 verification size mismatch for {r2_key}: expected {expected_size}, got {actual_size}"
-                )
-                return False
-            logger.error(f"R2 head-object failed for {r2_key}: {result.stderr.strip()}")
+            head = client.head_object(r2_key)
+            actual_size = head.get("ContentLength", -1)
+            if actual_size == expected_size:
+                return True
+            logger.warning(f"R2 verification size mismatch for {r2_key}: expected {expected_size}, got {actual_size}")
             return False
         except Exception as e:
             logger.error(f"R2 verification error for {r2_key}: {e}")
@@ -1568,12 +1471,14 @@ class Manager:
                     step(f"fetching details for {reg_no}")
                     details = self.scraper.extract_detailed_info(reg_no, img_dir)
                     if not details:
+                        logger.warning(f"No details found at source for {reg_no} — skipping enrichment")
                         continue
 
                     # Upload photo to R2, verify, delete local
                     photo_file = img_dir / f"{reg_no}.webp"
                     if photo_file.is_file():
-                        r2_key = f"photos/{reg_no}.webp"
+                        safe_reg = re.sub(r"[^A-Za-z0-9._-]", "", reg_no)
+                        r2_key = f"photos/{safe_reg}.webp"
 
                         # photo_url is only recorded when the upload actually
                         # succeeded — a failed upload must not leave Supabase

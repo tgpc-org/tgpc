@@ -22,6 +22,7 @@ PASSPORT_H = 531
 QUALITY = 85
 SRC_DIR = Path("data/img")
 DST_DIR = Path("data/webp")
+Image.MAX_IMAGE_PIXELS = 25_000_000
 
 
 def convert(src: Path, dst: Path) -> tuple[bool, str, tuple[int, int] | None]:
