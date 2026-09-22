@@ -89,6 +89,8 @@ class DashboardTests(unittest.TestCase):
         html = PAGE.read_text(encoding="utf-8")
         for needle in ('id="start"', "startRun()", 'id="count"', "/api/start"):
             self.assertIn(needle, html)
+        for gone in ('id="workers"', '"workers"', "--workers"):
+            self.assertNotIn(gone, html)
 
     def test_next_ids_skips_done_and_terminal_retries_failed(self):
         import tempfile

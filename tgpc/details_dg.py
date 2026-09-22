@@ -41,6 +41,7 @@ logger = setup_logging("tgpc.details_dg")
 FORM_PATH = "/pharmacy/getdetailsdg"
 CAPTCHA_PATH = "/captchaimage.jsp"  # root — /pharmacy/captchaimage.jsp 404s
 VIEW_PATH = "/pharmacy/getdetailsviewdg.action"
+DG_WORKERS = 4
 
 REG_RE = re.compile(r"^(TS|TG|TSDR|TGDR)\d+$", re.I)
 MOBILE_RE = re.compile(r"^[6-9]\d{9}$")
@@ -725,19 +726,44 @@ def sync_cloud_snapshot(out_jsonl: Path, raw_dir: Path, regs: List[str]) -> Dict
     Writes a timestamped jsonl copy alongside the rolling `latest` key so a
     short/failed run can never clobber a good snapshot — history is kept.
     Returns per-destination success flags for stats/logs.
+    Uses ThreadPoolExecutor for parallel cloud pushes.
     """
     results: Dict[str, bool] = {}
-    if out_jsonl.exists():
-        stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        results["r2_jsonl"] = push_file_to_r2(out_jsonl, "dg-contacts/dg_contacts.jsonl")
-        results["r2_jsonl_stamped"] = push_file_to_r2(out_jsonl, f"dg-contacts/dg_contacts_{stamp}.jsonl")
-        results["gdrive_jsonl"] = push_dg_to_gdrive(out_jsonl, "dg_contacts.jsonl")
-        results["sb_storage_jsonl"] = push_dg_to_sb_storage(out_jsonl, "dg_contacts.jsonl")
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+
+    def _push_r2_jsonl() -> list:
+        if out_jsonl.exists():
+            ok1 = push_file_to_r2(out_jsonl, "dg-contacts/dg_contacts.jsonl")
+            ok2 = push_file_to_r2(out_jsonl, f"dg-contacts/dg_contacts_{stamp}.jsonl")
+            return [("r2_jsonl", ok1), ("r2_jsonl_stamped", ok2)]
+        return [("r2_jsonl", False), ("r2_jsonl_stamped", False)]
+
+    def _push_gdrive() -> list:
+        return [("gdrive_jsonl", push_dg_to_gdrive(out_jsonl, "dg_contacts.jsonl"))]
+
+    def _push_sb_storage() -> list:
+        return [("sb_storage_jsonl", push_dg_to_sb_storage(out_jsonl, "dg_contacts.jsonl"))]
+
+    # Run the four jsonl pushes in parallel
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        futures = [
+            executor.submit(_push_r2_jsonl),
+            executor.submit(_push_gdrive),
+            executor.submit(_push_sb_storage),
+        ]
+        for fut in futures:
+            for k, v in fut.result():
+                results[k] = v
+
+    # Push raw files in parallel (max 8 concurrent)
+    raw_files = [(raw_dir / f"{reg}.json", f"dg-raw/{reg}.json") for reg in regs if (raw_dir / f"{reg}.json").exists()]
     raw_ok = True
-    for reg in regs:
-        raw_path = raw_dir / f"{reg}.json"
-        if raw_path.exists() and not push_file_to_r2(raw_path, f"dg-raw/{reg}.json"):
-            raw_ok = False
+    if raw_files:
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            futures = [executor.submit(push_file_to_r2, p, k) for p, k in raw_files]
+            for fut in futures:
+                if not fut.result():
+                    raw_ok = False
     results["r2_raws"] = raw_ok
     return results
 
@@ -750,7 +776,6 @@ def run_fetch(
     stats_path: Path,
     quarantine_path: Path,
     reference: Optional[Dict[str, Dict[str, str]]] = None,
-    workers: int = 1,
     min_delay: float = 3.0,
     max_captcha_attempts: int = 1,
     resume: bool = True,
@@ -777,8 +802,6 @@ def run_fetch(
       dg_live.json  overwritten per record — `watch -n1 cat` it.
       dg_stop       `touch` it to halt after the current record (checkpoint-safe).
     """
-    if workers not in (1, 2):
-        raise ValueError("workers must be 1 or 2 (politeness cap for the council site)")
     if sync_cloud and reference is None:
         raise ValueError("sync_cloud requires reference (rph.json) — refusing orphan-row inserts")
     warp_ip = ""
@@ -934,9 +957,8 @@ def run_fetch(
     logger.info(f"DG fetch started: {len(todo)} to process ({stats['already_done']} already done)")
     # Prefetch pool: only the slow network fetch runs concurrently (one session
     # per thread); the loop below stays sequential so state, gates, checkpoint,
-    # stats and cloud batches need no locks. With workers=1 this degrades to
-    # exactly the old behavior (fetch current while handling previous: none).
-    ex = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="dgfetch")
+    # stats and cloud batches need no locks. Workers are fixed at DG_WORKERS.
+    ex = ThreadPoolExecutor(max_workers=DG_WORKERS, thread_name_prefix="dgfetch")
     inflight = {}
     submitted = 0
 
@@ -985,7 +1007,7 @@ def run_fetch(
             logger.info(f"fetching {reg} ({processed + 1}/{len(todo)})")
             live_snapshot(reg, "fetching")
             t0 = time.monotonic()
-            ensure_submitted(idx + workers)
+            ensure_submitted(idx + DG_WORKERS)
             fut = inflight.pop(idx)
             try:
                 html, meta = fut.result()

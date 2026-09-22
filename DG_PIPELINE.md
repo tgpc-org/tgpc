@@ -87,4 +87,4 @@ Storage `tgpc/dg_contacts.jsonl`. Local is a ≤50-record crash buffer only.
 ## Yield reference (legacy serials)
 
 ~66% enrichable, ~34% terminal auth-gaps, rare quarantines (source typos).
-~10s/record single worker. Captcha 83% bench, ~100% first-pass live.
+~10s/record fetch; fixed 4 workers. Captcha 83% bench, ~100% first-pass live.

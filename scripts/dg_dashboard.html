@@ -14,35 +14,36 @@
     --bg: #111827; --card: #374151; --border: #6b7280;
     --ink: #ffffff; --ink-soft: #e5e7eb; --muted: #9ca3af; --log-border: #6b7280;
   }
-  body { font-family: system-ui, -apple-system, sans-serif; margin: 0; background: var(--bg); color: var(--ink); }
-  header { background: #111827; color: #ffffff; padding: 12px 20px; display: flex; align-items: center; gap: 12px; }
+  html, body { height: 100vh; overflow: hidden; margin: 0; box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--ink); display: flex; flex-direction: column; }
+  header { flex-shrink: 0; background: #111827; color: #ffffff; padding: 10px 16px; display: flex; align-items: center; gap: 12px; }
   header .spacer { flex: 1; }
   #theme-toggle { background: transparent; border: 1px solid #6b7280; color: #ffffff; border-radius: 6px;
-                  padding: 6px 12px; font-size: 13px; cursor: pointer; }
-  header .dot { width: 12px; height: 12px; border-radius: 50%; background: #9ca3af; }
+                  padding: 4px 10px; font-size: 12px; cursor: pointer; }
+  header .dot { width: 10px; height: 10px; border-radius: 50%; background: #9ca3af; }
   header .dot.running { background: #00cc66; }
   header .dot.stopped { background: #ef4444; }
-  header h1 { font-size: 16px; margin: 0; font-weight: 600; }
-  header h1 span { color: #9ca3af; font-weight: 400; }
-  main { max-width: 900px; margin: 0 auto; padding: 16px 20px 40px; }
-  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 14px; }
-  .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
-  .card .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
-  .card .value { font-size: 22px; font-weight: 700; margin-top: 2px; }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; }
+  header h1 span { color: #9ca3af; font-weight: 400; font-size: 13px; }
+  main { flex: 1; min-height: 0; max-width: 960px; width: 100%; margin: 0 auto; padding: 10px 16px 8px; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-bottom: 8px; flex-shrink: 0; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; }
+  .card .label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+  .card .value { font-size: 18px; font-weight: 700; margin-top: 1px; }
   .green { color: #00cc66; } .red { color: #ef4444; } .blue { color: #2563eb; } .muted { color: var(--muted); }
-  .bar-wrap { background: #e5e7eb; border-radius: 6px; height: 14px; overflow: hidden; margin: 4px 0 14px; }
+  .bar-wrap { background: #e5e7eb; border-radius: 4px; height: 8px; overflow: hidden; margin: 2px 0 8px; flex-shrink: 0; }
   .bar { background: #00cc66; height: 100%; width: 0%; transition: width 0.5s; }
-  .row { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
-  .current { font-size: 15px; }
+  .row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; flex-shrink: 0; }
+  .current { font-size: 13px; }
   .current b { color: #2563eb; }
-  button { background: #ef4444; color: #ffffff; border: 0; border-radius: 6px; padding: 8px 16px; font-size: 14px; cursor: pointer; }
+  button { background: #ef4444; color: #ffffff; border: 0; border-radius: 6px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
   button:disabled { background: #9ca3af; cursor: default; }
-  pre { background: #111827; color: #e5e7eb; border: 1px solid var(--log-border); border-radius: 8px;
-        padding: 12px; font-size: 12px; line-height: 1.5;
-        max-height: 320px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }
-  .reasons { font-size: 13px; color: var(--ink-soft); }
-  h3 { color: var(--ink); }
-  footer { font-size: 12px; color: var(--muted); margin-top: 10px; }
+  pre { flex: 1; min-height: 80px; background: #111827; color: #e5e7eb; border: 1px solid var(--log-border); border-radius: 6px;
+        padding: 8px 10px; font-size: 11px; line-height: 1.4;
+        overflow-y: auto; white-space: pre-wrap; word-break: break-all; margin: 0; }
+  .reasons { font-size: 12px; color: var(--ink-soft); margin-bottom: 4px; flex-shrink: 0; }
+  h3 { color: var(--ink); margin: 4px 0 4px; font-size: 13px; flex-shrink: 0; }
+  footer { font-size: 11px; color: var(--muted); margin-top: 4px; flex-shrink: 0; }
 </style>
 </head>
 <body>
@@ -73,13 +74,13 @@
     <button id="stop" onclick="stopRun()">STOP after current record</button>
     <span class="muted" id="stopmsg"></span>
   </div>
-  <div class="row">
+<div class="row">
     <button id="start" onclick="startRun()" style="background:#00cc66">START next</button>
     <input id="count" type="number" value="500" min="1" max="2000"
            style="width:80px;padding:7px;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--ink)">
     <span class="muted">records</span>
     <span class="muted" id="startmsg"></span>
-  </div>
+</div>
   <div class="reasons" id="reasons"></div>
   <h3>Live log</h3>
   <pre id="log">waiting for run…</pre>

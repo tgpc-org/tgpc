@@ -172,7 +172,6 @@ def main():
     fetch_dg_parser.add_argument("--stats", default="data/dg_stats.json")
     fetch_dg_parser.add_argument("--quarantine", default="data/dg_quarantine.jsonl")
     fetch_dg_parser.add_argument("--reference", default="data/rph.json", help="rph.json for identity guard")
-    fetch_dg_parser.add_argument("--workers", type=int, default=1, help="1 or 2 fetch threads (politeness cap)")
     fetch_dg_parser.add_argument("--min-delay", type=float, default=3.0)
     fetch_dg_parser.add_argument("--max-captcha-attempts", type=int, default=1)
     fetch_dg_parser.add_argument("--no-resume", action="store_true", help="Ignore existing checkpoint")
@@ -354,7 +353,6 @@ def main():
                 stats_path=Path(args.stats),
                 quarantine_path=Path(args.quarantine),
                 reference=reference,
-                workers=args.workers,
                 min_delay=args.min_delay,
                 max_captcha_attempts=args.max_captcha_attempts,
                 resume=not args.no_resume,

@@ -232,7 +232,15 @@ class Handler(BaseHTTPRequestHandler):
             proc = subprocess.Popen(cmd, cwd=str(ROOT), stdout=log, stderr=subprocess.STDOUT)
             (self.data_dir / "dg_fetch.pid").write_text(str(proc.pid), encoding="utf-8")
             self._send(
-                json.dumps({"ok": True, "pid": proc.pid, "count": len(ids), "first": ids[0], "last": ids[-1]}).encode(),
+                json.dumps(
+                    {
+                        "ok": True,
+                        "pid": proc.pid,
+                        "count": len(ids),
+                        "first": ids[0],
+                        "last": ids[-1],
+                    }
+                ).encode(),
                 "application/json",
             )
         else:

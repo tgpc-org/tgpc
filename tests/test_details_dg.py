@@ -421,8 +421,7 @@ class SyncPayloadTests(unittest.TestCase):
                 fetcher_factory=FakeFetcher,
             )
             self.assertEqual(stats_d["quarantined"], 1)
-            row = json.loads(quar.read_text().splitlines()[0])
-            self.assertIn("unknown_reg", row["reason"])
+            # Quarantine JSONL is no longer written; quarantined records are tracked in checkpoint/state only
 
     def test_heal_jsonl_truncates_torn_line(self):
         from tgpc.details_dg import _heal_jsonl
@@ -434,6 +433,38 @@ class SyncPayloadTests(unittest.TestCase):
             self.assertEqual(p.read_text().splitlines(), ['{"a": 1}', '{"b": 2}'])
             self.assertEqual(_heal_jsonl(p), 0)  # healthy file untouched
             self.assertEqual(_heal_jsonl(Path(tmp) / "missing.jsonl"), 0)
+
+
+class WorkerFixedTests(unittest.TestCase):
+    def test_fetch_pool_is_fixed_at_four(self):
+        import tgpc.details_dg as dg
+        from tgpc.details_dg import DG_WORKERS
+
+        self.assertEqual(DG_WORKERS, 4)
+        created = []
+        orig = dg.ThreadPoolExecutor
+
+        def recording(*args, **kwargs):
+            created.append(kwargs.get("max_workers"))
+            return orig(*args, **kwargs)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cp, out, raw, stats, quar = (Path(tmp) / n for n in ("c.json", "o.jsonl", "r", "s.json", "q.jsonl"))
+
+            class FakeFetcher:
+                def fetch_one(self, reg, captcha_solver=None, max_captcha_attempts=3):
+                    return DG_HTML.replace("TS003261", reg), {"captcha_text": "X", "attempts": 1, "ms": {}}
+
+            regs = [f"TS8{i:02d}" for i in range(6)]
+            dg.ThreadPoolExecutor = recording
+            try:
+                stats_d = run_fetch(regs, out, raw, cp, stats, quar, resume=False, fetcher_factory=FakeFetcher)
+            finally:
+                dg.ThreadPoolExecutor = orig
+            self.assertEqual(created, [4])
+            self.assertEqual(stats_d["done"], len(regs))
+            rows = [json.loads(line) for line in out.read_text().splitlines()]
+            self.assertEqual(sorted(r["registration_number"] for r in rows), sorted(regs))
 
 
 class LiveWatchTests(unittest.TestCase):
