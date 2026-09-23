@@ -24,8 +24,11 @@ jobs:
       - run: python3 -m pytest tests/ -q
 
       # Dependency vulnerability scan (PyPA pip-audit). Fails on any known
-      # vulnerable package in the installed environment.
+      # vulnerable package in the installed environment. Editable installs
+      # (this repo itself) are excluded: the package isn't on PyPI, so the
+      # lookup either warns or hard-fails on transient PyPI errors.
       - name: Audit Python dependencies
         run: |
           pip install pip-audit
-          pip-audit -r <(pip freeze) --progress-spinner off
+          pip freeze | grep -v "^-e " > /tmp/requirements-audit.txt
+          pip-audit -r /tmp/requirements-audit.txt --progress-spinner off
