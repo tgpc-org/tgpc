@@ -94,7 +94,7 @@ class CaptchaNeeded(Exception):
 
 
 class DgDetailError(Exception):
-    """Parse/validation failure — caller quarantines instead of upserting."""
+    """Parse failure — terminal (source gap) or transient (captcha miss, block)."""
 
     def __init__(self, message: str = "", html: str = "", terminal: bool = False):
         super().__init__(message)
@@ -259,6 +259,45 @@ def validate_parsed(parsed: Dict[str, str]) -> List[str]:
     return problems
 
 
+def validate_l1(out_jsonl: Path, raw_dir: Optional[Path] = None, max_list: int = 50) -> Dict[str, object]:
+    """Offline validation pass over L1 contacts (no website contact).
+
+    Re-runs validate_parsed on every row in out_jsonl and reports rows with
+    problems, plus rows missing a raw snapshot in raw_dir. Read-only.
+    Returns stats dict with counts and up to max_list flagged reg IDs.
+    """
+    total = 0
+    clean = 0
+    flagged: List[str] = []
+    missing_raw: List[str] = []
+    by_reason: Dict[str, int] = {}
+    if out_jsonl.exists():
+        for line in out_jsonl.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            total += 1
+            row = json.loads(line)
+            reg = str(row.get("registration_number", ""))
+            probs = validate_parsed(row)
+            if raw_dir is not None and not (raw_dir / f"{reg}.json").exists():
+                missing_raw.append(reg)
+            if not probs:
+                clean += 1
+                continue
+            flagged.append(reg)
+            for p in probs:
+                by_reason[p] = by_reason.get(p, 0) + 1
+    return {
+        "total": total,
+        "clean": clean,
+        "flagged": len(flagged),
+        "by_reason": by_reason,
+        "flagged_regs": flagged[: max(0, max_list)],
+        "missing_raw": missing_raw[: max(0, max_list)],
+        "missing_raw_count": len(missing_raw),
+    }
+
+
 def identity_matches(parsed: Dict[str, str], reference: Optional[Dict[str, str]]) -> bool:
     """Guard vs rph.json identity. None reference = pass. See _match_detail."""
     ok, _ = _match_detail(parsed, reference)
@@ -271,9 +310,10 @@ def _match_detail(parsed: Dict[str, str], reference: Optional[Dict[str, str]]) -
     Rationale from live data: the bulk table truncates long father names
     (TS000249 'Devarakonda Lakshmi Naray…' vs full DG value) and categories
     get corrected upstream (TS000235 BPharm->DPharm). Strict exact-match
-    quarantined the BETTER data. So: name must match exactly; father passes
+    rejected the BETTER data. So: name must match exactly; father passes
     on exact or prefix-either-way (min 10 chars, truncation-proof); category
-    must match unless name+father both pass (logged as a correction note).
+    must match unless name+father both pass. Divergences are returned as
+    notes for raw_notes audit (never gates a save).
     Returns (accept, notes) — notes explain every divergence for audit.
     """
     if not reference:
@@ -311,7 +351,6 @@ def load_checkpoint(path: Path) -> Dict:
             state.setdefault("completed", [])
             state.setdefault("failed", {})
             state.setdefault("failed_terminal", {})
-            state.setdefault("quarantined", [])
             return state
         except Exception:
             pass
@@ -547,7 +586,7 @@ def ensure_rotated_ip(previous_ip: str, max_cycles: int = 3) -> Tuple[str, bool]
 
 
 def _fresh_state() -> Dict:
-    return {"completed": [], "failed": {}, "failed_terminal": {}, "quarantined": []}
+    return {"completed": [], "failed": {}, "failed_terminal": {}}
 
 
 def _record_failure(state: Dict, stats: Dict, reg: str, reason: str, terminal: bool) -> None:
@@ -762,7 +801,6 @@ def run_fetch(
     raw_dir: Path,
     checkpoint_path: Path,
     stats_path: Path,
-    quarantine_path: Path,
     reference: Optional[Dict[str, Dict[str, str]]] = None,
     min_delay: float = 3.0,
     max_captcha_attempts: int = 1,
@@ -777,10 +815,14 @@ def run_fetch(
     warp_rotate_every: int = 0,
     warp_max_cycles: int = 3,
 ) -> Dict:
-    """Fetch + validate + save L1 for a list of reg IDs. Returns stats dict.
+    """Fetch + save L1 for a list of reg IDs. Returns stats dict.
 
-    sync_cloud: upsert validated rows to Supabase rph_dg_contacts every sync_every
-    successes + push cloud snapshot (R2/GDrive/SB Storage) at end of run.
+    Fast-capture: only the structural parse gates (details table present,
+    echoed reg matches). Format validation and the identity guard never
+    block a save — every parseable row is stored as-is, with any validation
+    problems recorded as raw_notes for a later offline pass. Nothing is
+    quarantined during fetch.
+    sync_cloud: upsert rows as-is to Supabase rph_dg_contacts every
     Cloud failures never block the L1 checkpoint (idempotent on resume).
     sync_cloud requires reference (fail-closed: no orphan-row inserts).
     max_records: stop after this many newly processed records (bounded runs).
@@ -805,9 +847,14 @@ def run_fetch(
     log_path = checkpoint_path.parent / "dg_fetch.log"
     history_path = checkpoint_path.parent / "dg_history.jsonl"
     _attach_file_log(log_path)
+    if not resume and checkpoint_path.exists():
+        # --no-resume wipes resume state: keep a timestamped backup first.
+        stamp = time.strftime("%Y%m%dT%H%M%S")
+        bak = checkpoint_path.with_name(f"{checkpoint_path.name}.bak-{stamp}")
+        bak.write_bytes(checkpoint_path.read_bytes())
+        logger.warning(f"Ignoring existing checkpoint (backed up to {bak.name})")
     if resume:
         _heal_jsonl(out_jsonl)
-        _heal_jsonl(quarantine_path)
         _heal_jsonl(history_path)
     state = load_checkpoint(checkpoint_path) if resume else _fresh_state()
     done = set(state.get("completed", []))
@@ -837,7 +884,6 @@ def run_fetch(
         "already_done": len(reg_ids) - len(todo),
         "done": 0,
         "failed": 0,
-        "quarantined": 0,
         "fail_by_reason": {},
         "captcha_firstpass_ok": 0,
         "captcha_retries": 0,
@@ -913,7 +959,6 @@ def run_fetch(
             event=event,
             done=stats["done"],
             failed=stats["failed"],
-            quarantined=stats["quarantined"],
             sb_upserted=stats.get("sb_upserted", 0),
             records_per_min=round(rate, 1),
             eta_mins=round(remaining / (rate / 60), 1) if rate > 0 else None,
@@ -1054,25 +1099,14 @@ def run_fetch(
 
             problems = validate_parsed(parsed)
             ref = (reference or {}).get(reg)
-            if reference is not None and ref is None:
-                # Fail-closed: a DG row for an ID absent from rph.json must
-                # never create a partial orphan row in Supabase on upsert.
-                problems = [*problems, "unknown_reg"]
             guard_ok, guard_notes = _match_detail(parsed, ref)
-            if problems or not guard_ok:
-                extra = [f"guard:{n}" for n in guard_notes if not guard_ok]
-                reason = ";".join([*problems, *extra]) or "identity_mismatch"
-                state["quarantined"] = sorted(set(state.get("quarantined", [])) | {reg})
-                state["completed"] = sorted(set(state.get("completed", [])) | {reg})
-                stats["quarantined"] += 1
-                stats["fail_by_reason"][reason] = stats["fail_by_reason"].get(reason, 0) + 1
-                save_checkpoint_atomic(checkpoint_path, state)
-                bar.update(1, detail=f"{reg} quarantined:{reason}")
-                save_stats()
-                processed += 1
-                live_snapshot(reg, f"quarantined:{reason}")
-                logger.warning(f"{reg}: quarantined ({reason})")
-                continue
+            # Fast-capture: never gate on format/identity problems — record
+            # them as raw_notes for a later offline validation pass.
+            raw_notes = problems if problems else []
+            if ref is None:
+                raw_notes = [*raw_notes, "unknown_reg"]
+            if not guard_ok:
+                raw_notes = [*raw_notes, *[f"guard:{n}" for n in guard_notes]]
 
             # L1 saves — raw snapshot first (re-parseable without re-fetch).
             record = {
@@ -1084,6 +1118,7 @@ def run_fetch(
                 "ms": meta.get("ms", {}),
                 "total_ms": int((time.monotonic() - t0) * 1000),
                 "guard_notes": guard_notes,
+                "raw_notes": raw_notes,
                 "raw_cells": raw_cells,
                 "parsed": parsed,
             }
@@ -1100,6 +1135,7 @@ def run_fetch(
                     "serial_number": serial_of(reg),
                     "fetched_at": record["fetched_at"],
                     "guard_notes": guard_notes,
+                    "raw_notes": raw_notes,
                 },
             )
 
@@ -1115,7 +1151,7 @@ def run_fetch(
             save_checkpoint_atomic(checkpoint_path, state)
             stats["done"] += 1
             elapsed = time.monotonic() - start_all
-            rate = (stats["done"] + stats["failed"] + stats["quarantined"]) / elapsed if elapsed > 0 else 0
+            rate = (stats["done"] + stats["failed"]) / elapsed if elapsed > 0 else 0
             bar.update(1, detail=f"{reg} ok {rate:.2f}/s")
             save_stats()
             processed += 1
@@ -1145,10 +1181,8 @@ def run_fetch(
         current_reg="",
         done=stats["done"],
         failed=stats["failed"],
-        quarantined=stats["quarantined"],
     )
     logger.info(
-        f"DG fetch {status}: done={stats['done']} failed={stats['failed']} "
-        f"quarantined={stats['quarantined']} sb_upserted={stats.get('sb_upserted', 0)}"
+        f"DG fetch {status}: done={stats['done']} failed={stats['failed']} sb_upserted={stats.get('sb_upserted', 0)}"
     )
     return stats

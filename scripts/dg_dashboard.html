@@ -65,7 +65,6 @@
   <div class="cards">
     <div class="card"><div class="label">Saved</div><div class="value green" id="done">0</div></div>
     <div class="card"><div class="label">Couldn't fetch</div><div class="value red" id="failed">0</div></div>
-    <div class="card"><div class="label">Held for review</div><div class="value" id="quar">0</div></div>
     <div class="card"><div class="label">In cloud database</div><div class="value blue" id="sb">0</div></div>
     <div class="card"><div class="label">Speed / min</div><div class="value" id="rate">—</div></div>
     <div class="card"><div class="label">Time left (min)</div><div class="value" id="eta">—</div></div>
@@ -132,7 +131,6 @@ async function refresh() {
     document.getElementById('event').textContent = s.event || '';
     document.getElementById('done').textContent = s.done;
     document.getElementById('failed').textContent = s.failed;
-    document.getElementById('quar').textContent = s.quarantined;
     document.getElementById('sb').textContent = s.sb_upserted;
     document.getElementById('rate').textContent = s.records_per_min ?? '—';
     document.getElementById('eta').textContent = s.eta_mins ?? '—';
@@ -140,8 +138,8 @@ async function refresh() {
     document.getElementById('bar').style.width = pct + '%';
     const at = s.all_time || {};
     document.getElementById('alltime').textContent =
-      'All time: ' + (at.saved || 0) + ' saved · ' + (at.failed || 0) + ' failed · ' +
-      (at.quarantined || 0) + ' quarantined (' + (s.history_records || 0) + ' records remembered)';
+      'All time: ' + (at.saved || 0) + ' saved · ' + (at.failed || 0) + ' failed (' +
+      (s.history_records || 0) + ' records remembered)';
     const reasons = Object.entries(s.fail_by_reason || {}).map(([k, v]) => plainReason(k) + ': ' + v).join(' · ');
     document.getElementById('reasons').textContent = reasons ? 'Why some are missing — ' + reasons : '';
     document.getElementById('updated').textContent = 'Updated: ' + (s.updated_ist || s.updated_at || '—') +

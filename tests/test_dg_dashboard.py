@@ -32,7 +32,6 @@ class DashboardTests(unittest.TestCase):
                     {
                         "done": 3,
                         "failed": 1,
-                        "quarantined": 0,
                         "sb_upserted": 3,
                         "captcha_firstpass_ok": 3,
                         "captcha_retries": 0,
@@ -71,9 +70,9 @@ class DashboardTests(unittest.TestCase):
         from scripts.dg_dashboard import PAGE
 
         html = PAGE.read_text(encoding="utf-8")
-        for needle in ("Saved", "Couldn't fetch", "Held for review", "In cloud database", "Finished: ", "plainReason"):
+        for needle in ("Saved", "Couldn't fetch", "In cloud database", "Finished: ", "plainReason"):
             self.assertIn(needle, html)
-        for gone in ("checkpoint:", " terminal'"):
+        for gone in ("checkpoint:", " terminal'", "Held for review", 'id="quar"'):
             self.assertNotIn(gone, html)
 
     def test_theme_toggle_wired(self):
@@ -116,7 +115,6 @@ class DashboardTests(unittest.TestCase):
                         "completed": ["R1"],
                         "failed": {"R2": "timeout", "R3": "timeout"},
                         "failed_terminal": {"R3": "auth"},
-                        "quarantined": [],
                     }
                 )
             )
@@ -200,10 +198,11 @@ class DashboardTests(unittest.TestCase):
                 {"registration_number": "D", "outcome": "saved"},
             ]
             (d / "dg_history.jsonl").write_text("\n".join(json.dumps(r) for r in rows))
-            (d / "dg_stats.json").write_text(json.dumps({"done": 0, "failed": 0, "quarantined": 0}))
+            (d / "dg_stats.json").write_text(json.dumps({"done": 0, "failed": 0}))
             s = build_status(d)
-            self.assertEqual(s["all_time"], {"saved": 2, "failed": 1, "quarantined": 1})
-            self.assertEqual(s["history_records"], 4)
+            # Legacy "quarantined" history lines are no longer bucketed
+            self.assertEqual(s["all_time"], {"saved": 2, "failed": 1})
+            self.assertEqual(s["history_records"], 3)
 
 
 if __name__ == "__main__":

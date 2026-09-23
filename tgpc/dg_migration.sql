@@ -3,8 +3,9 @@
 -- Run in Supabase dashboard -> SQL Editor. Idempotent.
 -- No FK to rph on purpose: DG rows must never block legitimate
 -- deletes/rewrites of the base table (pipeline prunes removals);
--- orphan prevention is enforced in code (identity guard + unknown_reg
--- quarantine, sync_cloud refuses to run without rph.json reference).
+-- orphan prevention is enforced in code (unknown regs are saved with
+-- raw_notes for later offline review; sync_cloud refuses to run without
+-- rph.json reference).
 
 CREATE TABLE IF NOT EXISTS public.rph_dg_contacts (
   registration_number TEXT PRIMARY KEY,

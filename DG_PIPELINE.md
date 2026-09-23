@@ -46,9 +46,11 @@ next batch itself: retryable failures first, then fresh IDs in serial order,
 ## State files (all gitignored, local crash buffer only)
 
 `data/dg_raw/{REG}.json`, `data/dg_contacts.jsonl`, `data/dg_history.jsonl`
-(all-time memory, one line per record), `data/dg_quarantine.jsonl`,
-`data/dg_failed/`, `data/dg_fetch_checkpoint.json` (+`failed_terminal` set),
+(all-time memory, one line per record),
+`data/dg_fetch_checkpoint.json` (+`failed_terminal` set),
 `data/dg_stats.json`, `data/dg_live.json`, `data/dg_fetch.log`, `data/dg_stop`.
+(`data/dg_quarantine.jsonl` and `data/dg_failed/` are legacy leftovers —
+nothing writes them since raw-capture became the default.)
 
 ## Identifiers
 
@@ -70,7 +72,8 @@ Storage `tgpc/dg_contacts.jsonl`. Local is a ≤50-record crash buffer only.
   `--max-captcha-attempts` (default 1) only if deliberately overriding.
 * Supabase writes go to `rph_dg_contacts` only — no DG code path may touch `rph`.
 * `sync_cloud` requires `rph.json` reference (fail-closed, no orphan rows).
-* Unknown/guard-failing rows → quarantine, never silent overwrite.
+* Unknown/guard-failing rows → saved as-is with `raw_notes`, never
+  quarantined and never silently overwritten (validate later, offline).
 * `"You are not Authorized"` = terminal per-record backend gap (proven over
   4 attempts/35 min) → `failed_terminal`, skipped on resume.
 * Valid reg prefixes: `TS|TG|TSDR|TGDR` (28k non-TS rows exist).
@@ -86,5 +89,6 @@ Storage `tgpc/dg_contacts.jsonl`. Local is a ≤50-record crash buffer only.
 
 ## Yield reference (legacy serials)
 
-~66% enrichable, ~34% terminal auth-gaps, rare quarantines (source typos).
+~66% enrichable, ~34% terminal auth-gaps, no quarantines (raw-capture
+default saves everything parseable; validation deferred to `validate-dg`).
 ~10s/record fetch; fixed 4 workers. Captcha 83% bench, ~100% first-pass live.

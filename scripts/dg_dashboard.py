@@ -121,8 +121,8 @@ def build_status(data_dir: Path = DATA) -> dict:
     checkpoint = load_json(data_dir / "dg_fetch_checkpoint.json")
     stop_armed = (data_dir / "dg_stop").exists()
     total = live.get("total") or stats.get("total") or 0
-    processed = stats.get("done", 0) + stats.get("failed", 0) + stats.get("quarantined", 0)
-    all_time = {"saved": 0, "failed": 0, "quarantined": 0}
+    processed = stats.get("done", 0) + stats.get("failed", 0)
+    all_time = {"saved": 0, "failed": 0}
     history_path = data_dir / "dg_history.jsonl"
     try:
         with open(history_path, encoding="utf-8") as f:
@@ -145,7 +145,6 @@ def build_status(data_dir: Path = DATA) -> dict:
         "processed": processed,
         "done": stats.get("done", 0),
         "failed": stats.get("failed", 0),
-        "quarantined": stats.get("quarantined", 0),
         "all_time": all_time,
         "history_records": sum(all_time.values()),
         "sb_upserted": stats.get("sb_upserted", 0),

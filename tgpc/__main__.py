@@ -162,6 +162,12 @@ def main():
     # Retry-photos command
     subparsers.add_parser("retry-photos", help="Retry uploading failed photos from data/webp/ to R2")
 
+    # Validate-dg command (offline: re-check L1 contacts, no website contact)
+    validate_dg_parser = subparsers.add_parser("validate-dg", help="Offline validation pass over dg_contacts.jsonl")
+    validate_dg_parser.add_argument("--out", default="data/dg_contacts.jsonl", help="Contacts jsonl to validate")
+    validate_dg_parser.add_argument("--raw-dir", default="data/dg_raw", help="Per-record raw snapshot dir")
+    validate_dg_parser.add_argument("--max-list", type=int, default=50, help="Max flagged IDs to list")
+
     # Fetch-dg command (getdetailsdg captcha flow: capture + save contact details)
     fetch_dg_parser = subparsers.add_parser("fetch-dg", help="Fetch getdetailsdg records with captcha")
     fetch_dg_parser.add_argument("--ids", nargs="*", default=[], help="Registration IDs (e.g. TS003261)")
@@ -170,11 +176,15 @@ def main():
     fetch_dg_parser.add_argument("--raw-dir", default="data/dg_raw", help="Per-record raw snapshot dir")
     fetch_dg_parser.add_argument("--checkpoint", default="data/dg_fetch_checkpoint.json")
     fetch_dg_parser.add_argument("--stats", default="data/dg_stats.json")
-    fetch_dg_parser.add_argument("--quarantine", default="data/dg_quarantine.jsonl")
-    fetch_dg_parser.add_argument("--reference", default="data/rph.json", help="rph.json for identity guard")
+    fetch_dg_parser.add_argument("--reference", default="data/rph.json", help="rph.json for serial numbers")
     fetch_dg_parser.add_argument("--min-delay", type=float, default=3.0)
     fetch_dg_parser.add_argument("--max-captcha-attempts", type=int, default=1)
     fetch_dg_parser.add_argument("--no-resume", action="store_true", help="Ignore existing checkpoint")
+    fetch_dg_parser.add_argument(
+        "--allow-clobber",
+        action="store_true",
+        help="Allow --no-resume to overwrite the production checkpoint (otherwise refused)",
+    )
     fetch_dg_parser.add_argument(
         "--retry-terminal", action="store_true", help="Re-attempt terminal failures (not-authorized/not-found)"
     )
@@ -319,6 +329,14 @@ def main():
         if not ids:
             print("fetch-dg: no IDs (pass --ids or --ids-file)", file=sys.stderr)
             raise SystemExit(2)
+        checkpoint_path = Path(args.checkpoint)
+        if args.no_resume and checkpoint_path.exists() and not args.allow_clobber:
+            print(
+                f"fetch-dg: refusing --no-resume on existing checkpoint {checkpoint_path} "
+                "(would wipe resume state; pass --allow-clobber to confirm)",
+                file=sys.stderr,
+            )
+            raise SystemExit(2)
         reference = None
         ref_path = Path(args.reference)
         if ref_path.exists():
@@ -349,9 +367,8 @@ def main():
                 ids,
                 out_jsonl=Path(args.out),
                 raw_dir=Path(args.raw_dir),
-                checkpoint_path=Path(args.checkpoint),
+                checkpoint_path=checkpoint_path,
                 stats_path=Path(args.stats),
-                quarantine_path=Path(args.quarantine),
                 reference=reference,
                 min_delay=args.min_delay,
                 max_captcha_attempts=args.max_captcha_attempts,
@@ -365,6 +382,14 @@ def main():
                 warp_rotate_every=args.warp_rotate_every,
                 warp_max_cycles=args.warp_max_cycles,
             )
+        print(json.dumps(stats, indent=2))
+    elif args.command == "validate-dg":
+        import json
+        from pathlib import Path
+
+        from tgpc.details_dg import validate_l1
+
+        stats = validate_l1(Path(args.out), Path(args.raw_dir), max_list=args.max_list)
         print(json.dumps(stats, indent=2))
     elif args.command == "quota":
         with Phase("Show service quotas", 1, 1):

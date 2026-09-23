@@ -155,15 +155,14 @@ class CheckpointTests(unittest.TestCase):
             cp = Path(tmp) / "cp.json"
             self.assertEqual(
                 load_checkpoint(cp),
-                {"completed": [], "failed": {}, "failed_terminal": {}, "quarantined": []},
+                {"completed": [], "failed": {}, "failed_terminal": {}},
             )
-            save_checkpoint_atomic(cp, {"completed": ["TS1"], "failed": {}, "quarantined": []})
+            save_checkpoint_atomic(cp, {"completed": ["TS1"], "failed": {}})
             self.assertEqual(load_checkpoint(cp)["completed"], ["TS1"])
 
             out = Path(tmp) / "out.jsonl"
             raw = Path(tmp) / "raw"
             stats = Path(tmp) / "stats.json"
-            quar = Path(tmp) / "quar.jsonl"
 
             class FakeFetcher:
                 def fetch_one(self, reg, captcha_solver=None, max_captcha_attempts=3):
@@ -188,7 +187,6 @@ class CheckpointTests(unittest.TestCase):
                     raw,
                     cp,
                     stats,
-                    quar,
                     reference={"TS2": {"name": "x", "father_name": "y", "category": "BPharm"}},
                     resume=True,
                     fetcher_factory=FakeFetcher,
@@ -209,16 +207,13 @@ class CheckpointTests(unittest.TestCase):
             out = Path(tmp) / "out.jsonl"
             raw = Path(tmp) / "raw"
             stats = Path(tmp) / "stats.json"
-            quar = Path(tmp) / "quar.jsonl"
-            save_checkpoint_atomic(
-                cp, {"completed": [], "failed": {"TS9": "x"}, "failed_terminal": {"TS9": "x"}, "quarantined": []}
-            )
+            save_checkpoint_atomic(cp, {"completed": [], "failed": {"TS9": "x"}, "failed_terminal": {"TS9": "x"}})
 
             class FakeFetcher:
                 def fetch_one(self, reg, captcha_solver=None, max_captcha_attempts=3):
                     raise AssertionError("terminal reg must not be fetched")
 
-            stats_d = run_fetch(["TS9"], out, raw, cp, stats, quar, resume=True, fetcher_factory=FakeFetcher)
+            stats_d = run_fetch(["TS9"], out, raw, cp, stats, resume=True, fetcher_factory=FakeFetcher)
             self.assertEqual(stats_d["already_done"], 1)
             self.assertEqual(stats_d["done"], 0)
 
@@ -228,7 +223,6 @@ class CheckpointTests(unittest.TestCase):
                 raw,
                 cp,
                 stats,
-                quar,
                 resume=True,
                 retry_terminal=True,
                 fetcher_factory=FakeFetcher,
@@ -261,7 +255,6 @@ class SyncPayloadTests(unittest.TestCase):
             out = Path(tmp) / "out.jsonl"
             raw = Path(tmp) / "raw"
             stats = Path(tmp) / "stats.json"
-            quar = Path(tmp) / "quar.jsonl"
 
             class FakeFetcher:
                 def fetch_one(self, reg, captcha_solver=None, max_captcha_attempts=3):
@@ -292,7 +285,6 @@ class SyncPayloadTests(unittest.TestCase):
                     raw,
                     cp,
                     stats,
-                    quar,
                     reference=ref,
                     resume=False,
                     sync_cloud=True,
@@ -318,7 +310,6 @@ class SyncPayloadTests(unittest.TestCase):
                     Path(tmp) / "r",
                     Path(tmp) / "c.json",
                     Path(tmp) / "s.json",
-                    Path(tmp) / "q.jsonl",
                     reference=None,
                     resume=False,
                     sync_cloud=True,
@@ -329,7 +320,7 @@ class SyncPayloadTests(unittest.TestCase):
         import tgpc.details_dg as dg
 
         with tempfile.TemporaryDirectory() as tmp:
-            cp, out, raw, stats, quar = (Path(tmp) / n for n in ("c.json", "o.jsonl", "r", "s.json", "q.jsonl"))
+            cp, out, raw, stats = (Path(tmp) / n for n in ("c.json", "o.jsonl", "r", "s.json"))
 
             class FakeFetcher:
                 def fetch_one(self, reg, captcha_solver=None, max_captcha_attempts=3):
@@ -357,7 +348,6 @@ class SyncPayloadTests(unittest.TestCase):
                     raw,
                     cp,
                     stats,
-                    quar,
                     reference=ref,
                     resume=False,
                     sync_cloud=True,
@@ -375,12 +365,11 @@ class SyncPayloadTests(unittest.TestCase):
 
     def test_serial_attached_from_reference(self):
         with tempfile.TemporaryDirectory() as tmp:
-            out, raw, cp, stats, quar = (
+            out, raw, cp, stats = (
                 Path(tmp) / "o.jsonl",
                 Path(tmp) / "r",
                 Path(tmp) / "c.json",
                 Path(tmp) / "s.json",
-                Path(tmp) / "q.jsonl",
             )
 
             class FakeFetcher:
@@ -391,7 +380,7 @@ class SyncPayloadTests(unittest.TestCase):
 
             ref = {"TS901": {"name": "N", "father_name": "F", "category": "BPharm", "serial_number": 901}}
             stats_d = run_fetch(
-                ["TS901"], out, raw, cp, stats, quar, reference=ref, resume=False, fetcher_factory=FakeFetcher
+                ["TS901"], out, raw, cp, stats, reference=ref, resume=False, fetcher_factory=FakeFetcher
             )
             self.assertEqual(stats_d["done"], 1)
             row = json.loads(out.read_text().splitlines()[0])
@@ -401,9 +390,9 @@ class SyncPayloadTests(unittest.TestCase):
             hist = json.loads((Path(tmp) / "dg_history.jsonl").read_text().splitlines()[0])
             self.assertEqual(hist["serial_number"], 901)
 
-    def test_unknown_reg_quarantined(self):
+    def test_unknown_reg_saved_as_is(self):
         with tempfile.TemporaryDirectory() as tmp:
-            cp, out, raw, stats, quar = (Path(tmp) / n for n in ("c.json", "o.jsonl", "r", "s.json", "q.jsonl"))
+            cp, out, raw, stats = (Path(tmp) / n for n in ("c.json", "o.jsonl", "r", "s.json"))
 
             class FakeFetcher:
                 def fetch_one(self, reg, captcha_solver=None, max_captcha_attempts=3):
@@ -415,13 +404,47 @@ class SyncPayloadTests(unittest.TestCase):
                 raw,
                 cp,
                 stats,
-                quar,
                 reference={"OTHER": {"name": "x", "father_name": "y", "category": "BPharm"}},
                 resume=False,
                 fetcher_factory=FakeFetcher,
             )
-            self.assertEqual(stats_d["quarantined"], 1)
-            # Quarantine JSONL is no longer written; quarantined records are tracked in checkpoint/state only
+            self.assertEqual(stats_d["done"], 1)
+            self.assertNotIn("quarantined", stats_d)  # stat removed with quarantine plumbing
+            row = json.loads(out.read_text().splitlines()[0])
+            self.assertIn("unknown_reg", row["raw_notes"])
+            # Fast-capture never quarantines; unknown regs are saved as-is
+
+    def test_bad_fields_saved_as_is(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cp, out, raw, stats = (Path(tmp) / n for n in ("c.json", "o.jsonl", "r", "s.json"))
+
+            class FakeFetcher:
+                def fetch_one(self, reg, captcha_solver=None, max_captcha_attempts=3):
+                    html = DG_HTML.replace("TS003261", reg)
+                    html = html.replace("9550725290", "123").replace("dinesh.govx@gmail.com", "bad")
+                    return html, {"captcha_text": "X", "attempts": 1, "ms": {}}
+
+            ref = {"TS77": {"name": "SOMEONE ELSE", "father_name": "OTHER FATHER", "category": "BPharm"}}
+            stats_d = run_fetch(
+                ["TS77"],
+                out,
+                raw,
+                cp,
+                stats,
+                reference=ref,
+                resume=False,
+                fetcher_factory=FakeFetcher,
+            )
+            self.assertEqual(stats_d["done"], 1)
+            self.assertNotIn("quarantined", stats_d)  # stat removed with quarantine plumbing
+            row = json.loads(out.read_text().splitlines()[0])
+            self.assertEqual(row["mobile_no"], "123")
+            self.assertEqual(row["email_id"], "bad")
+            self.assertIn("bad_mobile", row["raw_notes"])
+            self.assertIn("bad_email", row["raw_notes"])
+            state = load_checkpoint(cp)
+            self.assertIn("TS77", state["completed"])
+            self.assertNotIn("quarantined", state)  # quarantine tracking removed
 
     def test_heal_jsonl_truncates_torn_line(self):
         from tgpc.details_dg import _heal_jsonl
@@ -449,7 +472,7 @@ class WorkerFixedTests(unittest.TestCase):
             return orig(*args, **kwargs)
 
         with tempfile.TemporaryDirectory() as tmp:
-            cp, out, raw, stats, quar = (Path(tmp) / n for n in ("c.json", "o.jsonl", "r", "s.json", "q.jsonl"))
+            cp, out, raw, stats = (Path(tmp) / n for n in ("c.json", "o.jsonl", "r", "s.json"))
 
             class FakeFetcher:
                 def fetch_one(self, reg, captcha_solver=None, max_captcha_attempts=3):
@@ -458,7 +481,7 @@ class WorkerFixedTests(unittest.TestCase):
             regs = [f"TS8{i:02d}" for i in range(6)]
             dg.ThreadPoolExecutor = recording
             try:
-                stats_d = run_fetch(regs, out, raw, cp, stats, quar, resume=False, fetcher_factory=FakeFetcher)
+                stats_d = run_fetch(regs, out, raw, cp, stats, resume=False, fetcher_factory=FakeFetcher)
             finally:
                 dg.ThreadPoolExecutor = orig
             self.assertEqual(created, [4])
@@ -470,7 +493,7 @@ class WorkerFixedTests(unittest.TestCase):
 class LiveWatchTests(unittest.TestCase):
     def _paths(self, tmp):
         d = Path(tmp)
-        return d / "o.jsonl", d / "r", d / "c.json", d / "s.json", d / "q.jsonl"
+        return d / "o.jsonl", d / "r", d / "c.json", d / "s.json"
 
     def _fetcher(self, trigger=None):
         class FakeFetcher:
@@ -483,14 +506,13 @@ class LiveWatchTests(unittest.TestCase):
 
     def test_max_records_bounds_run(self):
         with tempfile.TemporaryDirectory() as tmp:
-            out, raw, cp, stats, quar = self._paths(tmp)
+            out, raw, cp, stats = self._paths(tmp)
             stats_d = run_fetch(
                 ["TS701", "TS702", "TS703"],
                 out,
                 raw,
                 cp,
                 stats,
-                quar,
                 resume=False,
                 max_records=2,
                 fetcher_factory=self._fetcher(),
@@ -511,7 +533,7 @@ class LiveWatchTests(unittest.TestCase):
 
     def test_stop_file_halts_after_current(self):
         with tempfile.TemporaryDirectory() as tmp:
-            out, raw, cp, stats, quar = self._paths(tmp)
+            out, raw, cp, stats = self._paths(tmp)
             seen = []
 
             def trigger(reg):
@@ -525,7 +547,6 @@ class LiveWatchTests(unittest.TestCase):
                 raw,
                 cp,
                 stats,
-                quar,
                 resume=False,
                 fetcher_factory=self._fetcher(trigger),
             )
@@ -541,7 +562,6 @@ class LiveWatchTests(unittest.TestCase):
                 raw,
                 cp,
                 stats,
-                quar,
                 resume=True,
                 fetcher_factory=self._fetcher(),
             )
@@ -552,7 +572,7 @@ class LiveWatchTests(unittest.TestCase):
 class WarpGateTests(unittest.TestCase):
     def _paths(self, tmp):
         d = Path(tmp)
-        return d / "o.jsonl", d / "r", d / "c.json", d / "s.json", d / "q.jsonl"
+        return d / "o.jsonl", d / "r", d / "c.json", d / "s.json"
 
     def _fetcher(self):
         class FakeFetcher:
@@ -597,7 +617,7 @@ class WarpGateTests(unittest.TestCase):
         import tgpc.details_dg as dg
 
         with tempfile.TemporaryDirectory() as tmp:
-            out, raw, cp, stats, quar = self._paths(tmp)
+            out, raw, cp, stats = self._paths(tmp)
             orig_avail, orig_egress, orig_ensure = dg.warp_available, dg.egress_ip, dg.ensure_rotated_ip
             dg.warp_available = lambda: True
             dg.egress_ip = lambda timeout=15: "A"
@@ -609,7 +629,6 @@ class WarpGateTests(unittest.TestCase):
                     raw,
                     cp,
                     stats,
-                    quar,
                     resume=False,
                     warp_rotate_every=2,
                     fetcher_factory=self._fetcher(),
@@ -625,7 +644,7 @@ class WarpGateTests(unittest.TestCase):
         import tgpc.details_dg as dg
 
         with tempfile.TemporaryDirectory() as tmp:
-            out, raw, cp, stats, quar = self._paths(tmp)
+            out, raw, cp, stats = self._paths(tmp)
             orig_avail, orig_egress, orig_ensure = dg.warp_available, dg.egress_ip, dg.ensure_rotated_ip
             dg.warp_available = lambda: True
             dg.egress_ip = lambda timeout=15: "A"
@@ -637,7 +656,6 @@ class WarpGateTests(unittest.TestCase):
                     raw,
                     cp,
                     stats,
-                    quar,
                     resume=False,
                     warp_rotate_every=2,
                     fetcher_factory=self._fetcher(),
@@ -653,18 +671,15 @@ class WarpGateTests(unittest.TestCase):
         import tgpc.details_dg as dg
 
         with tempfile.TemporaryDirectory() as tmp:
-            out, raw, cp, stats, quar = (
+            out, raw, cp, stats = (
                 Path(tmp) / "o.jsonl",
                 Path(tmp) / "r",
                 Path(tmp) / "c.json",
                 Path(tmp) / "s.json",
-                Path(tmp) / "q.jsonl",
             )
             # Two regs done in a previous run; gate every=2 must fire before the
             # very first new record (cumulative already sits on a multiple).
-            save_checkpoint_atomic(
-                cp, {"completed": ["TS700", "TS701"], "failed": {}, "failed_terminal": {}, "quarantined": []}
-            )
+            save_checkpoint_atomic(cp, {"completed": ["TS700", "TS701"], "failed": {}, "failed_terminal": {}})
 
             class FakeFetcher:
                 def fetch_one(self, reg, captcha_solver=None, max_captcha_attempts=1):
@@ -681,7 +696,6 @@ class WarpGateTests(unittest.TestCase):
                     raw,
                     cp,
                     stats,
-                    quar,
                     resume=True,
                     warp_rotate_every=2,
                     fetcher_factory=FakeFetcher,
@@ -694,7 +708,7 @@ class WarpGateTests(unittest.TestCase):
 
     def test_gate_refuses_without_warp(self):
         with tempfile.TemporaryDirectory() as tmp:
-            out, raw, cp, stats, quar = self._paths(tmp)
+            out, raw, cp, stats = self._paths(tmp)
             import tgpc.details_dg as dg
 
             orig_avail = dg.warp_available
@@ -707,13 +721,117 @@ class WarpGateTests(unittest.TestCase):
                         raw,
                         cp,
                         stats,
-                        quar,
                         resume=False,
                         warp_rotate_every=5,
                         fetcher_factory=self._fetcher(),
                     )
             finally:
                 dg.warp_available = orig_avail
+
+
+class NoResumeGuardTests(unittest.TestCase):
+    def test_no_resume_backs_up_checkpoint(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cp = Path(tmp) / "c.json"
+            out, raw, stats = (Path(tmp) / n for n in ("o.jsonl", "r", "s.json"))
+            save_checkpoint_atomic(cp, {"completed": ["TS1"], "failed": {}, "failed_terminal": {}})
+
+            class FakeFetcher:
+                def fetch_one(self, reg, captcha_solver=None, max_captcha_attempts=3):
+                    return DG_HTML.replace("TS003261", reg), {"captcha_text": "X", "attempts": 1, "ms": {}}
+
+            run_fetch(["TS2"], out, raw, cp, stats, resume=False, fetcher_factory=FakeFetcher)
+            baks = list(Path(tmp).glob("c.json.bak-*"))
+            self.assertEqual(len(baks), 1)
+            state = load_checkpoint(cp)
+            self.assertIn("TS2", state["completed"])
+            self.assertNotIn("TS1", state["completed"])  # fresh state, backup holds the old
+
+    def test_cli_refuses_no_resume_without_allow_clobber(self):
+        from unittest.mock import patch
+
+        from tgpc import __main__ as cli
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cp = Path(tmp) / "c.json"
+            cp.write_text(
+                '{"completed": ["TS1"], "failed": {}, "failed_terminal": {}}',
+                encoding="utf-8",
+            )
+            argv = ["tgpc", "fetch-dg", "--ids", "TS2", "--checkpoint", str(cp), "--no-resume"]
+            with patch.object(sys, "argv", argv):
+                with self.assertRaises(SystemExit) as ctx:
+                    cli.main()
+            self.assertEqual(ctx.exception.code, 2)
+            state = json.loads(cp.read_text(encoding="utf-8"))
+            self.assertEqual(state["completed"], ["TS1"])  # untouched
+
+    def test_cli_no_resume_proceeds_with_allow_clobber(self):
+        from unittest.mock import patch
+
+        from tgpc import __main__ as cli
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cp = Path(tmp) / "c.json"
+            cp.write_text(
+                '{"completed": ["TS1"], "failed": {}, "failed_terminal": {}}',
+                encoding="utf-8",
+            )
+            argv = [
+                "tgpc",
+                "fetch-dg",
+                "--ids",
+                "TS2",
+                "--checkpoint",
+                str(cp),
+                "--out",
+                str(Path(tmp) / "o.jsonl"),
+                "--raw-dir",
+                str(Path(tmp) / "r"),
+                "--stats",
+                str(Path(tmp) / "s.json"),
+                "--no-resume",
+                "--allow-clobber",
+            ]
+            with patch.object(sys, "argv", argv):
+                with patch("tgpc.details_dg.run_fetch", return_value={"done": 0}) as rf:
+                    cli.main()
+            self.assertTrue(rf.called)
+
+
+class ValidateL1Tests(unittest.TestCase):
+    def test_validate_l1_reports_bad_rows(self):
+        from tgpc.details_dg import validate_l1
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "o.jsonl"
+            raw = Path(tmp) / "r"
+            raw.mkdir()
+            good = {
+                "registration_number": "TS60",
+                "name": "N",
+                "gender": "Male",
+                "mobile_no": "9550725290",
+                "email_id": "a@b.com",
+            }
+            bad = {
+                "registration_number": "TS61",
+                "name": "N",
+                "gender": "Male",
+                "mobile_no": "123",
+                "email_id": "bad",
+            }
+            out.write_text(json.dumps(good) + "\n" + json.dumps(bad) + "\n", encoding="utf-8")
+            (raw / "TS60.json").write_text("{}", encoding="utf-8")
+            stats = validate_l1(out, raw)
+            self.assertEqual(stats["total"], 2)
+            self.assertEqual(stats["clean"], 1)
+            self.assertEqual(stats["flagged"], 1)
+            self.assertEqual(stats["flagged_regs"], ["TS61"])
+            self.assertIn("bad_mobile", stats["by_reason"])
+            self.assertIn("bad_email", stats["by_reason"])
+            self.assertEqual(stats["missing_raw_count"], 1)
+            self.assertEqual(stats["missing_raw"], ["TS61"])
 
 
 if __name__ == "__main__":
