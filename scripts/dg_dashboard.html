@@ -138,8 +138,8 @@ async function refresh() {
     document.getElementById('bar').style.width = pct + '%';
     const at = s.all_time || {};
     document.getElementById('alltime').textContent =
-      'All time: ' + (at.saved || 0) + ' saved · ' + (at.failed || 0) + ' failed (' +
-      (s.history_records || 0) + ' records remembered)';
+      'All time: ' + (at.completed || 0) + ' completed · ' + (at.refused || 0) + ' refused at source (' +
+      (s.resolved || 0) + ' resolved)';
     const reasons = Object.entries(s.fail_by_reason || {}).map(([k, v]) => plainReason(k) + ': ' + v).join(' · ');
     document.getElementById('reasons').textContent = reasons ? 'Why some are missing — ' + reasons : '';
     document.getElementById('updated').textContent = 'Updated: ' + (s.updated_ist || s.updated_at || '—') +

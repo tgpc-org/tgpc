@@ -52,7 +52,8 @@ class DashboardTests(unittest.TestCase):
             self.assertEqual(s["current_reg"], "TS1")
             self.assertEqual(s["processed"], 4)
             self.assertEqual(s["completed"], 3)
-            self.assertEqual(s["terminal"], 1)
+            self.assertEqual(s["all_time"], {"completed": 3, "refused": 1})
+            self.assertEqual(s["resolved"], 4)
             self.assertFalse(s["stop_armed"])
 
     def test_status_empty_dir(self):
@@ -188,21 +189,18 @@ class DashboardTests(unittest.TestCase):
             self.assertEqual(s["next_serial"], 11)
             self.assertEqual(s["remaining_in_batch"], 42)
 
-    def test_all_time_history(self):
+    def test_all_time_from_checkpoint(self):
         with tempfile.TemporaryDirectory() as tmp:
             d = Path(tmp)
-            rows = [
-                {"registration_number": "A", "outcome": "saved"},
-                {"registration_number": "B", "outcome": "failed"},
-                {"registration_number": "C", "outcome": "quarantined"},
-                {"registration_number": "D", "outcome": "saved"},
-            ]
-            (d / "dg_history.jsonl").write_text("\n".join(json.dumps(r) for r in rows))
+            (d / "dg_fetch_checkpoint.json").write_text(
+                json.dumps({"completed": ["A", "B", "C"], "failed_terminal": {"X": "y"}})
+            )
             (d / "dg_stats.json").write_text(json.dumps({"done": 0, "failed": 0}))
             s = build_status(d)
-            # Legacy "quarantined" history lines are no longer bucketed
-            self.assertEqual(s["all_time"], {"saved": 2, "failed": 1})
-            self.assertEqual(s["history_records"], 3)
+            # Single source: checkpoint unique regs, never history line counts
+            self.assertEqual(s["all_time"], {"completed": 3, "refused": 1})
+            self.assertEqual(s["resolved"], 4)
+            self.assertEqual(s["completed"], 3)
 
 
 if __name__ == "__main__":

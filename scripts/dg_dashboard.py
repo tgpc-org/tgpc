@@ -111,30 +111,22 @@ def run_active(data_dir: Path = DATA) -> bool:
 
 
 def build_status(data_dir: Path = DATA) -> dict:
-    """Merge live + stats + checkpoint + all-time history into one payload.
+    """Merge live + stats + checkpoint into one payload.
 
-    Per-run files (dg_stats.json) reset every run; dg_history.jsonl is the
-    permanent memory — one line per processed record, never rewritten.
+    Per-run files (dg_stats.json) reset every run. All-time numbers come
+    from the checkpoint (unique regs) — never from dg_history.jsonl line
+    counts, which include duplicate re-save lines. The history file remains
+    as an audit log only.
     """
     live = load_json(data_dir / "dg_live.json")
     stats = load_json(data_dir / "dg_stats.json")
     checkpoint = load_json(data_dir / "dg_fetch_checkpoint.json")
+    completed = checkpoint.get("completed", [])
+    terminal = checkpoint.get("failed_terminal", {})
     stop_armed = (data_dir / "dg_stop").exists()
     total = live.get("total") or stats.get("total") or 0
     processed = stats.get("done", 0) + stats.get("failed", 0)
-    all_time = {"saved": 0, "failed": 0}
-    history_path = data_dir / "dg_history.jsonl"
-    try:
-        with open(history_path, encoding="utf-8") as f:
-            for line in f:
-                try:
-                    outcome = json.loads(line).get("outcome")
-                except Exception:
-                    continue
-                if outcome in all_time:
-                    all_time[outcome] += 1
-    except FileNotFoundError:
-        pass
+    all_time = {"completed": len(completed), "refused": len(terminal)}
     return {
         "status": live.get("status", "idle"),
         "run_active": run_active(data_dir),
@@ -146,7 +138,7 @@ def build_status(data_dir: Path = DATA) -> dict:
         "done": stats.get("done", 0),
         "failed": stats.get("failed", 0),
         "all_time": all_time,
-        "history_records": sum(all_time.values()),
+        "resolved": sum(all_time.values()),
         "sb_upserted": stats.get("sb_upserted", 0),
         "captcha_firstpass_ok": stats.get("captcha_firstpass_ok", 0),
         "captcha_retries": stats.get("captcha_retries", 0),
@@ -154,8 +146,7 @@ def build_status(data_dir: Path = DATA) -> dict:
         "records_per_min": live.get("records_per_min"),
         "eta_mins": live.get("eta_mins"),
         "stop_armed": stop_armed,
-        "completed": len(checkpoint.get("completed", [])),
-        "terminal": len(checkpoint.get("failed_terminal", {})),
+        "completed": len(completed),
         "updated_at": live.get("updated_at", ""),
         "updated_ist": to_ist_day(live.get("updated_at", "")),
         "next_reg": live.get("next_reg", ""),

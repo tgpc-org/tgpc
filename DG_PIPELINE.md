@@ -74,8 +74,9 @@ Storage `tgpc/dg_contacts.jsonl`. Local is a ≤50-record crash buffer only.
 * `sync_cloud` requires `rph.json` reference (fail-closed, no orphan rows).
 * Unknown/guard-failing rows → saved as-is with `raw_notes`, never
   quarantined and never silently overwritten (validate later, offline).
-* `"You are not Authorized"` = terminal per-record backend gap (proven over
-  4 attempts/35 min) → `failed_terminal`, skipped on resume.
+* `"You are not Authorized"` = per-record backend gap, refused at source
+  (proven over 4 attempts/35 min) → checkpoint `failed_terminal` set
+  (internal name for "refused, don't retry"), skipped on resume.
 * Valid reg prefixes: `TS|TG|TSDR|TGDR` (28k non-TS rows exist).
 * Table cells parse positionally — never drop empties (empty-cell bug
   shipped header text as values once; regression-tested).
@@ -89,6 +90,6 @@ Storage `tgpc/dg_contacts.jsonl`. Local is a ≤50-record crash buffer only.
 
 ## Yield reference (legacy serials)
 
-~66% enrichable, ~34% terminal auth-gaps, no quarantines (raw-capture
+~66% enrichable, ~34% refused at source (auth-gaps), no quarantines (raw-capture
 default saves everything parseable; validation deferred to `validate-dg`).
 ~10s/record fetch; fixed 4 workers. Captcha 83% bench, ~100% first-pass live.
