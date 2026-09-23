@@ -71,9 +71,9 @@ class DashboardTests(unittest.TestCase):
         from scripts.dg_dashboard import PAGE
 
         html = PAGE.read_text(encoding="utf-8")
-        for needle in ("Saved", "Couldn't fetch", "In cloud database", "Finished: ", "plainReason"):
+        for needle in ("Saved", "Couldn't fetch", "Finished: ", "plainReason"):
             self.assertIn(needle, html)
-        for gone in ("checkpoint:", " terminal'", "Held for review", 'id="quar"'):
+        for gone in ("checkpoint:", " terminal'", "Held for review", 'id="quar"', "In cloud database", 'id="sb"'):
             self.assertNotIn(gone, html)
 
     def test_theme_toggle_wired(self):

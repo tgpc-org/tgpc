@@ -65,7 +65,6 @@
   <div class="cards">
     <div class="card"><div class="label">Saved</div><div class="value green" id="done">0</div></div>
     <div class="card"><div class="label">Couldn't fetch</div><div class="value red" id="failed">0</div></div>
-    <div class="card"><div class="label">In cloud database</div><div class="value blue" id="sb">0</div></div>
     <div class="card"><div class="label">Speed / min</div><div class="value" id="rate">—</div></div>
     <div class="card"><div class="label">Time left (min)</div><div class="value" id="eta">—</div></div>
   </div>
@@ -131,7 +130,6 @@ async function refresh() {
     document.getElementById('event').textContent = s.event || '';
     document.getElementById('done').textContent = s.done;
     document.getElementById('failed').textContent = s.failed;
-    document.getElementById('sb').textContent = s.sb_upserted;
     document.getElementById('rate').textContent = s.records_per_min ?? '—';
     document.getElementById('eta').textContent = s.eta_mins ?? '—';
     const pct = s.total ? Math.round(100 * s.processed / s.total) : 0;
