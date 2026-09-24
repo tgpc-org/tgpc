@@ -61,8 +61,12 @@ describe('session tokens', () => {
 
   it('rejects a tampered signature', async () => {
     const token = await createSession(SECRET);
-    const [exp, sig] = token.split('.');
-    assert.equal(await verifySession(`${exp}.A${sig.slice(1)}`, SECRET), false);
+    const [exp, sig] = token.split('.');		// Flip rather than overwrite with a fixed character: the signature is
+		// base64url, so its first character is already 'A' about 1 time in 64.
+		// Overwriting made the "tampered" token byte-identical to the valid one,
+		// so this assertion failed intermittently in CI (~1.8% of runs).
+		const flipped = sig[0] === 'A' ? 'B' : 'A';
+		assert.equal(await verifySession(`${exp}.${flipped}${sig.slice(1)}`, SECRET), false);
   });
 
   it('rejects an expiry extended by the client', async () => {
