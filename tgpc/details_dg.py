@@ -11,7 +11,9 @@ Flow (verified live 2026-09-17):
 Redundancy (re-fetch is expensive — captcha + throttle per record):
   L1 local   data/dg_raw/{REG}.json + data/dg_contacts.jsonl + checkpoint (fsync)
   L2 Supabase `rph` new columns (slice 2 upsert; this slice writes the jsonl)
-  L3 R2       tgpc/dg-raw/{REG}.json + tgpc/dg_contacts.jsonl (best-effort push)
+  L3 R2       <private DG bucket>/dg-raw/{REG}.json + .../dg_contacts.jsonl
+              (best-effort push; NEVER the public photo/notice bucket — these
+              files hold captcha-gated PII)
   L4 GDrive   via existing rclone path (slice 2)
 
 Checkpoint advances only after L1 fsync succeeds, so a crash loses at most
@@ -601,9 +603,59 @@ def _record_failure(state: Dict, stats: Dict, reg: str, reason: str, terminal: b
 # copies. Cloud failures never block the checkpoint — upserts are idempotent
 # on registration_number, so the next batch or end-of-run push heals gaps.
 
-# Separate public table (migration: tgpc/dg_migration.sql). DG writes never
-# touch rph base rows — payloads carry only DG columns keyed by reg number.
+# Separate service-role-only table (migration: tgpc/dg_migration.sql): these
+# are captcha-gated PII columns, so anon/authenticated hold no grant at all.
+# DG writes never touch rph base rows — payloads carry only DG columns keyed
+# by reg number.
 DG_TABLE = "rph_dg_contacts"
+
+# The pipeline's public bucket: photos + notices, served anonymously from
+# Config.r2_public_base, so *every* key in it is world-readable. DG artifacts
+# are captcha-gated PII and belong in a separate private bucket instead
+# (audit lead 2: raw PII snapshots pushed to R2).
+PUBLIC_R2_BUCKET = "tgpc"
+R2_DG_BUCKET_ENV = "TGPC_R2_DG_BUCKET"
+
+
+def dg_r2_bucket() -> str:
+    """Private bucket for DG PII. Empty means unconfigured — pushes must refuse."""
+    return os.environ.get(R2_DG_BUCKET_ENV, "").strip()
+
+
+# Supabase Storage is the other destination that receives the same DG PII
+# (`dg_contacts.jsonl`). Its exposure depends on a bucket flag that lives in
+# the dashboard, so it is verified at push time instead of assumed.
+DG_SB_BUCKET = "tgpc"
+
+
+def dg_storage_bucket_public(url: str, key: str, bucket: str = DG_SB_BUCKET) -> Optional[bool]:
+    """Whether the Storage bucket is publicly readable.
+
+    Returns True (public — unsafe for PII), False (private — fine), or None
+    when the flag cannot be established. Callers must treat None as unsafe:
+    an unverifiable destination is not a private one.
+    """
+    try:
+        import requests as rq
+
+        resp = rq.get(
+            f"{url}/storage/v1/bucket/{bucket}",
+            headers={"Authorization": f"Bearer {key}", "apikey": key},
+            timeout=15,
+        )
+        if not resp.ok:
+            logger.error(f"Cannot verify Storage bucket '{bucket}' ({resp.status_code}) — treating as public")
+            return None
+        payload = resp.json()
+        if not isinstance(payload, dict) or "public" not in payload:
+            # An absent flag is an unexpected response shape, not a private bucket.
+            logger.error(f"Storage bucket '{bucket}' reported no 'public' flag — treating as public")
+            return None
+        return bool(payload["public"])
+    except Exception as e:
+        logger.error(f"Cannot verify Storage bucket '{bucket}' ({e}) — treating as public")
+        return None
+
 
 DG_COLUMNS = (
     "dob",
@@ -647,7 +699,18 @@ def upsert_dg_batch(payloads: List[Dict[str, object]]) -> Tuple[int, str]:
 
 
 def push_file_to_r2(local_path: Path, key: str) -> bool:
-    """PUT one local file to R2 tgpc/{key}. False when creds/tooling missing."""
+    """PUT one local file to the private DG bucket. False when creds/tooling missing.
+
+    Fails closed: an unset/misconfigured bucket is a refusal, never a fallback
+    to the public bucket, because whatever lands there is anonymously readable.
+    """
+    bucket = dg_r2_bucket()
+    if not bucket:
+        logger.error(f"{R2_DG_BUCKET_ENV} not set — refusing to push {key} (PII must not reach a public bucket)")
+        return False
+    if bucket == PUBLIC_R2_BUCKET:
+        logger.error(f"{R2_DG_BUCKET_ENV}={bucket} is the PUBLIC bucket — refusing to push {key}")
+        return False
     account = os.environ.get("CLOUDFLARE_ACCOUNT_ID")
     access_key = os.environ.get("R2_ACCESS_KEY_ID")
     secret_key = os.environ.get("R2_SECRET_ACCESS_KEY")
@@ -668,7 +731,7 @@ def push_file_to_r2(local_path: Path, key: str) -> bool:
             config=BotocoreConfig(signature_version="s3v4"),
         )
         with open(local_path, "rb") as f:
-            client.put_object(Bucket="tgpc", Key=key, Body=f)
+            client.put_object(Bucket=bucket, Key=key, Body=f)
         return True
     except Exception as e:
         logger.error(f"R2 push error for {key}: {e}")
@@ -711,18 +774,27 @@ def push_dg_to_gdrive(local_path: Path, remote_name: str) -> bool:
 
 
 def push_dg_to_sb_storage(local_path: Path, object_name: str) -> bool:
-    """Upload one file to Supabase Storage tgpc/{object_name} (x-upsert)."""
+    """Upload one file to the private Supabase Storage bucket (x-upsert).
+
+    Fails closed on a bucket that is public *or* unverifiable — this object is
+    captcha-gated PII, so "could not check" must never mean "upload anyway".
+    """
     url = os.environ.get("SUPABASE_URL")
     key = os.environ.get("SUPABASE_SECRET_KEY")
     if not url or not key:
         logger.warning("Supabase credentials missing — skipping Storage push")
+        return False
+    public = dg_storage_bucket_public(url, key)
+    if public is not False:
+        state = "public" if public else "unverifiable"
+        logger.error(f"Storage bucket '{DG_SB_BUCKET}' is {state} — refusing to upload {object_name} (PII)")
         return False
     try:
         import requests as rq
 
         with open(local_path, "rb") as f:
             resp = rq.post(
-                f"{url}/storage/v1/object/tgpc/{object_name}",
+                f"{url}/storage/v1/object/{DG_SB_BUCKET}/{object_name}",
                 headers={"Authorization": f"Bearer {key}", "apikey": key, "x-upsert": "true"},
                 data=f,
                 timeout=300,

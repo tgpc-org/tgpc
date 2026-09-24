@@ -37,8 +37,10 @@ next batch itself: retryable failures first, then fresh IDs in serial order,
 * `tgpc/details_dg.py` — fetcher (`DgFetcher`), parser (`parse_dg_html`),
   validators, OCR vote (`solve_captcha`, benched 10/12 first-pass), checkpoint
   runner (`run_fetch`), Supabase/R2/GDrive/SB-Storage sync.
-* `tgpc/dg_migration.sql` — creates separate public table `rph_dg_contacts`
-  (anon read-only RLS, no FK to `rph` on purpose). Re-run whole file safely.
+* `tgpc/dg_migration.sql` — creates separate table `rph_dg_contacts`
+  (service-role-only: captcha-gated PII, never anon-readable; no FK to `rph`
+  on purpose). Re-run the whole file safely — re-running also applies the PII
+  lockdown to an already-deployed project.
 * `scripts/dg_dashboard.py` + `scripts/dg_dashboard.html` — stdlib localhost
   monitor (status API, log tail, STOP button). TGPC palette only.
 * `tests/test_details_dg.py`, `tests/test_dg_dashboard.py`.
@@ -61,8 +63,21 @@ human tracker — including `rph_dg_contacts.serial_number`.
 ## Cloud redundancy (all four, verified)
 
 Supabase `rph_dg_contacts` (batch upsert every `--sync-every`, idempotent) +
-R2 `dg-raw/` + `dg-contacts/` (rolling + timestamped) + GDrive + Supabase
-Storage `tgpc/dg_contacts.jsonl`. Local is a ≤50-record crash buffer only.
+R2 **private** DG bucket (`TGPC_R2_DG_BUCKET`) `dg-raw/` + `dg-contacts/`
+(rolling + timestamped) + GDrive + Supabase Storage `tgpc/dg_contacts.jsonl`.
+Local is a ≤50-record crash buffer only.
+
+The R2 bucket holding DG artifacts must be a *separate, private* bucket, never
+the `tgpc` bucket that serves photos and notices: that one is publicly readable
+at `Config.r2_public_base`, so every key in it is world-readable. If
+`TGPC_R2_DG_BUCKET` is unset — or set to the public bucket name — the push
+refuses and logs an error rather than falling back.
+
+The Supabase Storage copy is the same PII, and whether it is exposed depends on
+that bucket's **public** flag — a dashboard setting, so nothing in this repo can
+prove it. `push_dg_to_sb_storage` therefore asks the Storage API before every
+upload and refuses when the bucket is public *or* when the flag cannot be
+established: an unverifiable destination is not a private one.
 
 ## Hard rules (from production incidents)
 
@@ -71,6 +86,9 @@ Storage `tgpc/dg_contacts.jsonl`. Local is a ≤50-record crash buffer only.
   in checkpoint as transient failures for a later run. Tune via
   `--max-captcha-attempts` (default 1) only if deliberately overriding.
 * Supabase writes go to `rph_dg_contacts` only — no DG code path may touch `rph`.
+* `rph_dg_contacts` holds captcha-gated PII (mobile, email, home address, DOB)
+  and is service_role-only. No migration may grant anon/authenticated any
+  privilege on it; the pipeline is the only consumer, via the service key.
 * `sync_cloud` requires `rph.json` reference (fail-closed, no orphan rows).
 * Unknown/guard-failing rows → saved as-is with `raw_notes`, never
   quarantined and never silently overwritten (validate later, offline).

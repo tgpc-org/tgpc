@@ -104,6 +104,7 @@ CREDENTIAL_KEYS = [
     "CLOUDFLARE_API_TOKEN",
     "R2_ACCESS_KEY_ID",
     "R2_SECRET_ACCESS_KEY",
+    "TGPC_R2_DG_BUCKET",  # private bucket for DG PII — never the public one
     "RCLONE_GDRIVE_CONFIG",
     "RESEND_API_KEY",
     "NOTIFICATION_EMAIL",
