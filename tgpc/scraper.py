@@ -7,7 +7,7 @@ import time
 import random
 import re
 import ssl
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urljoin
 from pathlib import Path
 from typing import List, Dict, Optional
 from dataclasses import dataclass
@@ -401,8 +401,35 @@ class Scraper:
                             raise ValueError(f"External host in photo URL: {parsed.hostname}")
                         if parsed.path and ".." in parsed.path.split("/"):
                             raise ValueError(f"Path traversal in photo URL: {parsed.path}")
-                        photo_response = self._request("GET", photo_url)
-                        if photo_response.status_code == 200:
+                        # Follow redirects manually, re-validating every hop:
+                        # allow_redirects=True would let a 302 move the fetch
+                        # to any host after the same-host check above (audit
+                        # lead: FINGERPRINT-ssrf-photo-redirect-follow).
+                        current_url = photo_url
+                        photo_response = None
+                        for _hop in range(4):
+                            hop = urlparse(current_url)
+                            if hop.scheme not in ("http", "https"):
+                                raise ValueError(f"Unsupported scheme in photo redirect: {hop.scheme}")
+                            if hop.hostname and hop.hostname != base_parsed.hostname:
+                                raise ValueError(f"External host in photo redirect: {hop.hostname}")
+                            if hop.path and ".." in hop.path.split("/"):
+                                raise ValueError(f"Path traversal in photo redirect: {hop.path}")
+                            photo_response = self._request("GET", current_url, allow_redirects=False)
+                            if photo_response.status_code in (301, 302, 303, 307, 308):
+                                location = photo_response.headers.get("Location", "")
+                                if not location:
+                                    raise ValueError("Empty redirect in photo URL")
+                                # urljoin normalizes ".." away, so a raw Location
+                                # like /../../secret would resolve in-host and
+                                # slip past the per-hop path check below. Reject
+                                # any raw dot-dot segment before resolving.
+                                if ".." in location.split("/"):
+                                    raise ValueError(f"Path traversal in photo redirect Location: {location}")
+                                current_url = urljoin(current_url, location)
+                                continue
+                            break
+                        if photo_response is not None and photo_response.status_code == 200:
                             image_bytes = photo_response.content
                     except Exception as e:
                         logger.warning(f"Failed to download photo from {src}: {e}")

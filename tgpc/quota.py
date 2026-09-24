@@ -248,11 +248,16 @@ def check_google_drive():
     if not config_b64:
         return {"error": "Missing RCLONE_GDRIVE_CONFIG"}
 
-    config_path = "/tmp/rclone-quota.conf"
     try:
         import base64
+        import tempfile
 
-        Path(config_path).write_bytes(base64.b64decode(config_b64))
+        # Unique, unpredictable temp path — never a fixed /tmp name a planted
+        # symlink or concurrent run could redirect or read. Same hardening as
+        # Manager.sync_to_gdrive (audit lead: FINGERPRINT-rclone-config-tmpfile).
+        with tempfile.NamedTemporaryFile(prefix="rclone-quota-", suffix=".conf", delete=False) as tmp:
+            tmp.write(base64.b64decode(config_b64))
+        config_path = tmp.name
     except Exception:
         return {"error": "Invalid RCLONE_GDRIVE_CONFIG"}
 

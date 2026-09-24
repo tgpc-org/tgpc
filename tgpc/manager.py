@@ -9,6 +9,7 @@ import os
 import subprocess
 import requests
 import re
+from html import escape as html_escape
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from typing import List, Iterable
@@ -65,6 +66,30 @@ class R2Client:
 
 class DataIntegrityError(RuntimeError):
     """Raised when scraped detail data does not match the requested record."""
+
+
+def validate_rph_backup(path: Path, expected_min_records: int) -> int:
+    """Validate a downloaded rph.json backup and return its record count.
+
+    A record count alone cannot be trusted: a truncated, padded or
+    partially-written upload can clear the minimum while carrying unusable rows,
+    and this payload replaces the whole registry. Raises ValueError when the
+    backup cannot safely be restored (audit lead 8: restore validated by count
+    only).
+    """
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    if not isinstance(data, list):
+        raise ValueError(f"backup is a {type(data).__name__}, expected a JSON list")
+    if len(data) < expected_min_records:
+        raise ValueError(f"backup has {len(data)} records, expected >= {expected_min_records}")
+    for index, row in enumerate(data):
+        if not isinstance(row, dict):
+            raise ValueError(f"record {index} is a {type(row).__name__}, expected an object")
+        registration = row.get("registration_number")
+        if not isinstance(registration, str) or not registration.strip():
+            raise ValueError(f"record {index} has no usable registration_number")
+    return len(data)
 
 
 class FileManager:
@@ -365,42 +390,58 @@ class Manager:
             logger.error("No backups found in R2")
             return False
 
-        latest = max(contents, key=lambda x: x["LastModified"])
-        backup_key = latest["Key"]
-        # Only restore if R2 backup is significantly larger than local (avoid overwriting test 1 with 1)
-        if latest.get("Size", 0) < 100:
-            logger.warning(f"R2 backup {backup_key} too small ({latest.get('Size')} bytes) — not restoring")
+        # Newest first — but newest is not the same as usable. A failed or
+        # truncated upload can be both newer *and* broken, and trusting it cost
+        # the entire daily update while good backups sat right there. Try
+        # candidates in recency order until one validates and is used.
+        # (audit lead 8: restore trusted the newest backup by timestamp.)
+        candidates = sorted(
+            (c for c in contents if str(c.get("Key", "")).endswith(".json")),
+            key=lambda c: c["LastModified"],
+            reverse=True,
+        )
+        if not candidates:
+            logger.error("No backup objects found in R2")
             return False
 
         rph_path.parent.mkdir(parents=True, exist_ok=True)
-        # Download to a temp path first — never overwrite the local file
-        # with unvalidated remote content.
-        tmp_path = rph_path.with_suffix(".restore_tmp")
-        try:
-            client.get_object(backup_key, tmp_path)
-        except Exception as e:
-            tmp_path.unlink(missing_ok=True)
-            logger.error(f"Failed to restore from {backup_key}: {e}")
-            return False
+        rejected = []
+        for candidate in candidates:
+            backup_key = candidate["Key"]
+            # Only restore if the R2 backup is meaningfully larger than local
+            # (never overwrite a test stub with another stub).
+            if candidate.get("Size", 0) < 100:
+                logger.warning(f"R2 backup {backup_key} too small ({candidate.get('Size')} bytes) — skipping")
+                rejected.append(backup_key)
+                continue
 
-        # Validate the downloaded backup before it replaces anything.
-        try:
-            with open(tmp_path, "r", encoding="utf-8") as f:
-                restored_data = json.load(f)
-            if not isinstance(restored_data, list) or len(restored_data) < expected_min_records:
-                raise ValueError(
-                    f"restored backup has {len(restored_data) if isinstance(restored_data, list) else 'non-list'} "
-                    f"records, expected >= {expected_min_records}"
-                )
-        except Exception as e:
-            tmp_path.unlink(missing_ok=True)
-            logger.error(f"Restored backup {backup_key} failed validation ({e}) — local file left untouched")
-            return False
+            # Download to a temp path first — never overwrite the local file
+            # with unvalidated remote content.
+            tmp_path = rph_path.with_suffix(".restore_tmp")
+            try:
+                client.get_object(backup_key, tmp_path)
+            except Exception as e:
+                tmp_path.unlink(missing_ok=True)
+                logger.warning(f"Failed to download {backup_key}: {e} — trying an older backup")
+                rejected.append(backup_key)
+                continue
 
-        tmp_path.replace(rph_path)
-        size = rph_path.stat().st_size
-        logger.info(f"Restored data/rph.json from {backup_key} ({size} bytes)")
-        return True
+            # Validate the downloaded backup before it replaces anything.
+            try:
+                validate_rph_backup(tmp_path, expected_min_records)
+            except Exception as e:
+                tmp_path.unlink(missing_ok=True)
+                logger.warning(f"Backup {backup_key} failed validation ({e}) — trying an older backup")
+                rejected.append(backup_key)
+                continue
+
+            tmp_path.replace(rph_path)
+            size = rph_path.stat().st_size
+            logger.info(f"Restored data/rph.json from {backup_key} ({size} bytes)")
+            return True
+
+        logger.error(f"No R2 backup passed validation ({len(rejected)} rejected) — local file left untouched")
+        return False
 
     def run_daily_update(self, force: bool = False):
         """Execute daily update workflow."""
@@ -961,12 +1002,17 @@ class Manager:
             logger.error("Missing RCLONE_GDRIVE_CONFIG")
             return False
 
-        config_path = Path("/tmp/rclone-gdrive.conf")
         with heartbeat("Syncing rph.json to Google Drive"):
             try:
                 import base64
+                import tempfile
 
-                config_path.write_bytes(base64.b64decode(gdrive_config_b64))
+                # Unique, unpredictable temp path — never a fixed /tmp name a
+                # planted symlink or concurrent run could redirect or read
+                # (audit lead: FINGERPRINT-rclone-config-tmpfile).
+                with tempfile.NamedTemporaryFile(prefix="rclone-gdrive-", suffix=".conf", delete=False) as tmp:
+                    tmp.write(base64.b64decode(gdrive_config_b64))
+                config_path = Path(tmp.name)
                 try:
                     result = subprocess.run(
                         [
@@ -982,8 +1028,7 @@ class Manager:
                     )
                 finally:
                     # Never leave the decoded service-account config behind,
-                    # even on timeout/crash. Fixed path also races concurrent
-                    # runs — removal keeps the window minimal.
+                    # even on timeout/crash.
                     config_path.unlink(missing_ok=True)
                 if result.returncode == 0:
                     logger.info("GDrive sync complete")
@@ -1143,11 +1188,12 @@ class Manager:
             html = f'<div style="margin-bottom:35px;"><h4 style="margin:0 0 16px;color:{color};font-size:14px;font-weight:700;text-transform:uppercase;border-bottom:2px solid {color};padding-bottom:6px;display:inline-block;letter-spacing:.5px;">{title} ({len(items)})</h4>'  # noqa: E501
             for c in sorted(grouped):
                 recs = grouped[c]
-                html += f'<div style="margin-bottom:18px;"><div style="font-size:11px;font-weight:700;color:#111827;text-transform:uppercase;margin-bottom:6px;letter-spacing:1px;">{c} ({len(recs)})</div>'  # noqa: E501
+                safe_c = html_escape(c)
+                html += f'<div style="margin-bottom:18px;"><div style="font-size:11px;font-weight:700;color:#111827;text-transform:uppercase;margin-bottom:6px;letter-spacing:1px;">{safe_c} ({len(recs)})</div>'  # noqa: E501
                 for r in sorted(recs, key=reg_no):
                     parts = r.split(" - ", 1)
-                    reg = parts[0]
-                    name = re.sub(r"\s*\(.*?\)$", "", parts[1] if len(parts) > 1 else r).strip()
+                    reg = html_escape(parts[0])
+                    name = html_escape(re.sub(r"\s*\(.*?\)$", "", parts[1] if len(parts) > 1 else r).strip())
                     html += f'<div style="font-size:13px;color:#6b7280;padding:4px 0;"><span style="font-family:ui-monospace,monospace;">{reg}</span> - {name}</div>'  # noqa: E501
                 html += "</div>"
             return html + "</div>"
