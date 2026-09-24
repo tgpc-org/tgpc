@@ -3,9 +3,12 @@ name: Python Checks
 on:
   push:
     branches: [main, dev]
-    paths: ['tgpc/**', 'tests/**', 'pyproject.toml', '.github/workflows/python.yml']
+    # scripts/** is included because tests/ covers it (test_dg_dashboard.py,
+    # test_check_health.py); without it a scripts-only change would skip the
+    # pytest run that exists to guard it.
+    paths: ['tgpc/**', 'tests/**', 'scripts/**', 'pyproject.toml', '.github/workflows/python.yml']
   pull_request:
-    paths: ['tgpc/**', 'tests/**', 'pyproject.toml', '.github/workflows/python.yml']
+    paths: ['tgpc/**', 'tests/**', 'scripts/**', 'pyproject.toml', '.github/workflows/python.yml']
 
 jobs:
   checks:

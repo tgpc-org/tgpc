@@ -22,6 +22,7 @@ tgpc/
 ├── .github/workflows/rphsync.yml   # Manual CI: single job, scrapes + syncs to all destinations + email
 ├── .github/workflows/python.yml    # ruff + pytest + pip-audit dependency scan
 ├── .github/workflows/ui.yml        # eslint + svelte-check + brand-color gate + tests + npm audit
+├── .github/workflows/health.yml    # Scheduled 6-hourly /api/health poll → alerts on stale last_sync
 ├── .husky/                         # Husky pre-commit hook → triggers pre-commit (ruff)
 ├── .pre-commit-config.yaml         # ruff lint + ruff-format only
 ├── pyproject.toml                  # Package: tgpc-data-extraction v2.0.0, min-version deps
@@ -517,7 +518,8 @@ Job permissions: `actions: write`, `contents: write` (release upload).
 
 **Quality gates:**
 - `.github/workflows/ui.yml` runs on push/PR touching `ui/` — ESLint + brand-color gate (`check:colors`) + svelte-check + the 18 unit tests + a build with placeholder PUBLIC env vars (real values live in the Cloudflare Pages dashboard) + `npm audit --audit-level=high`. Auto-deploys from `main` build `ui/`.
-- `.github/workflows/python.yml` runs on push/PR touching `tgpc/`, `tests/`, or `pyproject.toml` — `ruff check`, `ruff format --check` (pinned 0.16.6, matching pre-commit), the full pytest suite, and a `pip-audit` dependency vulnerability scan.
+- `.github/workflows/python.yml` runs on push/PR touching `tgpc/`, `tests/`, `scripts/`, or `pyproject.toml` — `ruff check`, `ruff format --check` (pinned 0.16.6, matching pre-commit), the full pytest suite, and a `pip-audit` dependency vulnerability scan.
+- `.github/workflows/health.yml` is **scheduled** (`17 */6 * * *`, plus manual dispatch), not push-triggered. It polls production `/api/health` and fails when `last_sync` is older than 48h (exit 1) or when the endpoint is unreachable, non-200, or reports a failing check (exit 2). `scripts/check_health.py` is stdlib-only, and `--max-hours` / `--url` (or the `PROD_URL` repository variable) adjust the threshold and target. Data freshness deliberately does **not** gate pushes: it is an operational condition, so it is alerted on its own schedule rather than reddening unrelated `ui/` changes — see `ui/e2e/smoke.spec.ts`, which asserts the health *contract* and leaves staleness here.
 
 **Dependency updates:**
 Dependabot was removed (2026-09) in favour of manual bumps. CVE coverage comes from the two audit gates: `pip-audit` in `python.yml` and `npm audit --audit-level=high` in `ui.yml` — both fail the build on known-vulnerable dependencies.
@@ -530,7 +532,7 @@ Dependabot was removed (2026-09) in favour of manual bumps. CVE coverage comes f
 python3 -m pytest tests/ -v
 ```
 
-71 tests across 8 files:
+173 tests across 12 files:
 
 | File | Tests | What's tested |
 |---|---|---|
@@ -541,8 +543,11 @@ python3 -m pytest tests/ -v
 | `test_manager_photos.py` | 11 | Photo upload→verify→local-delete pipeline, retry/backoff, size-mismatch rejection, batch error isolation (scrape/upsert failures don't abort the batch), `retry_photos` |
 | `test_quota.py` | 8 | Quota reporter helpers (ref parsing, formatting) and every `check_*` fail-closed path on missing credentials |
 | `test_inactive_sweep.py` | 6 | JSONL parsing (good/bad lines), checkpoint save/load roundtrip, resume skipping completed batches, partial-run slicing |
-| `test_bugfix_regressions.py` | 9 | Restore-to-temp validation, backup rotation, release return codes, `--force` overrides, DetailError vs absence |
-| `test_security_audit_regressions.py` | 24 | Audit remediations: DG PII RLS posture, DG artifacts kept out of the public R2 bucket, report-email HTML escaping, rclone temp paths, photo redirect validation, backup restore validation |
+| `test_bugfix_regressions.py` | 18 | Restore-to-temp validation, backup rotation, release return codes, `--force` overrides, DetailError vs absence |
+| `test_security_audit_regressions.py` | 27 | Audit remediations: DG PII RLS posture, DG artifacts kept out of the public R2 bucket, report-email HTML escaping, rclone temp paths, photo redirect validation, backup restore validation, DG Storage bucket publicity gate |
+| `test_check_health.py` | 17 | Production health monitor: fresh/stale/boundary classification, missing, non-numeric or boolean `hours_ago` treated as down (never as fresh), Supabase failure distinguished from staleness, unreachable endpoint and HTTP 503 body handling, default URL points at the health endpoint, exit codes |
+| `test_details_dg.py` | 37 | DG caption/detail parsing, captcha handling, and the RLS/Storage posture of the DG pipeline |
+| `test_dg_dashboard.py` | 12 | Local DG monitor: status merging, checkpoint-derived counts, zombie-PID detection, log tailing, IST formatting |
 
 All tests use mocking (no real HTTP or Supabase calls). The `supabase` module is mocked globally before imports.
 

@@ -1,0 +1,67 @@
+name: Health Monitor
+
+# Deliberate freshness watch, on its own schedule.
+#
+# This carries the signal that ui/e2e/smoke.spec.ts used to assert inline
+# (last_sync.hours_ago < 48 against the live site). Holding that assertion in a
+# push-triggered gate meant a stale pipeline failed unrelated ui/ changes — the
+# gate was red from 2026-09-16 for that reason alone. Data freshness is an
+# operational condition, so it is watched here, where a failure means "the data
+# is stale" and nothing else.
+#
+# Exit codes from scripts/check_health.py: 1 = stale, 2 = unreachable or a
+# failing check. A failing scheduled workflow notifies repository watchers
+# (GitHub's default notification settings); a monitor you poll in a dashboard is
+# a monitor nobody reads.
+on:
+  schedule:
+    # Every 6 hours, at :17 to stay off the top-of-hour runner rush. With a 48h
+    # threshold this detects staleness within 6 hours of it occurring.
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 'Health endpoint to poll'
+        required: false
+        default: 'https://tgpc.pages.dev/api/health'
+        type: string
+      max_hours:
+        description: 'Alert when last_sync is older than this many hours'
+        required: false
+        default: '48'
+        type: string
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      # No install step: the monitor is stdlib-only by design, so the alerting
+      # path cannot break because a dependency moved.
+      - name: Poll production health
+        # Passed through env rather than interpolated into the script, so a
+        # dispatch input can never be parsed as shell.
+        env:
+          HEALTH_URL: ${{ github.event.inputs.url || vars.PROD_URL || 'https://tgpc.pages.dev/api/health' }}
+          MAX_HOURS: ${{ github.event.inputs.max_hours || '48' }}
+        run: |
+          set -o pipefail
+          python3 scripts/check_health.py --url "$HEALTH_URL" --max-hours "$MAX_HOURS" 2>&1 | tee /tmp/health.txt
+      - name: Summarise
+        if: always()
+        run: |
+          {
+            echo "## Production health"
+            echo
+            echo '```'
+            cat /tmp/health.txt 2>/dev/null || echo "(no output)"
+            echo '```'
+            echo
+            echo 'Exit 1 = last_sync is older than the threshold; 2 = unreachable, non-200, or a failing check.'
+            echo 'If this is stale rather than down, the fix is to run the sync pipeline (Actions -> RPH Sync),'
+            echo 'or to raise max_hours if the manual cadence is deliberate.'
+          } >> "$GITHUB_STEP_SUMMARY"

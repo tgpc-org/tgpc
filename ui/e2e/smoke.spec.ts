@@ -56,7 +56,9 @@ test('health API contract', async ({ request }) => {
 	// of the data is an operational condition, not a property of the code being
 	// pushed — asserting it made every ui/ change fail whenever the operator had
 	// not run the scraper for two days. The signal is still produced: the
-	// endpoint reports last_sync.status 'stale' past 48h, and overall 'degraded'.
+	// endpoint reports last_sync.status 'stale' past 48h and overall 'degraded',
+	// and .github/workflows/health.yml polls exactly that every 6 hours and
+	// fails the run when the data is stale.
 	expect(['ok', 'stale']).toContain(body.checks?.last_sync?.status);
 	expect(typeof body.checks?.last_sync?.hours_ago).toBe('number');
 });
