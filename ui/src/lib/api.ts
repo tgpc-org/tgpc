@@ -1,5 +1,6 @@
 import type { PharmacistRecord, Notice, DispatchFile, Stats, Category } from './types';
 import { supabase } from './supabase';
+import { MAX_SEARCH_RESULTS } from './searchLimits';
 
 // Strip PostgREST filter syntax (,()) and LIKE wildcards (%_*) so raw input can
 // never alter the fallback .or() expression (CODE_REVIEW.md H4).
@@ -42,8 +43,9 @@ export async function searchRecords(query: string): Promise<PharmacistRecord[]> 
   const q = validateQuery(query);
   if (q.length < 3) return [];
   try {
-    // No cap — fetch all matches via RPC with high limit (Phase 1: RPC now ranked via ts_rank + similarity)
-    const { data, error } = await supabase.rpc('search_pharmacists', { q, lim: 100000 });
+    // Capped at MAX_SEARCH_RESULTS (CODE_REVIEW.md H5) — previously `lim: 100000`,
+    // which pulled essentially the whole registry into the browser on a broad query.
+    const { data, error } = await supabase.rpc('search_pharmacists', { q, lim: MAX_SEARCH_RESULTS });
     if (error) throw error;
     return rankRecords((data as PharmacistRecord[]) || [], q);
   } catch {
@@ -52,7 +54,8 @@ export async function searchRecords(query: string): Promise<PharmacistRecord[]> 
       const { data } = await supabase
         .from('rph')
         .select('registration_number, name, father_name, category, gender, validity_date, status, photo_url')
-        .or(`registration_number.ilike.%${safe}%,name.ilike.%${safe}%`);
+        .or(`registration_number.ilike.%${safe}%,name.ilike.%${safe}%`)
+        .limit(MAX_SEARCH_RESULTS);
       return rankRecords((data as PharmacistRecord[]) || [], q);
     } catch {
       return [];
@@ -118,7 +121,7 @@ export async function searchWithRefiners(query: string, f: AdvancedFilters & { c
   if (!hasQ && !hasFilters) return [];
   // If only live query and no refiners, keep RPC path for ranked results
   if (hasQ && !hasFilters) return searchRecords(query);
-  // Otherwise build filtered query (server-side, no cap)
+  // Otherwise build filtered query (server-side, capped like every other path)
   try {
     let qb = supabase.from('rph').select('registration_number, name, father_name, category, gender, validity_date, status, photo_url');
     if (hasQ) {
@@ -135,6 +138,7 @@ export async function searchWithRefiners(query: string, f: AdvancedFilters & { c
       const dbDate = formatValidTillForDB(f.valid_till);
       if (dbDate) qb = qb.eq('validity_date', dbDate);
     }
+    qb = qb.limit(MAX_SEARCH_RESULTS);
     const { data, error } = await qb;
     if (error) throw error;
     const rows = (data as PharmacistRecord[]) || [];
@@ -155,6 +159,7 @@ export async function advancedSearch(f: AdvancedFilters): Promise<PharmacistReco
     if (f.category && f.category.length > 0) query = query.in('category', f.category);
     if (f.gender && f.gender !== 'Any') query = query.eq('gender', f.gender);
     if (f.status && f.status !== 'Any') query = query.eq('status', f.status);
+    query = query.limit(MAX_SEARCH_RESULTS);
     const { data, error } = await query;
     if (error) throw error;
     const rows = (data as PharmacistRecord[]) || [];

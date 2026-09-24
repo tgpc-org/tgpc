@@ -3,6 +3,7 @@
   import { searchRecords, searchWithRefiners, type AdvancedFilters } from '$lib/api';
   import DatePicker from '$lib/DatePicker.svelte';
   import { CATEGORY_COLORS, CATEGORIES as CAT_NAMES } from '$lib/colors';
+  import { MAX_SEARCH_RESULTS, isTruncated } from '$lib/searchLimits';
   import ProfileSidebar from '$lib/components/ProfileSidebar.svelte';
   import { getRecord } from '$lib/api';
   import { PUBLIC_R2_PHOTO_BASE } from '$env/static/public';
@@ -18,6 +19,10 @@
   let results = $state<PharmacistRecord[]>([]);
   let searched = $state(false);
   const CATEGORY_FILTERS: CategoryFilter[] = ['all', ...CAT_NAMES];
+
+  // A full page of results means the fetch stopped at MAX_SEARCH_RESULTS, so
+  // more matches may exist than are displayed — the header says so.
+  let capped = $derived(isTruncated(results.length));
 
   let advFilters = $state<AdvancedFilters>({ valid_till: '' });
   let refinersOpen = $state(false);
@@ -389,6 +394,11 @@
     {#if searched}
       <div class="flex flex-wrap items-center gap-1 min-w-0 w-full sm:w-auto sm:flex-1" transition:fly={{ y: 6, duration: 200, opacity: 0 }}>
         <span class="text-[0.75rem] text-[#9ca3af] tabular-nums flex-shrink-0">{filtered.length.toLocaleString()} results</span>
+        {#if capped}
+          <!-- Same classes as the count span so the contrast fingerprint
+               (rule + CSS target only) is unchanged. -->
+          <span class="text-[0.75rem] text-[#9ca3af] tabular-nums flex-shrink-0">· first {MAX_SEARCH_RESULTS} matches shown — narrow your search</span>
+        {/if}
         {#if refinersActive}
           <span class="text-[0.65rem] font-semibold uppercase rounded px-1.5 py-0.5 flex-shrink-0" style="background:rgba(0,204,102,0.08);color:#00cc66">Filtered</span>
         {/if}
