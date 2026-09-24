@@ -194,6 +194,8 @@ Config is loaded via `Config.load()` classmethod (reads env vars for proxy and e
 
 **`BackupManager`** — timestamped backups (format: `rph_backup_YYYYMMDD_HHMMSS.json`), cleanup deletes files older than 30 days.
 
+**Restore** (`Manager._restore_rph_from_backup`) — when the local `rph.json` is missing or below the minimum record count, backup candidates are tried **newest first**, each downloaded to a temp file. A candidate is only used once `validate_rph_backup` accepts it: a JSON list, at or above the record floor, with every row an object carrying a non-empty `registration_number`. So a corrupt newest upload falls through to an older good backup rather than aborting the whole update, and the local registry is never replaced by an unvalidated payload.
+
 **`Manager.run_daily_update()`** — the core update workflow:
 1. **Health check** → if blocked, writes `update_status=blocked` to GITHUB_OUTPUT, returns `"blocked"`
 2. **Backup** existing `rph.json`
@@ -302,7 +304,7 @@ CREATE TABLE rph (
 --   home_address TEXT, home_state TEXT,
 --   work_study_address TEXT, work_study_state TEXT,
 --   mobile_no TEXT, email_id TEXT, dg_fetched_at TIMESTAMPTZ
--- );  -- anon SELECT-only RLS, same posture as rph
+-- );  -- service_role only: captcha-gated PII, deliberately NOT anon-readable
 
 CREATE TABLE metadata (
   key TEXT PRIMARY KEY,
@@ -315,6 +317,8 @@ CREATE TABLE metadata (
 ```
 
 RLS allows anonymous `SELECT` on `rph` and `metadata` tables. The publishable/anon key (set as `PUBLIC_SUPABASE_PUBLISHABLE_KEY` in the Cloudflare Pages dashboard / local `ui/.env`, which is gitignored) is safe to expose.
+
+`rph_dg_contacts` is the deliberate exception. It holds captcha-gated PII (mobile, email, home address) that TGPC gates behind a captcha on `getdetailsdg`, so it carries no anon grant at all — the publishable key cannot read it, and the enrichment pipeline is its only consumer (service role). See `tgpc/dg_migration.sql`.
 
 **⚠️ RLS verification (do this in the Supabase dashboard → SQL Editor):**
 
@@ -350,11 +354,36 @@ create policy "anon select metadata" on public.metadata
 The service-role key (used server-side / by the Python pipeline) bypasses RLS, so
 writes continue to work via `sync_to_supabase()`.
 
+`rph_dg_contacts` needs the **opposite** check — captcha-gated PII must be
+readable by nobody but the service role:
+
+```sql
+-- Expect rowsecurity = true …
+select tablename, rowsecurity from pg_tables
+where schemaname = 'public' and tablename = 'rph_dg_contacts';
+
+-- …and zero policies. A leftover `anon select … USING (true)` is the flaw.
+select polname, pg_get_expr(polqual, polrelid) from pg_policy
+join pg_class on pg_class.oid = polrelid
+join pg_namespace on pg_namespace.oid = relnamespace
+where nspname = 'public' and relname = 'rph_dg_contacts';
+
+-- …and no privilege for the roles a browser or signed-in user gets.
+-- Expect `permission denied for table rph_dg_contacts`, not a row.
+set role anon;
+select mobile_no from public.rph_dg_contacts limit 1;
+reset role;
+```
+
 **✅ Verified state (2026-09-01):** RLS is enabled on both tables
 (`rowsecurity = true` on `rph` and `metadata`). Six policies are in place —
 the anon/public/`realtime` roles have **read-only** (`SELECT`) policies only,
 and the service role has full access. This is the correct read-only posture for
 a public search portal; the publishable/anon key is safe to expose.
+
+`rph_dg_contacts` is intentionally outside that count: it has RLS enabled with
+**no** policies and no anon grant, because the registry's contact columns are
+captcha-gated at the source.
 
 ### Data File Formats
 
@@ -399,6 +428,7 @@ a public search portal; the publishable/anon key is safe to expose.
 | `TGPC_PROXY_URL` | `Config.load()` | Optional outbound proxy for scraping |
 | `TGPC_ENRICHMENT_DIR` | `Config.load()` | Override enrichment working directory |
 | `TGPC_R2_PUBLIC_BASE` | `Config.load()` | R2 public bucket base URL (default: the `pub-…r2.dev` host) |
+| `TGPC_R2_DG_BUCKET` | `details_dg.push_file_to_r2()` | **Private** bucket for DG PII artifacts. Unset (or set to the public bucket) = pushes refuse; never falls back to the public bucket |
 
 ---
 
@@ -438,7 +468,9 @@ Server-only modules under `ui/src/lib/server/` (`auth.ts`, `adminLinks.ts`, `rat
 
 - **Stats bar** — 7 category cards with live counts from Supabase RPC, cached in localStorage
 - **Realtime** — Supabase Realtime subscription on `metadata` table for live stats/timestamp updates
-- **Search** — client-side Supabase query (min 3 chars, debounced 300ms) via `search_pharmacists` RPC (no row cap — all matches returned), ranked by prefix priority then numeric; falls back to a sanitized PostgREST `.or()` query if the RPC fails. Result refiners (RPC/name/father/gender/status/valid-till) filter client-side; results render in a single scrollable list sized to the viewport (`content-visibility: auto` on rows)
+- **Search** — client-side Supabase query (min 3 chars, debounced 300ms) via `search_pharmacists` RPC (capped at `MAX_SEARCH_RESULTS` — 200 rows per query), ranked by prefix priority then numeric; falls back to a sanitized PostgREST `.or()` query if the RPC fails. Result refiners (RPC/name/father/gender/status/valid-till) filter client-side; results render in a single scrollable list sized to the viewport (`content-visibility: auto` on rows). When a result set comes back full, the header says so and asks for a narrower query — `isTruncated()` in `ui/src/lib/searchLimits.ts` drives that hint, and `searchLimits.test.ts` fails if any query path drops its limit or asks for more than the cap
+
+The 200-row ceiling is a **client-side** cap. It bounds what the browser receives and renders, but it cannot stop a caller from invoking `search_pharmacists` directly with a larger `lim`. The server side needs its own ceiling: clamp inside the RPC (`lim := least(greatest(lim, 1), 200)`) and keep Supabase's API **Max Rows** setting at a sane value as the backstop. Both live in the Supabase dashboard, not in this repository.
 - **Export** — PDF via jsPDF + jspdf-autotable; CSV via Blob download with formula-injection guard
 - **Security headers** — applied globally in `hooks.server.ts` (+ `ui/static/_headers` for static assets):
   - **CSP** with a per-request **nonce** for inline scripts on route HTML (`script-src 'self' 'nonce-<n>' 'strict-dynamic'`) plus `img-src`/`connect-src` allowlists for the R2 photo CDN and Supabase origin
@@ -510,6 +542,7 @@ python3 -m pytest tests/ -v
 | `test_quota.py` | 8 | Quota reporter helpers (ref parsing, formatting) and every `check_*` fail-closed path on missing credentials |
 | `test_inactive_sweep.py` | 6 | JSONL parsing (good/bad lines), checkpoint save/load roundtrip, resume skipping completed batches, partial-run slicing |
 | `test_bugfix_regressions.py` | 9 | Restore-to-temp validation, backup rotation, release return codes, `--force` overrides, DetailError vs absence |
+| `test_security_audit_regressions.py` | 24 | Audit remediations: DG PII RLS posture, DG artifacts kept out of the public R2 bucket, report-email HTML escaping, rclone temp paths, photo redirect validation, backup restore validation |
 
 All tests use mocking (no real HTTP or Supabase calls). The `supabase` module is mocked globally before imports.
 
