@@ -50,5 +50,13 @@ test('health API contract', async ({ request }) => {
 	const body = await res.json();
 	expect(['ok', 'degraded']).toContain(body.status);
 	expect(body.checks?.supabase?.status).toBe('ok');
-	expect(body.checks?.last_sync?.hours_ago).toBeLessThan(48);
+
+	// Freshness is deliberately NOT asserted here. The sync pipeline is
+	// workflow_dispatch-only (there is no cron in .github/workflows), so the age
+	// of the data is an operational condition, not a property of the code being
+	// pushed — asserting it made every ui/ change fail whenever the operator had
+	// not run the scraper for two days. The signal is still produced: the
+	// endpoint reports last_sync.status 'stale' past 48h, and overall 'degraded'.
+	expect(['ok', 'stale']).toContain(body.checks?.last_sync?.status);
+	expect(typeof body.checks?.last_sync?.hours_ago).toBe('number');
 });
