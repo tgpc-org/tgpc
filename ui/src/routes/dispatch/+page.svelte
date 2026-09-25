@@ -40,7 +40,9 @@
 
   let filtered = $derived.by(() => files.filter(f => {
     if (!f.parsed) return false;
-    if (tab && f.parsed.y !== tab) return false;
+    // 'all' is the unfiltered tab, not a year — comparing a year to the
+    // literal 'all' emptied the list on the default tab.
+    if (tab !== 'all' && f.parsed.y !== tab) return false;
     if (!query) return true;
     const q = query.toLowerCase();
     return f.name.toLowerCase().includes(q) || fmt(f.parsed).toLowerCase().includes(q);
