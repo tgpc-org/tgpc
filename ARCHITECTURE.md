@@ -50,7 +50,10 @@ tgpc/
 │   ├── progress.py                 # ProgressBar, Phase, heartbeat, BarHandler (TTY + CI-safe output)
 │   ├── quota.py                    # Free-tier quota report (Supabase, R2, Resend, GDrive)
 │   ├── scraper.py                  # Scraper, RateLimiter, PharmacistRecord, extractors, TLS adapter
-│   ├── manager.py                  # FileManager, BackupManager, Manager (~1600 lines)
+│   ├── manager.py                  # Manager facade (~730 lines): restore, update orchestration, photo pipeline
+│   ├── storage.py                  # R2Client, FileManager, BackupManager, validate_rph_backup, DataIntegrityError
+│   ├── sync.py                     # Sync destination bodies: Supabase DB/Storage, R2, GDrive, Release, Email
+│   ├── enrichment.py               # run_enrichment / enrich_new_records / process_records_sequential bodies
 │   ├── inactive_sweep.py           # Detect inactive→active reactivations (2-phase, resumable)
 │   ├── enrich_actives.py           # Parallel enrichment + upsert of reactivated records
 │   ├── details_dg.py               # DG getdetailsdg captcha flow → PII contacts; L1-L4 redundancy + --resume (~1260 lines)
@@ -133,20 +136,24 @@ tgpc/
 
 ```
 __main__.py ─── Manager ─── Config (utils.py)
-                     ├── FileManager (load/save rph.json as JSON array)
-                     ├── BackupManager (timestamped backups, cleanup after 30 days)
+                     ├── FileManager (tgpc/storage.py — load/save rph.json as JSON array)
+                     ├── BackupManager (tgpc/storage.py — timestamped backups, cleanup after 30 days)
                      ├── Scraper (scraper.py)
                      │       ├── RateLimiter (adaptive delay 3-8s)
                      │       ├── PharmacistRecord dataclass
                      │       ├── extract_basic_records() — table parser via BeautifulSoup
                      │       └── extract_detailed_info() — per-record detail page parser
-                     └── Sync methods:
-                           ├── sync_to_supabase() — upsert to rph table, update metadata.last_sync
-                           ├── sync_to_supabase_storage() — upload rph.json to Supabase Storage
-                           ├── sync_to_r2() — aws s3api put-object to Cloudflare R2
-                           ├── sync_to_gdrive() — rclone copyto Google Drive
-                           ├── sync_to_release() — gh release upload rph.json
-                           └── sync_to_email() — Resend API email with change details
+                     ├── tgpc/sync.py — Sync destinations (Manager methods delegate; bodies live here):
+                     │       ├── sync_to_supabase() — upsert to rph table, update metadata.last_sync
+                     │       ├── sync_to_supabase_storage() — upload rph.json to Supabase Storage
+                     │       ├── sync_to_r2() — boto3/R2Client put-object to Cloudflare R2
+                     │       ├── sync_to_gdrive() — rclone copyto Google Drive
+                     │       ├── sync_to_release() — gh release upload rph.json
+                     │       └── sync_to_email() — Resend API email with change details
+                     └── tgpc/enrichment.py — Enrichment bodies:
+                             ├── run_enrichment() — serial-range enrichment
+                             ├── enrich_new_records() — auto-enrich records from the last update
+                             └── process_records_sequential() — scrape → validate → photo → upsert
 ```
 
 ### Entry Point: `tgpc/__main__.py`
@@ -221,7 +228,28 @@ Config is loaded via `Config.load()` classmethod (reads env vars for proxy and e
 - `extract_basic_records()` → `List[PharmacistRecord]` — fetches total endpoint, finds `<table id="tablesorter-demo">` (fallback to any `<table>`), extracts rows with ≥5 cells (serial, reg_no, name, father, category)
 - `extract_detailed_info(reg_no, img_dir)` → `Optional[PharmacistRecord]` — POSTs to search endpoint, parses detail page for: registration table (name, father, gender, category, status, validity), education table (qualification → category, university, college, years, HT No), work experience table (address, state, district, pin code), and photos (base64 data URI or URL download → saved to `img_dir`)
 
-### `tgpc/manager.py` — Orchestration (~1600 lines)
+### `tgpc/manager.py` — Orchestration facade (~730 lines)
+
+The former 1,600-line god class was split into focused modules; `Manager`
+delegates to them and re-exports their names so `from tgpc.manager import
+Manager, R2Client, ...` and the `tgpc.manager.*` test patch targets keep
+working.
+
+- `tgpc/storage.py` — `R2Client` (boto3 wrapper), `FileManager`,
+  `BackupManager`, `validate_rph_backup()`, `DataIntegrityError`
+- `tgpc/sync.py` — bodies for every `sync_to_*` destination, `email_record_list()`,
+  `delete_supabase_orphans()`; receive the `Manager` instance as first arg and
+  build clients through `manager._make_supabase_client()` / `_make_r2_client()`
+  factories so `tgpc.manager.create_client` / `tgpc.manager.R2Client` patches apply
+- `tgpc/enrichment.py` — `run_enrichment()`, `enrich_new_records()`,
+  `process_records_sequential()` on the same contract
+
+Kept in `manager.py`: `__init__` (load_credentials → Config.load → managers →
+Scraper), the client factories, update orchestration
+(`run_daily_update`, `_restore_rph_from_backup`, `_write_update_outputs`,
+source-unavailable classification), and the photo pipeline
+(`upload_and_verify_photo`, `_upload_photo_to_r2`, `_verify_photo_on_r2`,
+`retry_photos` — tests patch these `Manager` methods directly).
 
 **`DataIntegrityError`** — raised when enrichment scraped data doesn't match the expected registration.
 

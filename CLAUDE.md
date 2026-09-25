@@ -31,7 +31,10 @@ tgpc/
 ├── tgpc/           # Python pipeline
 │   ├── __main__.py # CLI entry: python3 -m tgpc {update, sync, enrich, retry-photos, quota, creds}
 │   ├── scraper.py  # Scraper, RateLimiter, PharmacistRecord
-│   ├── manager.py  # FileManager, BackupManager, Manager (orchestration)
+│   ├── manager.py  # Manager facade: restore, update orchestration, photo pipeline
+│   ├── storage.py  # R2Client, FileManager, BackupManager, validate_rph_backup
+│   ├── sync.py     # Sync destination bodies (Supabase, R2, GDrive, Release, Email)
+│   ├── enrichment.py  # Enrichment bodies (range, new-records, sequential processor)
 │   ├── progress.py # ProgressBar, Phase, heartbeat (TTY + CI output)
 │   ├── quota.py    # Free-tier quota report (Supabase, R2, Resend, GDrive)
 │   ├── inactive_sweep.py  # Detect inactive→active reactivations (resumable)
