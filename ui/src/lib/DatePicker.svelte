@@ -110,7 +110,7 @@
         </button>
       </div>
       <div class="grid grid-cols-7 text-center mb-0.25">
-        {#each WEEKDAYS as w (w)}
+        {#each WEEKDAYS as w, i (i)}
           <span class="text-[0.5rem] font-semibold text-[#9ca3af] py-0.25">{w}</span>
         {/each}
         {#each cells() as d, index (d?.toISOString() || index)}
