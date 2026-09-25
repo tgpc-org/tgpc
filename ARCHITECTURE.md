@@ -23,12 +23,19 @@ tgpc/
 ├── .github/workflows/python.yml    # ruff + pytest + pip-audit dependency scan
 ├── .github/workflows/ui.yml        # eslint + svelte-check + brand-color gate + tests + npm audit
 ├── .github/workflows/health.yml    # Scheduled 6-hourly /api/health poll → alerts on stale last_sync
+├── .github/workflows/load.yml      # Weekly k6 load test vs prod (smoke/load profiles; manual dispatch)
+├── .github/FUNDING.yml             # GitHub Sponsors + PayPal funding config
 ├── .husky/                         # Husky pre-commit hook → triggers pre-commit (ruff)
 ├── .pre-commit-config.yaml         # ruff lint + ruff-format only
 ├── pyproject.toml                  # Package: tgpc-data-extraction v2.0.0, min-version deps
+├── Makefile                        # scrape / sync / quota shortcuts into the CLI
 ├── .gitignore
 ├── ARCHITECTURE.md
 ├── README.md
+├── CLAUDE.md                       # Agent quick context (commands, sync destinations, palette)
+├── AGENTS.md                       # Agent working rules (brand palette, workflow, email format)
+├── CODE_REVIEW.md
+├── DG_PIPELINE.md                  # DG contact-pipeline deep dive (captcha capture, fetch-dg CLI, dashboard :8765)
 ├── data/
 │   ├── rph.json                     # ~89K pharmacist records (JSON array) — gitignored but tracked historically
 │   ├── update_details.json         # Sync diff summary — gitignored
@@ -45,9 +52,21 @@ tgpc/
 │   ├── scraper.py                  # Scraper, RateLimiter, PharmacistRecord, extractors, TLS adapter
 │   ├── manager.py                  # FileManager, BackupManager, Manager (~1600 lines)
 │   ├── inactive_sweep.py           # Detect inactive→active reactivations (2-phase, resumable)
-│   └── enrich_actives.py           # Parallel enrichment + upsert of reactivated records
+│   ├── enrich_actives.py           # Parallel enrichment + upsert of reactivated records
+│   ├── details_dg.py               # DG getdetailsdg captcha flow → PII contacts; L1-L4 redundancy + --resume (~1260 lines)
+│   └── dg_migration.sql            # rph_dg_contacts table DDL (service-role only, no anon grants)
+├── scripts/                        # Standalone helpers (run from repo root)
+│   ├── check_health.py             # Stdlib-only prod /api/health monitor (fresh/stale → exit codes; see test_check_health.py)
+│   ├── dg_dashboard.py             # Local DG fetch monitor: localhost HTTP server serving dg_dashboard.html
+│   ├── dg_dashboard.html           # DG monitor UI (dark mode, start/stop, live stats)
+│   ├── dg_captcha_bench.py         # Fetch N live DG captchas, OCR-guess, dump for human labeling
+│   └── optimize_images.py          # Batch data/img/ → WebP q85, passport 413x531 resize
 ├── ui/                            # Production frontend (SvelteKit)
 │   ├── src/
+│   │   ├── app.html               # HTML shell (%sveltekit.head/body); inline theme bootstrap
+│   │   ├── app.css                # Global stylesheet (Tailwind v4 entry, theme tokens)
+│   │   ├── app.d.ts               # Ambient types
+│   │   ├── hooks.server.ts        # Security headers on every function response (CSP lives in svelte.config.js)
 │   │   ├── routes/
 │   │   │   ├── +layout.svelte     # Shared header/footer/stats bar
 │   │   │   ├── +page.svelte       # Search page
@@ -68,6 +87,8 @@ tgpc/
 │   │       ├── cache.ts            # localStorage TTL cache helpers
 │   │       ├── colors.ts          # CATEGORY_COLORS (exempt from brand gate)
 │   │       ├── r2.ts              # R2 public URLs from PUBLIC_R2_PHOTO_BASE
+│   │       ├── searchLimits.ts     # MAX_SEARCH_RESULTS cap + isTruncated() hint (+ searchLimits.test.ts)
+│   │       ├── theme.ts            # Light/dark theme store (localStorage tgpc-theme, system-preference fallback)
 │   │       ├── types.ts            # Shared TS interfaces
 │   │       ├── DatePicker.svelte
 │   │       ├── components/         # Clock.svelte, ProfileSidebar.svelte
@@ -75,8 +96,19 @@ tgpc/
 │   ├── static/
 │   │   ├── favicon.svg, .ico, -192.png
 │   │   ├── pdf.svg, notice.json, manifest.json
+│   │   └── _headers               # Security headers for Pages-served static assets (no CSP here — nonce comes from hooks)
+│   ├── playwright.config.ts       # Playwright: desktop + mobile (iPhone-SE) projects; baseURL = PROD_URL ?? tgpc.pages.dev
 │   ├── wrangler.toml              # R2 DISPATCH bucket binding
-│   └── svelte.config.js
+│   ├── svelte.config.js
+│   ├── scripts/check-colors.mjs   # Brand-color gate (0 offenders required)
+│   ├── e2e/                       # Playwright specs (chromium; CI `e2e` job)
+│   │   ├── smoke.spec.ts          # Homepage shell, search flow, notice/dispatch, API locking
+│   │   ├── a11y.spec.ts           # axe: zero serious/critical violations (contrast excluded — see contrast spec)
+│   │   ├── contrast.spec.ts       # No NEW color-contrast violations vs baseline
+│   │   ├── mobile.spec.ts         # iPhone-SE viewport: no overflow, usable search, footer layering
+│   │   ├── contrast-baseline.json # Tracked contrast debt baseline
+│   │   └── update-baseline.mjs    # Refresh the baseline after intentional palette changes
+│   └── load/prod.js               # k6 profile for load.yml (polite: p95 < 3s, errors < 1%)
 ├── tests/                          # 173 tests, 12 files (all mocked — no real HTTP/Supabase)
 │   ├── test_scraper.py             # 10: timeouts, WAF/blocked detection, table fallback, bad rows, detail parsing, legacy headers, missing tables
 │   ├── test_manager_update.py      # 7: safety guard, dedup/sort/GITHUB_OUTPUT, deterministic ordering, source-unavailable, +3 sync return-value regressions
@@ -521,9 +553,10 @@ Job permissions: `actions: write`, `contents: write` (release upload).
 | `RELEASE_PASSWORD` | Password for the encrypted release zip |
 
 **Quality gates:**
-- `.github/workflows/ui.yml` runs on push/PR touching `ui/` — ESLint + brand-color gate (`check:colors`) + svelte-check + the 24 unit tests + a build with placeholder PUBLIC env vars (real values live in the Cloudflare Pages dashboard) + `npm audit --audit-level=high`. Auto-deploys from `main` build `ui/`.
+- `.github/workflows/ui.yml` runs on push/PR touching `ui/` — ESLint + brand-color gate (`check:colors`) + svelte-check + the 24 unit tests + a build with placeholder PUBLIC env vars (real values live in the Cloudflare Pages dashboard) + `npm audit --audit-level=high`. A second job (`e2e`) typechecks the specs (`check:e2e`) and runs the 4 Playwright suites in `ui/e2e/` on chromium. Auto-deploys from `main` build `ui/`.
 - `.github/workflows/python.yml` runs on push/PR touching `tgpc/`, `tests/`, `scripts/`, or `pyproject.toml` — `ruff check`, `ruff format --check` (pinned 0.16.6, matching pre-commit), the full pytest suite, and a `pip-audit` dependency vulnerability scan.
 - `.github/workflows/health.yml` is **scheduled** (`17 */6 * * *`, plus manual dispatch), not push-triggered. It polls production `/api/health` and fails when `last_sync` is older than 48h (exit 1) or when the endpoint is unreachable, non-200, or reports a failing check (exit 2). `scripts/check_health.py` is stdlib-only, and `--max-hours` / `--url` (or the `PROD_URL` repository variable) adjust the threshold and target. Data freshness deliberately does **not** gate pushes: it is an operational condition, so it is alerted on its own schedule rather than reddening unrelated `ui/` changes — see `ui/e2e/smoke.spec.ts`, which asserts the health *contract* and leaves staleness here.
+- `.github/workflows/load.yml` is weekly-scheduled (Sun 03:00 UTC, plus manual dispatch) k6 against production — `smoke` (CI-quick) or `load` (28 VUs) profile chosen by input; thresholds (p95 < 3s, errors < 1%) fail the run. Polite by design — see `ui/load/prod.js`.
 
 **Dependency updates:**
 Dependabot was removed (2026-09) in favour of manual bumps. CVE coverage comes from the two audit gates: `pip-audit` in `python.yml` and `npm audit --audit-level=high` in `ui.yml` — both fail the build on known-vulnerable dependencies.
@@ -558,6 +591,8 @@ All tests use mocking (no real HTTP or Supabase calls). The `supabase` module is
 ### Frontend
 
 **Unit tests:** `ui/test:unit` runs `node --experimental-strip-types --test 'src/**/*.test.ts'` — 24 tests: 18 covering signed-cookie session creation/verification, constant-time comparison, and the `isAuthed` fail-closed path (no secret), plus 6 search-limit invariants in `searchLimits.test.ts` (every query path keeps its row cap). No test framework beyond Node's built-in runner.
+
+**E2E tests:** `ui/test:e2e` runs the Playwright specs in `ui/e2e/` (chromium): smoke (shell + search flow + API locking), axe a11y (zero serious/critical violations, color-contrast excluded), a contrast-regression gate against `contrast-baseline.json`, and mobile layout fingerprints at the iPhone-SE viewport. `ui/test:e2e:update-baseline` refreshes the contrast baseline after intentional palette changes; `check:e2e` typechecks the specs. CI runs these in the `ui.yml` `e2e` job.
 
 ---
 
