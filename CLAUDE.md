@@ -20,8 +20,8 @@ cd ui && npm run lint    # ESLint (0 errors required)
 cd ui && npm run check:colors  # Brand-color gate (0 offenders)
 
 # Tests
-python3 -m pytest tests/ -v   # Python tests (101 tests)
-cd ui && npm run test:unit    # Frontend unit tests (18 tests)
+python3 -m pytest tests/ -v   # Python tests (173 tests)
+cd ui && npm run test:unit    # Frontend unit tests (24 tests)
 ```
 
 ## Architecture
