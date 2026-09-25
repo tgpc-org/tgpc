@@ -23,7 +23,6 @@ tgpc/
 ├── .github/workflows/python.yml    # ruff + pytest + pip-audit dependency scan
 ├── .github/workflows/ui.yml        # eslint + svelte-check + brand-color gate + tests + npm audit
 ├── .github/workflows/health.yml    # Scheduled 6-hourly /api/health poll → alerts on stale last_sync
-├── .github/workflows/load.yml      # Weekly k6 load test vs prod (smoke/load profiles; manual dispatch)
 ├── .github/FUNDING.yml             # GitHub Sponsors + PayPal funding config
 ├── .husky/                         # Husky pre-commit hook → triggers pre-commit (ruff)
 ├── .pre-commit-config.yaml         # ruff lint + ruff-format only
@@ -112,7 +111,6 @@ tgpc/
 │   │   ├── mobile.spec.ts         # iPhone-SE viewport: no overflow, usable search, footer layering
 │   │   ├── contrast-baseline.json # Tracked contrast debt baseline
 │   │   └── update-baseline.mjs    # Refresh the baseline after intentional palette changes
-│   └── load/prod.js               # k6 profile for load.yml (polite: p95 < 3s, errors < 1%)
 ├── tests/                          # 173 tests, 12 files (all mocked — no real HTTP/Supabase)
 │   ├── test_scraper.py             # 10: timeouts, WAF/blocked detection, table fallback, bad rows, detail parsing, legacy headers, missing tables
 │   ├── test_manager_update.py      # 7: safety guard, dedup/sort/GITHUB_OUTPUT, deterministic ordering, source-unavailable, +3 sync return-value regressions
@@ -585,8 +583,7 @@ Job permissions: `actions: write`, `contents: write` (release upload).
 **Quality gates:**
 - `.github/workflows/ui.yml` runs on push/PR touching `ui/` — ESLint + brand-color gate (`check:colors`) + svelte-check + the 24 unit tests + a build with placeholder PUBLIC env vars (real values live in the Cloudflare Pages dashboard) + `npm audit --audit-level=high`. A second job (`e2e`) typechecks the specs (`check:e2e`) and runs the 4 Playwright suites in `ui/e2e/` on chromium. Auto-deploys from `main` build `ui/`.
 - `.github/workflows/python.yml` runs on push/PR touching `tgpc/`, `tests/`, `scripts/`, or `pyproject.toml` — `ruff check`, `ruff format --check` (pinned 0.16.6, matching pre-commit), the full pytest suite, and a `pip-audit` dependency vulnerability scan.
-- `.github/workflows/health.yml` is **scheduled** (`17 */6 * * *`, plus manual dispatch), not push-triggered. It polls production `/api/health` and fails when `last_sync` is older than 48h (exit 1) or when the endpoint is unreachable, non-200, or reports a failing check (exit 2). `scripts/check_health.py` is stdlib-only, and `--max-hours` / `--url` (or the `PROD_URL` repository variable) adjust the threshold and target. Data freshness deliberately does **not** gate pushes: it is an operational condition, so it is alerted on its own schedule rather than reddening unrelated `ui/` changes — see `ui/e2e/smoke.spec.ts`, which asserts the health *contract* and leaves staleness here.
-- `.github/workflows/load.yml` is weekly-scheduled (Sun 03:00 UTC, plus manual dispatch) k6 against production — `smoke` (CI-quick) or `load` (28 VUs) profile chosen by input; thresholds (p95 < 3s, errors < 1%) fail the run. Polite by design — see `ui/load/prod.js`.
+- `.github/workflows/health.yml` is **scheduled** (`17 */6 * * *`, plus manual dispatch), not push-triggered. It polls production `/api/health` and fails when `last_sync` is older than 48h (exit 1) or when the endpoint is unreachable, non-200, or reports a failing check (exit 2). `scripts/check_health.py` is stdlib-only, and `--max-hours` / `--url` (or the `PROD_URL` repository variable) adjust the threshold and target. Data freshness deliberately does **not** gate pushes: it is an operational condition, so it is alerted on its own schedule rather than reddening unrelated `ui/` changes — see `ui/e2e/smoke.spec.ts`, which asserts the health *contract* and leaves staleness here. (The former weekly k6 `load.yml` was removed 2026-09: agent-created, unread results.)
 
 **Dependency updates:**
 Dependabot was removed (2026-09) in favour of manual bumps. CVE coverage comes from the two audit gates: `pip-audit` in `python.yml` and `npm audit --audit-level=high` in `ui.yml` — both fail the build on known-vulnerable dependencies.

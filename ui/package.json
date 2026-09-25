@@ -14,8 +14,7 @@
     "test:unit": "node --experimental-strip-types --test 'src/**/*.test.ts'",
     "test:e2e": "playwright test",
     "test:e2e:update-baseline": "node ./e2e/update-baseline.mjs",
-    "check:e2e": "tsc -p e2e/tsconfig.json --noEmit",
-    "test:load": "k6 run load/prod.js"
+    "check:e2e": "tsc -p e2e/tsconfig.json --noEmit"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
