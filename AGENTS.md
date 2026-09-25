@@ -30,6 +30,10 @@ red/green may also appear as alpha tints: `rgba(239,68,68,a)` /
 **Rules:**
 - Prefer the `TGPC` export from `ui/src/lib/colors.ts` (`TGPC.green`, etc.).
 - Do NOT use off-brand colors such as `#dc2626` or `#16a34a`.
+- Contrast rule: brand hues are **fills, tints, dots and borders**; small text
+  uses the ink/muted tokens (brand green/red/grey fail WCAG AA as small text,
+  and white-on-brand fills fails too). Full table:
+  `ui/src/lib/BrandColors.md` → "Contrast-Safe Usage".
 - Full details: `ui/src/lib/BrandColors.md` (single source of truth).
 - Enforced by `cd ui && npm run check:colors` — must stay at 0 offenders.
 - Exception: `CATEGORY_COLORS` in `ui/src/lib/colors.ts` are brand-derived

@@ -5,6 +5,7 @@
   import { CATEGORY_COLORS, CATEGORIES as CAT_NAMES } from '$lib/colors';
   import { MAX_SEARCH_RESULTS, isTruncated } from '$lib/searchLimits';
   import ProfileSidebar from '$lib/components/ProfileSidebar.svelte';
+  import { fitToViewport } from '$lib/fitToViewport';
   import { getRecord } from '$lib/api';
   import { PUBLIC_R2_PHOTO_BASE } from '$env/static/public';
   import { fly } from 'svelte/transition';
@@ -65,6 +66,93 @@
     return base;
   });
 
+  // ---- Sorting -----------------------------------------------------------
+  // Default is the server's relevance ranking ('rank'); every other key is a
+  // client-side sort of the rows already fetched, so it costs no extra query.
+  type SortKey = 'rank' | 'registration_number' | 'name' | 'category' | 'validity_date' | 'status';
+  type ColumnKey = Exclude<SortKey, 'rank'>;
+
+  let sortKey = $state<SortKey>('rank');
+  let sortDir = $state<1 | -1>(1);
+
+  // Sortable column header button: the colour lives on the button so the
+  // label stays AA without depending on inherited <th> styling.
+  const TH_BTN = 'inline-flex items-center gap-1 cursor-pointer border-none bg-transparent p-0 uppercase tracking-wider text-[0.7rem] font-semibold transition-colors';
+  const TH_HEAD = 'font-inherit text-left py-2 border-b-2 border-[var(--t-border)] uppercase tracking-wider text-[0.7rem] font-semibold text-[var(--t-muted)]';
+  const COLLATOR = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+  const MONTH_INDEX: Record<string, number> = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 };
+
+  /** `validity_date` ("07-Mar-2028") as a timestamp, or null when unusable. */
+  function validityTime(v: string | null | undefined): number | null {
+    if (!v) return null;
+    const m = v.trim().match(/^(\d{2})-([A-Za-z]{3})-(\d{4})$/);
+    if (!m) return null;
+    const month = MONTH_INDEX[m[2][0].toUpperCase() + m[2].slice(1).toLowerCase()];
+    if (month === undefined) return null;
+    return Date.UTC(Number(m[3]), month, Number(m[1]));
+  }
+
+  function compareBy(key: ColumnKey, a: PharmacistRecord, b: PharmacistRecord): number {
+    switch (key) {
+      case 'registration_number': return COLLATOR.compare(a.registration_number, b.registration_number);
+      case 'name': return COLLATOR.compare(a.name, b.name);
+      case 'category': return COLLATOR.compare(a.category, b.category);
+      case 'status': return COLLATOR.compare(a.status || '', b.status || '');
+      case 'validity_date': {
+        const ta = validityTime(a.validity_date);
+        const tb = validityTime(b.validity_date);
+        if (ta === null || tb === null) return ta === tb ? 0 : ta === null ? 1 : -1;
+        return ta - tb;
+      }
+    }
+  }
+
+  let sorted = $derived.by(() => {
+    const key = sortKey;
+    if (key === 'rank') return filtered;
+    const dir = sortDir;
+    return [...filtered].sort((a, b) => {
+      const cmp = compareBy(key, a, b);
+      // Rows without a usable date stay at the bottom in both directions.
+      if (key === 'validity_date' && cmp !== 0) {
+        const missingA = validityTime(a.validity_date) === null;
+        const missingB = validityTime(b.validity_date) === null;
+        if (missingA !== missingB) return missingA ? 1 : -1;
+      }
+      return dir * cmp;
+    });
+  });
+
+  function toggleSort(key: ColumnKey) {
+    if (sortKey === key) sortDir = sortDir === 1 ? -1 : 1;
+    else { sortKey = key; sortDir = 1; }
+  }
+
+  function ariaSort(key: ColumnKey): 'ascending' | 'descending' | 'none' {
+    if (sortKey !== key) return 'none';
+    return sortDir === 1 ? 'ascending' : 'descending';
+  }
+
+  function sortGlyph(key: ColumnKey): string {
+    if (sortKey !== key) return '↕';
+    return sortDir === 1 ? '↑' : '↓';
+  }
+
+  /** Category colour as a dot: the hues themselves fail AA as small text. */
+  function categoryDot(cat: string): string {
+    const c = CATEGORY_COLORS[cat as keyof typeof CATEGORY_COLORS];
+    if (!c || c === '#111827') return 'var(--t-ink)';
+    return c;
+  }
+
+  function statusDot(status: string): string {
+    return status === 'Active' ? '#00cc66' : '#ef4444';
+  }
+
+  function statusTint(status: string): string {
+    return status === 'Active' ? 'rgba(0,204,102,0.14)' : 'rgba(239,68,68,0.12)';
+  }
+
   let categoryCounts = $derived.by(() => {
     const m: Record<string, number> = { all: results.length };
     for (const c of CAT_NAMES) m[c] = 0;
@@ -88,35 +176,6 @@
     }
     debounceTimer = setTimeout(() => { doSearch(); }, 300);
     return () => clearTimeout(debounceTimer);
-  });
-
-  // Single scrollable list — no cap, show all results.
-  let resultsBox = $state<HTMLDivElement | undefined>();
-  let resultsMaxH = $state('calc(100vh - 240px)');
-  let resultsMinH = $state('0px');
-
-  function measureResultsBox() {
-    if (!resultsBox) return;
-    const boxTop = resultsBox.getBoundingClientRect().top;
-    const footer = document.querySelector('footer');
-    const footerTop = footer ? footer.getBoundingClientRect().top : window.innerHeight;
-    const available = Math.round(footerTop - boxTop - 10);
-    if (available > 0) {
-      resultsMaxH = `${available}px`;
-      resultsMinH = `${available}px`;
-    }
-  }
-
-  let resizeObserver: ResizeObserver | undefined;
-
-  $effect(() => {
-    if (resultsBox) {
-      measureResultsBox();
-      resizeObserver?.disconnect();
-      resizeObserver = new ResizeObserver(measureResultsBox);
-      resizeObserver.observe(resultsBox);
-      return () => resizeObserver?.disconnect();
-    }
   });
 
   $effect(() => {
@@ -198,9 +257,10 @@
     if (e.key === 'Enter') doSearch();
   }
 
+  // Brand fills carry ink text: white on brand green is only 2.1:1.
   function chipStyle(cat: CategoryFilter): string {
-    if (cat !== category) return 'background:var(--t-surface);color:var(--t-muted)';
-    return 'background:#00cc66;color:#fff';
+    if (cat !== category) return 'background:var(--t-surface);color:var(--t-ink-soft)';
+    return 'background:#00cc66;color:var(--t-ink)';
   }
 
 
@@ -239,7 +299,7 @@
     const countLine = `Results: ${filtered.length.toLocaleString()} of ${results.length.toLocaleString()}${refinersActive || category !== 'all' ? ' (filtered)' : ''}`;
     const filtParts = refinerParts();
     const filterLine = filtParts.length ? `Filters: ${filtParts.join(' | ')}` : 'Filters: none';
-    const body = filtered.map(r => [r.registration_number, r.name, r.father_name || '—', r.gender || '—', r.category, r.validity_date || '—', r.status || '—']);
+    const body = sorted.map(r => [r.registration_number, r.name, r.father_name || '—', r.gender || '—', r.category, r.validity_date || '—', r.status || '—']);
 
     const TEXTS = Object.fromEntries(
       Object.entries(CATEGORY_COLORS).map(([k, hex]) => [
@@ -320,14 +380,14 @@
   }
 
   function exportCSV() {
-    if (filtered.length === 0) return;
+    if (sorted.length === 0) return;
     const now = new Date();
     const kw = cleanHeader(query.trim() || '(all)');
     const countLineCsv = `# Results: ${filtered.length.toLocaleString()} of ${results.length.toLocaleString()}${refinersActive || category !== 'all' ? ' (filtered)' : ''}`;
     const filtPartsCsv = refinerParts();
     const filterLineCsv = filtPartsCsv.length ? `# Filters: ${filtPartsCsv.join(' | ')}` : '# Filters: none';
     const header = ['RPC NUMBER', 'NAME', 'FATHER NAME', 'GENDER', 'CATEGORY', 'VALID TILL', 'STATUS'];
-    const rows = filtered.map(r => [
+    const rows = sorted.map(r => [
       csvCell(r.registration_number),
       csvCell(r.name),
       csvCell(r.father_name),
@@ -351,6 +411,19 @@
 
 <div class="space-y-2">
   <h1 class="sr-only">Search Telangana State Pharmacy Council pharmacist records by name or RPC number</h1>
+
+  {#snippet statusBadge(status: string)}
+    <span class="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wider" style="background:{statusTint(status)};color:var(--t-ink)">
+      <span class="h-1.5 w-1.5 rounded-full shrink-0" style="background:{statusDot(status)}"></span>{status}
+    </span>
+  {/snippet}
+
+  {#snippet categoryBadge(cat: string)}
+    <span class="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 font-semibold uppercase tracking-wider text-[0.65rem]" style="background:color-mix(in srgb, {categoryDot(cat)} 16%, transparent);color:var(--t-ink)">
+      <span class="h-1.5 w-1.5 rounded-full shrink-0" style="background:{categoryDot(cat)}"></span>{cat}
+    </span>
+  {/snippet}
+
   <!-- Search + Chips row -->
   <div class="flex flex-col sm:flex-row items-start sm:items-center gap-3">
     <div class="flex items-center w-full min-w-0 border-b-2 border-[var(--t-border)] transition-colors focus-within:border-[#00cc66]">
@@ -373,45 +446,52 @@
         {#if query.trim()}
           <div class="absolute right-0.5 top-1/2 -translate-y-1/2 z-10 flex items-center gap-1">
             <button onclick={doSearch} disabled={query.trim().length < 3}
-              class="rounded cursor-pointer border-none transition-colors disabled:opacity-30 disabled:cursor-not-allowed {searched ? 'px-2.5 py-1 text-[0.65rem] font-medium' : 'px-3 py-1 text-[0.7rem] font-semibold'}"
-              style="background:{query.trim().length >= 3 ? (searched ? 'rgba(0,204,102,0.08)' : '#00cc66') : 'var(--t-surface)'};color:{query.trim().length >= 3 ? (searched ? '#00cc66' : '#fff') : '#9ca3af'}"
+              class="rounded cursor-pointer border-none transition-colors disabled:opacity-45 disabled:cursor-not-allowed {searched ? 'px-2.5 py-1.5 text-[0.7rem] font-semibold' : 'px-3 py-1.5 text-[0.75rem] font-bold'}"
+              style="background:{query.trim().length >= 3 ? (searched ? 'rgba(0,204,102,0.14)' : '#00cc66') : 'var(--t-surface)'};color:{query.trim().length >= 3 ? 'var(--t-ink)' : 'var(--t-muted)'}"
               transition:fly={{ y: 4, duration: 120, opacity: 0 }}>
               SEARCH
             </button>
             {#if searched}
               <button onclick={reset}
-                class="px-2.5 py-1 rounded text-[0.65rem] font-medium cursor-pointer border-none transition-colors uppercase"
-                style="background:rgba(239,68,68,0.06);color:#ef4444"
+                class="px-2.5 py-1.5 rounded text-[0.7rem] font-semibold cursor-pointer border-none transition-colors uppercase"
+                style="background:rgba(239,68,68,0.12);color:var(--t-ink)"
                 transition:fly={{ y: 4, duration: 120, opacity: 0 }}>
                 Clear
               </button>
             {/if}
           </div>
         {/if}
+        {#if query.trim().length > 0 && query.trim().length < 3}
+          <!-- The SEARCH button sits disabled below 3 chars; this says why
+               instead of leaving the tap doing nothing. -->
+          <p aria-live="polite" class="sr-only">Type at least 3 characters to search</p>
+          <span
+            class="absolute right-0.5 -bottom-4 z-10 text-[0.65rem] whitespace-nowrap"
+            style="color:var(--t-muted)"
+          >Type at least 3 characters</span>
+        {/if}
       </div>
     </div>
 
     {#if searched}
       <div class="flex flex-wrap items-center gap-1 min-w-0 w-full sm:w-auto sm:flex-1" transition:fly={{ y: 6, duration: 200, opacity: 0 }}>
-        <span class="text-[0.75rem] text-[#9ca3af] tabular-nums flex-shrink-0">{filtered.length.toLocaleString()} results</span>
+        <span class="text-[0.75rem] tabular-nums flex-shrink-0" style="color:var(--t-muted)">{sorted.length.toLocaleString()} results</span>
         {#if capped}
-          <!-- Same classes as the count span so the contrast fingerprint
-               (rule + CSS target only) is unchanged. -->
-          <span class="text-[0.75rem] text-[#9ca3af] tabular-nums flex-shrink-0">· first {MAX_SEARCH_RESULTS} matches shown — narrow your search</span>
+          <span class="text-[0.75rem] tabular-nums flex-shrink-0" style="color:var(--t-muted)">· first {MAX_SEARCH_RESULTS} matches shown — narrow your search</span>
         {/if}
         {#if refinersActive}
-          <span class="text-[0.65rem] font-semibold uppercase rounded px-1.5 py-0.5 flex-shrink-0" style="background:rgba(0,204,102,0.08);color:#00cc66">Filtered</span>
+          <span class="text-[0.65rem] font-semibold uppercase rounded px-1.5 py-0.5 flex-shrink-0" style="background:rgba(0,204,102,0.14);color:var(--t-ink)">Filtered</span>
         {/if}
         <span class="-mx-1 px-1 flex-nowrap overflow-x-auto sm:mx-0 sm:px-0 sm:flex-wrap sm:ml-auto flex items-center gap-1.5" style="scrollbar-width:thin;scrollbar-color:var(--t-border) transparent;-webkit-overflow-scrolling:touch">
           {#each CATEGORY_FILTERS as cat (cat)}
             <button onclick={() => { category = cat; }}
               class="px-2.5 py-1 rounded text-[0.7rem] font-medium transition-all cursor-pointer border-none whitespace-nowrap"
               style={chipStyle(cat)}>
-              {cat === 'all' ? 'All' : cat} <span class="opacity-60">({(categoryCounts[cat] || 0).toLocaleString()})</span>
+              {cat === 'all' ? 'All' : cat} ({(categoryCounts[cat] || 0).toLocaleString()})
             </button>
           {/each}
-          <button onclick={exportCSV} class="flex items-center gap-1 px-2.5 py-1 rounded text-[0.65rem] font-medium cursor-pointer border-none transition-colors whitespace-nowrap" style="background:rgba(0,204,102,0.08);color:#00cc66">EXPORT CSV</button>
-          <button onclick={exportPDF} class="flex items-center gap-1 px-2.5 py-1 rounded text-[0.65rem] font-medium cursor-pointer border-none transition-colors whitespace-nowrap" style="background:rgba(239,68,68,0.06);color:#ef4444">EXPORT PDF</button>
+          <button onclick={exportCSV} class="flex items-center gap-1 px-2.5 py-1.5 rounded text-[0.7rem] font-semibold cursor-pointer border-none transition-colors whitespace-nowrap" style="background:rgba(0,204,102,0.14);color:var(--t-ink)">EXPORT CSV</button>
+          <button onclick={exportPDF} class="flex items-center gap-1 px-2.5 py-1.5 rounded text-[0.7rem] font-semibold cursor-pointer border-none transition-colors whitespace-nowrap" style="background:rgba(239,68,68,0.12);color:var(--t-ink)">EXPORT PDF</button>
         </span>
       </div>
     {/if}
@@ -429,100 +509,115 @@
     {:else}
       {#if results.length > 0}
         <!-- Result filters — mobile: collapsed behind a toggle; desktop: slim single row -->
-      <div class="mb-2 rounded-lg border bg-[var(--t-bg)] p-2 transition-colors" style="border-color:{refinersActive ? '#00cc66' : 'var(--t-border)'}">
+      <div class="mb-2 rounded-lg border bg-[var(--t-bg)] p-2.5 transition-colors" style="border-color:{refinersActive ? '#00cc66' : 'var(--t-border)'}">
         <button
           type="button"
           onclick={() => refinersOpen = !refinersOpen}
           aria-expanded={refinersOpen}
           aria-controls="refiner-fields"
-          class="lg:hidden w-full flex items-center justify-between gap-2 text-[0.7rem] font-semibold uppercase tracking-widest text-[#9ca3af] cursor-pointer border-none bg-transparent p-0"
+          class="lg:hidden w-full flex items-center justify-between gap-2 text-[0.7rem] font-semibold uppercase tracking-widest text-[var(--t-muted)] cursor-pointer border-none bg-transparent p-0"
         >
           <span class="flex items-center gap-1.5">
             <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 6h18M7 12h10M10 18h4"/></svg>
             Refine
-            {#if refinersActive}<span class="rounded px-1.5 py-0.5 text-[0.6rem] normal-case tracking-normal" style="background:rgba(0,204,102,0.08);color:#00cc66">Active</span>{/if}
+            {#if refinersActive}<span class="rounded px-1.5 py-0.5 text-[0.6rem] normal-case tracking-normal" style="background:rgba(0,204,102,0.14);color:var(--t-ink)">Active</span>{/if}
           </span>
           <svg class="w-4 h-4 transition-transform {refinersOpen ? 'rotate-180' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
         </button>
-        <div id="refiner-fields" class="{refinersOpen ? 'flex' : 'hidden'} lg:flex flex-wrap items-end gap-2 mt-2 lg:mt-0 lg:flex-nowrap">
+        <div id="refiner-fields" class="{refinersOpen ? 'flex' : 'hidden'} lg:flex flex-wrap items-end gap-2.5 mt-2.5 lg:mt-0 lg:flex-nowrap">
         <label class="flex min-w-[92px] flex-1 flex-col gap-1">
-          <span class="text-[0.6rem] font-semibold uppercase tracking-widest text-[#9ca3af]">RPC</span>
+          <span class="text-[0.65rem] font-semibold uppercase tracking-widest text-[var(--t-muted)]">RPC</span>
           <input type="text" bind:value={advFilters.registration_number} placeholder="TG..."
-            class="h-7 w-full rounded-lg border border-[var(--t-border)] bg-[var(--t-bg)] px-2.5 text-sm outline-none transition-all focus:border-[#00cc66] focus:ring-2 focus:ring-[rgba(0,204,102,0.15)]" />
+            class="h-8 w-full rounded-lg border border-[var(--t-border)] bg-[var(--t-bg)] px-2.5 text-[0.8rem] outline-none transition-all focus:border-[#00cc66] focus:ring-2 focus:ring-[rgba(0,204,102,0.15)]" />
         </label>
         <label class="flex min-w-[122px] flex-1 flex-col gap-1">
-          <span class="text-[0.6rem] font-semibold uppercase tracking-widest text-[#9ca3af]">Name</span>
+          <span class="text-[0.65rem] font-semibold uppercase tracking-widest text-[var(--t-muted)]">Name</span>
           <input type="text" bind:value={advFilters.name} placeholder="Name"
-            class="h-7 w-full rounded-lg border border-[var(--t-border)] bg-[var(--t-bg)] px-2.5 text-sm outline-none transition-all focus:border-[#00cc66] focus:ring-2 focus:ring-[rgba(0,204,102,0.15)]" />
+            class="h-8 w-full rounded-lg border border-[var(--t-border)] bg-[var(--t-bg)] px-2.5 text-[0.8rem] outline-none transition-all focus:border-[#00cc66] focus:ring-2 focus:ring-[rgba(0,204,102,0.15)]" />
         </label>
         <label class="flex min-w-[122px] flex-1 flex-col gap-1">
-          <span class="text-[0.6rem] font-semibold uppercase tracking-widest text-[#9ca3af]">Father Name</span>
+          <span class="text-[0.65rem] font-semibold uppercase tracking-widest text-[var(--t-muted)]">Father Name</span>
           <input type="text" bind:value={advFilters.father_name} placeholder="Father"
-            class="h-7 w-full rounded-lg border border-[var(--t-border)] bg-[var(--t-bg)] px-2.5 text-sm outline-none transition-all focus:border-[#00cc66] focus:ring-2 focus:ring-[rgba(0,204,102,0.15)]" />
+            class="h-8 w-full rounded-lg border border-[var(--t-border)] bg-[var(--t-bg)] px-2.5 text-[0.8rem] outline-none transition-all focus:border-[#00cc66] focus:ring-2 focus:ring-[rgba(0,204,102,0.15)]" />
         </label>
         <label class="flex min-w-[128px] flex-col gap-1">
-          <span class="text-[0.6rem] font-semibold uppercase tracking-widest text-[#9ca3af]">Gender</span>
-            <div class="flex h-7 rounded-full bg-[var(--t-surface)] p-1">
-            <button onclick={() => advFilters.gender = ''} class="flex-1 rounded-full px-2 text-xs font-semibold transition-all" style="{!advFilters.gender ? 'background:#00cc66;color:#fff' : 'background:transparent;color:var(--t-muted)'}">All</button>
-            <button onclick={() => advFilters.gender = 'Male'} class="flex-1 rounded-full px-2 text-xs font-semibold transition-all" style="{advFilters.gender === 'Male' ? 'background:#00cc66;color:#fff' : 'background:transparent;color:var(--t-muted)'}">Male</button>
-            <button onclick={() => advFilters.gender = 'Female'} class="flex-1 rounded-full px-2 text-xs font-semibold transition-all" style="{advFilters.gender === 'Female' ? 'background:#00cc66;color:#fff' : 'background:transparent;color:var(--t-muted)'}">Female</button>
+          <span class="text-[0.65rem] font-semibold uppercase tracking-widest text-[var(--t-muted)]">Gender</span>
+            <div class="flex h-8 rounded-full bg-[var(--t-surface)] p-1">
+            <button onclick={() => advFilters.gender = ''} class="flex-1 rounded-full px-2.5 text-[0.75rem] font-semibold transition-all" style="{!advFilters.gender ? 'background:#00cc66;color:var(--t-ink)' : 'background:transparent;color:var(--t-ink-soft)'}">All</button>
+            <button onclick={() => advFilters.gender = 'Male'} class="flex-1 rounded-full px-2.5 text-[0.75rem] font-semibold transition-all" style="{advFilters.gender === 'Male' ? 'background:#00cc66;color:var(--t-ink)' : 'background:transparent;color:var(--t-ink-soft)'}">Male</button>
+            <button onclick={() => advFilters.gender = 'Female'} class="flex-1 rounded-full px-2.5 text-[0.75rem] font-semibold transition-all" style="{advFilters.gender === 'Female' ? 'background:#00cc66;color:var(--t-ink)' : 'background:transparent;color:var(--t-ink-soft)'}">Female</button>
           </div>
         </label>
         <label class="flex min-w-[168px] flex-col gap-1">
-          <span class="text-[0.6rem] font-semibold uppercase tracking-widest text-[#9ca3af]">Status</span>
-            <div class="flex h-7 rounded-full bg-[var(--t-surface)] p-1">
-            <button onclick={() => advFilters.status = ''} class="flex-1 rounded-full px-2 text-xs font-semibold transition-all" style="{!advFilters.status ? 'background:#00cc66;color:#fff' : 'background:transparent;color:var(--t-muted)'}">All</button>
-            <button onclick={() => advFilters.status = 'Active'} class="flex-1 rounded-full px-2 text-xs font-semibold transition-all" style="{advFilters.status === 'Active' ? 'background:#00cc66;color:#fff' : 'background:transparent;color:var(--t-muted)'}">Active</button>
-            <button onclick={() => advFilters.status = 'Inactive'} class="flex-1 rounded-full px-2 text-xs font-semibold transition-all" style="{advFilters.status === 'Inactive' ? 'background:#ef4444;color:#fff' : 'background:transparent;color:var(--t-muted)'}">Inactive</button>
+          <span class="text-[0.65rem] font-semibold uppercase tracking-widest text-[var(--t-muted)]">Status</span>
+            <div class="flex h-8 rounded-full bg-[var(--t-surface)] p-1">
+            <button onclick={() => advFilters.status = ''} class="flex-1 rounded-full px-2.5 text-[0.75rem] font-semibold transition-all" style="{!advFilters.status ? 'background:#00cc66;color:var(--t-ink)' : 'background:transparent;color:var(--t-ink-soft)'}">All</button>
+            <button onclick={() => advFilters.status = 'Active'} class="flex-1 rounded-full px-2.5 text-[0.75rem] font-semibold transition-all" style="{advFilters.status === 'Active' ? 'background:#00cc66;color:var(--t-ink)' : 'background:transparent;color:var(--t-ink-soft)'}">Active</button>
+            <button onclick={() => advFilters.status = 'Inactive'} class="flex-1 rounded-full px-2.5 text-[0.75rem] font-semibold transition-all" style="{advFilters.status === 'Inactive' ? 'background:#ef4444;color:var(--t-ink)' : 'background:transparent;color:var(--t-ink-soft)'}">Inactive</button>
           </div>
         </label>
         <label class="flex min-w-[138px] flex-col gap-1">
-          <span class="text-[0.6rem] font-semibold uppercase tracking-widest text-[#9ca3af]">Valid Till</span>
+          <span class="text-[0.65rem] font-semibold uppercase tracking-widest text-[var(--t-muted)]">Valid Till</span>
           <DatePicker bind:value={advFilters.valid_till} placeholder="DD/MM/YYYY" />
         </label>
         {#if refinersActive}
-          <button onclick={clearAdvanced} class="h-7 self-end rounded-full border border-[rgba(239,68,68,0.2)] bg-[var(--t-bg)] px-3 text-xs font-semibold text-[#ef4444] transition-colors hover:bg-[rgba(239,68,68,0.06)]">Clear</button>
+          <button onclick={clearAdvanced} class="h-8 self-end rounded-full border border-[rgba(239,68,68,0.35)] bg-[var(--t-bg)] px-3 text-[0.75rem] font-semibold text-[var(--t-ink)] transition-colors hover:bg-[rgba(239,68,68,0.12)]">Clear</button>
         {/if}
         </div>
       </div>
       {/if}
       {#if filtered.length === 0}
-        <p class="text-[0.85rem] text-[#9ca3af] py-8 text-center">No results</p>
+        <p class="text-[0.85rem] py-8 text-center" style="color:var(--t-muted)">No results</p>
       {:else}
         <div class="hidden md:block">
-        <div style="max-height:{resultsMaxH};min-height:{resultsMinH};overflow-y:auto;overflow-x:auto" bind:this={resultsBox}>
+        <div use:fitToViewport class="overflow-y-auto overflow-x-auto">
         <table class="w-full" style="table-layout:auto">
           <thead class="sticky top-0 bg-[var(--t-bg)] z-10">
-            <tr class="text-[0.65rem] font-semibold text-[#9ca3af] uppercase tracking-wider">
-              <th class="font-inherit text-left py-1.5 border-b-2 border-[var(--t-border)] w-[52px]"></th>
-              <th class="font-inherit text-left py-1.5 border-b-2 border-[var(--t-border)]">RPC NUMBER</th>
-              <th class="font-inherit text-left py-1.5 border-b-2 border-[var(--t-border)]">Name</th>
-              <th class="font-inherit text-left py-1.5 border-b-2 border-[var(--t-border)] hidden lg:table-cell">Father Name</th>
-              <th class="font-inherit text-left py-1.5 border-b-2 border-[var(--t-border)] hidden xl:table-cell">Gender</th>
-              <th class="font-inherit text-left py-1.5 border-b-2 border-[var(--t-border)]">Category</th>
-              <th class="font-inherit text-left py-1.5 border-b-2 border-[var(--t-border)] hidden xl:table-cell">Valid Till</th>
-              <th class="font-inherit text-right py-1.5 border-b-2 border-[var(--t-border)] pr-10">Status</th>
+            <tr>
+              <th class="font-inherit text-left py-2 border-b-2 border-[var(--t-border)] w-[52px]"><span class="sr-only">Photo</span></th>
+              <th aria-sort={ariaSort('registration_number')} class={TH_HEAD}>
+                <button type="button" class={TH_BTN} style="color:inherit" onclick={() => toggleSort('registration_number')}>RPC Number <span aria-hidden="true">{sortGlyph('registration_number')}</span></button>
+              </th>
+              <th aria-sort={ariaSort('name')} class={TH_HEAD}>
+                <button type="button" class={TH_BTN} style="color:inherit" onclick={() => toggleSort('name')}>Name <span aria-hidden="true">{sortGlyph('name')}</span></button>
+              </th>
+              <th class="{TH_HEAD} hidden lg:table-cell">Father Name</th>
+              <th class="{TH_HEAD} hidden xl:table-cell">Gender</th>
+              <th aria-sort={ariaSort('category')} class={TH_HEAD}>
+                <button type="button" class={TH_BTN} style="color:inherit" onclick={() => toggleSort('category')}>Category <span aria-hidden="true">{sortGlyph('category')}</span></button>
+              </th>
+              <th aria-sort={ariaSort('validity_date')} class="{TH_HEAD} hidden lg:table-cell">
+                <button type="button" class={TH_BTN} style="color:inherit" onclick={() => toggleSort('validity_date')}>Valid Till <span aria-hidden="true">{sortGlyph('validity_date')}</span></button>
+              </th>
+              <th aria-sort={ariaSort('status')} class="font-inherit text-right py-2 border-b-2 border-[var(--t-border)] pr-6 uppercase tracking-wider text-[0.7rem] font-semibold text-[var(--t-muted)]">
+                <button type="button" class={TH_BTN} style="color:inherit" onclick={() => toggleSort('status')}>Status <span aria-hidden="true">{sortGlyph('status')}</span></button>
+              </th>
             </tr>
           </thead>
           <tbody>
-            {#each filtered as r (r.registration_number)}
-              <tr class="text-[0.875rem] text-[var(--t-ink-soft)] border-b border-[var(--t-surface)]" style="content-visibility:auto;contain-intrinsic-size:48px">
-                <td class="py-1.5">
+            {#each sorted as r (r.registration_number)}
+              <tr class="text-[0.875rem] text-[var(--t-ink-soft)] border-b border-[var(--t-surface)] transition-colors hover:bg-[var(--t-surface-3)]" style="content-visibility:auto;contain-intrinsic-size:56px">
+                <td class="py-1.5 align-top">
                   <img src={photoUrl(r)} alt="" loading="lazy" decoding="async" width="36" height="44" class="w-9 h-11 rounded object-cover bg-[var(--t-surface)]" />
                 </td>
-                <td class="py-2.5 text-[var(--t-link)]" style="font-weight:600">
-                  <a href="/rph/{r.registration_number}" onclick={(e) => { e.preventDefault(); openDrawer(r.registration_number); }} class="hover:underline no-underline cursor-pointer" aria-label="View profile for {r.registration_number}">
+                <td class="py-2.5 align-top text-[var(--t-link)]" style="font-weight:600">
+                  <a href="/rph/{r.registration_number}" onclick={(e) => { e.preventDefault(); openDrawer(r.registration_number); }} class="hover:underline no-underline cursor-pointer tabular-nums" aria-label="View profile for {r.registration_number}">
                     {r.registration_number}
                   </a>
                 </td>
-                <td class="py-2.5 truncate hidden md:table-cell" title={r.name}>{r.name}</td>
-                <td class="py-2.5 truncate hidden lg:table-cell" title={r.father_name || ''}>{r.father_name || '—'}</td>
-                <td class="py-2.5 hidden xl:table-cell">{r.gender || '—'}</td>
-                <td class="py-2.5" style="color:{CATEGORY_COLORS[r.category] === '#111827' ? 'var(--t-ink)' : CATEGORY_COLORS[r.category]}">{r.category}</td>
-                <td class="py-2.5 hidden xl:table-cell">{r.validity_date || '—'}</td>
-                <td class="py-2.5 text-right pr-10">
+                <td class="py-2.5 align-top" style="color:var(--t-ink)">{r.name}</td>
+                <td class="py-2.5 align-top hidden lg:table-cell">{r.father_name || '—'}</td>
+                <td class="py-2.5 align-top hidden xl:table-cell">{r.gender || '—'}</td>
+                <td class="py-2.5 align-top">
+                  <span class="inline-flex items-center gap-1.5" style="color:var(--t-ink)">
+                    <span class="h-2 w-2 rounded-full shrink-0" style="background:{categoryDot(r.category)}"></span>
+                    {r.category}
+                  </span>
+                </td>
+                <td class="py-2.5 align-top hidden lg:table-cell tabular-nums">{r.validity_date || '—'}</td>
+                <td class="py-2.5 align-top text-right pr-6">
                   {#if r.status}
-                    <span style="color:{r.status === 'Active' ? 'var(--t-ink)' : '#ef4444'}">{r.status}</span>
+                    {@render statusBadge(r.status)}
                   {:else}
                     <span class="text-[var(--t-ink-soft)]">—</span>
                   {/if}
@@ -533,23 +628,23 @@
         </table>
         </div>
       </div>
-      <div class="md:hidden space-y-1.5">
-          {#each filtered as r (r.registration_number)}
-            <div class="flex gap-3 p-2.5 rounded-lg border border-[var(--t-surface)] bg-[var(--t-surface-3)] text-[0.875rem]" style="content-visibility:auto;contain-intrinsic-size:140px">
+      <div class="md:hidden space-y-2">
+          {#each sorted as r (r.registration_number)}
+            <div class="flex gap-3 p-3 rounded-xl border border-[var(--t-surface)] bg-[var(--t-surface-3)] text-[0.875rem]" style="content-visibility:auto;contain-intrinsic-size:150px">
               <img src={photoUrl(r)} alt="" loading="lazy" decoding="async" width="48" height="58" class="w-12 h-14 rounded-md object-cover bg-[var(--t-surface)] flex-shrink-0" />
               <div class="min-w-0 flex-1">
                 <div class="flex items-center justify-between gap-2">
-                  <a href="/rph/{r.registration_number}" onclick={(e) => { e.preventDefault(); openDrawer(r.registration_number); }} class="text-[var(--t-link)] hover:underline no-underline cursor-pointer tabular-nums" style="font-weight:600" aria-label="View profile for {r.registration_number}">{r.registration_number}</a>
+                  <a href="/rph/{r.registration_number}" onclick={(e) => { e.preventDefault(); openDrawer(r.registration_number); }} class="text-[var(--t-link)] hover:underline no-underline cursor-pointer tabular-nums font-semibold" aria-label="View profile for {r.registration_number}">{r.registration_number}</a>
                   {#if r.status}
-                    <span class="flex-shrink-0 rounded-full px-2 py-0.5 text-[0.6rem] font-semibold uppercase tracking-wider" style="background:{r.status === 'Active' ? 'rgba(0,204,102,0.1)' : 'rgba(239,68,68,0.1)'};color:{r.status === 'Active' ? '#00cc66' : '#ef4444'}">{r.status}</span>
+                    <span class="flex-shrink-0">{@render statusBadge(r.status)}</span>
                   {/if}
                 </div>
                 <div class="mt-1 text-[var(--t-ink)] font-medium leading-snug">{r.name}</div>
                 <div class="mt-0.5 text-[var(--t-muted)] text-[0.8rem] leading-snug">{r.father_name || '—'}</div>
-                <div class="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1.5 text-[0.75rem]">
-                  <span class="rounded-full px-2 py-0.5 font-semibold uppercase tracking-wider text-[0.6rem]" style="background:color-mix(in srgb, {CATEGORY_COLORS[r.category] === '#111827' ? 'var(--t-ink)' : CATEGORY_COLORS[r.category]} 10%, transparent);color:{CATEGORY_COLORS[r.category] === '#111827' ? 'var(--t-ink)' : CATEGORY_COLORS[r.category]}">{r.category}</span>
+                <div class="flex flex-wrap items-center gap-x-2.5 gap-y-1 mt-1.5 text-[0.75rem]">
+                  {@render categoryBadge(r.category)}
                   {#if r.gender}<span class="text-[var(--t-muted)]">{r.gender}</span>{/if}
-                  {#if r.validity_date}<span class="text-[var(--t-muted)]">Valid till {r.validity_date}</span>{/if}
+                  {#if r.validity_date}<span class="text-[var(--t-muted)]">Valid till <span class="tabular-nums">{r.validity_date}</span></span>{/if}
                 </div>
               </div>
             </div>

@@ -46,6 +46,40 @@ backgrounds and soft borders).
    (`ui/scripts/check-colors.mjs`) fails CI/pre-commit on any off-palette
    literal. Add new approved values to both that script and this file.
 
+## Contrast-Safe Usage (MANDATORY)
+
+The four brand hues are bright, so most of them fail WCAG AA as *small text*
+on a light background:
+
+| Foreground | On `#ffffff` | AA (4.5:1) |
+|---|---|---|
+| `#00cc66` green | 2.14 | ✗ |
+| `#ef4444` red | 3.76 | ✗ |
+| `#9ca3af` grey | 2.54 | ✗ |
+| `#00b359` greenDark | 2.77 | ✗ |
+| `#2563eb` blue | 5.17 | ✓ |
+
+White text **on** brand green/red fails too (2.14 / 3.76) — never pair a brand
+fill with white text.
+
+Therefore:
+
+1. Brand colors carry **fills, tints, dots, borders, focus rings, the nav
+   slider and the logotype** — not small text.
+2. Small text uses the semantic tokens: `var(--t-ink)` (primary),
+   `var(--t-ink-soft)` (body/labels on surfaces) or `var(--t-muted)`
+   (secondary). Brand-coloured *fills* take `var(--t-ink)` as their label.
+3. `--t-muted` is 4.39:1 on `--t-surface` — put muted text on `--t-bg` or
+   `--t-surface-3`, or use `--t-ink-soft` on a surface.
+4. `--t-muted` inside a brand-tinted pill is also borderline (4.52/4.48) —
+   use `--t-ink-soft` there.
+5. Blue links (`#2563eb`, `--t-link`) pass on white/`--t-surface-3` and stay
+   the link colour; PDF-vs-page type is carried by the chip tint and a dot.
+6. **Exception:** the header logotype (`TGPC` / `RPh` / `Index`) keeps the brand
+   colours — WCAG 1.4.3 exempts logotypes. Those nodes are the only tracked
+   contrast entries in `ui/e2e/contrast-baseline.json`; everything else in the
+   shell must stay AA so the gate only ever reports *resolved* entries.
+
 ## Day/Night Mode
 
 The site ships a theme toggle (header, `$lib/theme.ts`). Implementation notes:
