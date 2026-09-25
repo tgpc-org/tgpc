@@ -37,7 +37,9 @@
   // which would blank the whole page. Index keys are safe here because the
   // list is replaced wholesale whenever the data reloads.
   let filtered = $derived.by(() => notices.filter(n => {
-    if (tab && getYr(n.date) !== tab) return false;
+    // 'all' is the unfiltered tab, not a year — comparing a year to the
+    // literal 'all' emptied the list on the default tab.
+    if (tab !== 'all' && getYr(n.date) !== tab) return false;
     if (!query) return true;
     const q = query.toLowerCase();
     return n.title.toLowerCase().includes(q) || fmtDate(n.date).toLowerCase().includes(q);
