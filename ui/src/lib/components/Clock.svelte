@@ -13,5 +13,6 @@
   let timeStr = $derived(`${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`);
 </script>
 
-<span class="opacity-40 leading-[18px]">|</span>
-<span class="opacity-80 leading-[18px] tabular-nums whitespace-nowrap">{dateStr} {timeStr}</span>
+<!-- Inherits the shell's muted token: dimming with opacity dropped the
+     contrast below AA on the light background. -->
+<span class="tabular-nums whitespace-nowrap">{dateStr} {timeStr}</span>

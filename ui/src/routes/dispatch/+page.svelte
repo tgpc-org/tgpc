@@ -11,7 +11,7 @@
 
   let files = $state<DispatchFile[]>([]);
   let years = $state<string[]>([]);
-  let tab = $state<string | null>(null);
+  let tab = $state<string>('all');
   let query = $state('');
   let loading = $state(true);
 
@@ -35,7 +35,7 @@
       .sort((a, b) => b.parsed!.date.getTime() - a.parsed!.date.getTime());
     years = [...new Set(files.map(f => f.parsed!.y))].sort((a, b) => +b - +a);
     // Preserve the user's tab across background refetches.
-    if (!tab || !years.includes(tab)) tab = years[0] || null;
+    if (tab !== 'all' && !years.includes(tab)) tab = 'all';
   }
 
   let filtered = $derived.by(() => files.filter(f => {
@@ -73,6 +73,18 @@
   <title>Dispatch List — TGPC RPh Index</title>
 </svelte:head>
 
+{#snippet dispatchCard(f: DispatchFile)}
+  <a href={`/api/dispatch/${f.name}`} target="_blank" rel="noopener"
+    class="flex items-center gap-2.5 p-3 border border-[var(--t-border)] rounded-xl no-underline text-[var(--t-ink)] hover:bg-[var(--t-surface-3)] transition-colors">
+    <img src="/pdf.svg" alt="" width="24" height="24" class="block flex-shrink-0" />
+    <div class="min-w-0">
+      <div class="text-[0.65rem] font-semibold uppercase tracking-widest text-[var(--t-muted)]">Dispatch List</div>
+      <div class="text-[0.85rem] font-semibold truncate">{fmt(f.parsed!)}</div>
+      <div class="text-[0.7rem] text-[var(--t-muted)]">{sizes[f.name] ? Math.round(sizes[f.name] / 1024) + ' KB' : ''}{f.stale ? ' · may be stale' : ''}</div>
+    </div>
+  </a>
+{/snippet}
+
 <div class="space-y-4">
   <h1 class="sr-only">TGPC dispatch list</h1>
   <div class="flex items-center gap-2">
@@ -87,12 +99,17 @@
     </div>
   </div>
 
-  <div class="-mx-1 px-1 flex-nowrap overflow-x-auto sm:flex-wrap gap-1 text-[0.75rem]" style="scrollbar-width:thin;scrollbar-color:var(--t-border) transparent;-webkit-overflow-scrolling:touch">
+  <div class="-mx-1 px-1 flex-nowrap overflow-x-auto sm:flex-wrap gap-1.5 text-[0.75rem]" style="scrollbar-width:thin;scrollbar-color:var(--t-border) transparent;-webkit-overflow-scrolling:touch">
+    <button onclick={() => tab = 'all'}
+      class="px-2.5 py-1.5 rounded text-[0.75rem] font-semibold transition-colors cursor-pointer border-none whitespace-nowrap"
+      style={tab === 'all' ? 'background:#00cc66;color:var(--t-ink)' : 'background:var(--t-surface);color:var(--t-ink-soft)'}>
+      All ({files.length})
+    </button>
     {#each years as y (y)}
       <button onclick={() => tab = y}
-        class="px-2.5 py-1 rounded text-[0.7rem] font-medium transition-all cursor-pointer border-none whitespace-nowrap"
-        style={y === tab ? 'background:#00cc66;color:#fff' : 'background:var(--t-surface);color:var(--t-muted)'}>
-        {y} <span class="opacity-50">({files.filter(f => f.parsed?.y === y).length})</span>
+        class="px-2.5 py-1.5 rounded text-[0.75rem] font-semibold transition-colors cursor-pointer border-none whitespace-nowrap"
+        style={y === tab ? 'background:#00cc66;color:var(--t-ink)' : 'background:var(--t-surface);color:var(--t-ink-soft)'}>
+        {y} ({files.filter(f => f.parsed?.y === y).length})
       </button>
     {/each}
   </div>
@@ -104,38 +121,22 @@
       {/each}
     </div>
   {:else if filtered.length === 0}
-    <p class="text-[0.85rem] text-[#9ca3af] py-8 text-center">No files</p>
+    <p class="text-[0.85rem] py-8 text-center" style="color:var(--t-muted)">No files</p>
   {:else}
-    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-1.5">
-      {#if tab === null}
+    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+      {#if tab === 'all'}
         {#each years as y (y)}
           {@const fy = filtered.filter(f => f.parsed?.y === y)}
           {#if fy.length > 0}
-            <div class="col-span-full text-[0.65rem] font-semibold text-[#9ca3af] uppercase tracking-wider py-2">{y} — {fy.length}</div>
+            <div class="col-span-full text-[0.7rem] font-semibold text-[var(--t-muted)] uppercase tracking-wider py-2">{y} — {fy.length}</div>
             {#each fy as f (f.name)}
-              <a href={`/api/dispatch/${f.name}`} target="_blank" rel="noopener"
-                class="flex items-center gap-2 p-2.5 border border-[var(--t-border)] rounded-lg no-underline text-[var(--t-ink)] hover:bg-[var(--t-surface-3)] transition-colors">
-                <img src="/pdf.svg" alt="" width="24" height="24" class="block flex-shrink-0" />
-                <div class="min-w-0">
-                  <div class="text-[0.6rem] font-semibold uppercase tracking-widest text-[#9ca3af]">Dispatch List</div>
-                  <div class="text-[0.8rem] font-medium truncate">{fmt(f.parsed!)}</div>
-                  <div class="text-[0.65rem] text-[#9ca3af]">{sizes[f.name] ? Math.round(sizes[f.name] / 1024) + ' KB' : ''}{f.stale ? ' · may be stale' : ''}</div>
-                </div>
-              </a>
+              {@render dispatchCard(f)}
             {/each}
           {/if}
         {/each}
       {:else}
         {#each filtered as f (f.name)}
-          <a href={`/api/dispatch/${f.name}`} target="_blank" rel="noopener"
-            class="flex items-center gap-2 p-2.5 border border-[var(--t-border)] rounded-lg no-underline text-[var(--t-ink)] hover:bg-[var(--t-surface-3)] transition-colors">
-            <img src="/pdf.svg" alt="" width="24" height="24" class="block flex-shrink-0" />
-            <div class="min-w-0">
-              <div class="text-[0.6rem] font-semibold uppercase tracking-widest text-[#9ca3af]">Dispatch List</div>
-              <div class="text-[0.8rem] font-medium truncate">{fmt(f.parsed!)}</div>
-              <div class="text-[0.65rem] text-[#9ca3af]">{sizes[f.name] ? Math.round(sizes[f.name] / 1024) + ' KB' : ''}{f.stale ? ' · may be stale' : ''}</div>
-            </div>
-          </a>
+          {@render dispatchCard(f)}
         {/each}
       {/if}
     </div>
