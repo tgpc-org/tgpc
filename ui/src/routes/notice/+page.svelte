@@ -127,13 +127,13 @@
             {@const fy = filtered.filter(n => getYr(n.date) === y)}
             {#if fy.length > 0}
               <div class="text-[0.65rem] font-semibold text-[#9ca3af] uppercase tracking-wider py-2 px-1">{y} — {fy.length}</div>
-              {#each fy as n (n.title)}
+              {#each fy as n, ni (ni)}
                 <div style="display:grid;grid-template-columns:96px 1fr 160px;gap:12px;padding:10px 0;border-bottom:1px solid var(--t-surface);font-size:0.875rem">
                   <span class="text-[var(--t-muted)] tabular-nums">{fmtDate(n.date)}</span>
                   <span style="min-width:0">{n.title}</span>
                   <span class="flex gap-1 flex-wrap" style="min-width:0">
                     {#if n.links?.length}
-                      {#each n.links as link (link.url)}
+                      {#each n.links as link, li (li)}
                         <a href={resolve(link.url)} target="_blank" rel="noopener"
                           class="px-2 py-0.5 rounded text-[0.7rem] font-medium no-underline transition-colors"
                           style="color:{linkType(link.url)};background:{linkBg(linkType(link.url), 8)}"
@@ -151,13 +151,13 @@
             {/if}
           {/each}
         {:else}
-          {#each filtered as n (n.title)}
+          {#each filtered as n, ni (ni)}
             <div style="display:grid;grid-template-columns:96px 1fr 160px;gap:12px;padding:10px 0;border-bottom:1px solid var(--t-surface);font-size:0.875rem">
               <span class="text-[var(--t-muted)] tabular-nums">{fmtDate(n.date)}</span>
               <span style="min-width:0">{n.title}</span>
               <span class="flex gap-1 flex-wrap" style="min-width:0">
                 {#if n.links?.length}
-                  {#each n.links as link (link.url)}
+                  {#each n.links as link, li (li)}
                     <a href={resolve(link.url)} target="_blank" rel="noopener"
                       class="px-2 py-0.5 rounded text-[0.7rem] font-medium no-underline transition-colors"
                       style="color:{linkType(link.url)};background:{linkBg(linkType(link.url), 8)}"
@@ -181,13 +181,13 @@
             {@const fy = filtered.filter(n => getYr(n.date) === y)}
             {#if fy.length > 0}
               <div class="text-[0.65rem] font-semibold text-[#9ca3af] uppercase tracking-wider py-2">{y} — {fy.length}</div>
-              {#each fy as n (n.title)}
+              {#each fy as n, ni (ni)}
                 <div class="py-2.5 border-b border-[var(--t-surface)]">
                   <div class="text-[0.75rem] text-[var(--t-muted)] tabular-nums">{fmtDate(n.date)}</div>
                   <div class="text-[0.875rem] mt-0.5">{n.title}</div>
                   {#if n.links?.length}
                     <div class="flex gap-1.5 mt-1">
-                      {#each n.links as link (link.url)}
+                      {#each n.links as link, li (li)}
                         <a href={resolve(link.url)} target="_blank" rel="noopener"
                           class="px-2 py-0.5 rounded text-[0.7rem] font-medium no-underline"
                           style="color:{linkType(link.url)};background:{linkBg(linkType(link.url), 8)}">
@@ -201,13 +201,13 @@
             {/if}
           {/each}
         {:else}
-          {#each filtered as n (n.title)}
+          {#each filtered as n, ni (ni)}
             <div class="py-2.5 border-b border-[var(--t-surface)]">
               <div class="text-[0.75rem] text-[var(--t-muted)] tabular-nums">{fmtDate(n.date)}</div>
               <div class="text-[0.875rem] mt-0.5">{n.title}</div>
               {#if n.links?.length}
                 <div class="flex gap-1.5 mt-1">
-                  {#each n.links as link (link.url)}
+                  {#each n.links as link, li (li)}
                     <a href={resolve(link.url)} target="_blank" rel="noopener"
                       class="px-2 py-0.5 rounded text-[0.7rem] font-medium no-underline"
                       style="color:{linkType(link.url)};background:{linkBg(linkType(link.url), 8)}">

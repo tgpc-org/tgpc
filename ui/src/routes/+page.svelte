@@ -515,7 +515,7 @@
                     {r.registration_number}
                   </a>
                 </td>
-                <td class="py-2.5 truncate hidden lg:table-cell" title={r.name}>{r.name}</td>
+                <td class="py-2.5 truncate hidden md:table-cell" title={r.name}>{r.name}</td>
                 <td class="py-2.5 truncate hidden lg:table-cell" title={r.father_name || ''}>{r.father_name || '—'}</td>
                 <td class="py-2.5 hidden xl:table-cell">{r.gender || '—'}</td>
                 <td class="py-2.5" style="color:{CATEGORY_COLORS[r.category] === '#111827' ? 'var(--t-ink)' : CATEGORY_COLORS[r.category]}">{r.category}</td>
