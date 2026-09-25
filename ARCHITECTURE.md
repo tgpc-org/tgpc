@@ -43,7 +43,7 @@ tgpc/
 │   ├── progress.py                 # ProgressBar, Phase, heartbeat, BarHandler (TTY + CI-safe output)
 │   ├── quota.py                    # Free-tier quota report (Supabase, R2, Resend, GDrive)
 │   ├── scraper.py                  # Scraper, RateLimiter, PharmacistRecord, extractors, TLS adapter
-│   ├── manager.py                  # FileManager, BackupManager, Manager (~1550 lines)
+│   ├── manager.py                  # FileManager, BackupManager, Manager (~1600 lines)
 │   ├── inactive_sweep.py           # Detect inactive→active reactivations (2-phase, resumable)
 │   └── enrich_actives.py           # Parallel enrichment + upsert of reactivated records
 ├── ui/                            # Production frontend (SvelteKit)
@@ -77,7 +77,7 @@ tgpc/
 │   │   ├── pdf.svg, notice.json, manifest.json
 │   ├── wrangler.toml              # R2 DISPATCH bucket binding
 │   └── svelte.config.js
-├── tests/                          # 71 tests, 8 files (all mocked — no real HTTP/Supabase)
+├── tests/                          # 173 tests, 12 files (all mocked — no real HTTP/Supabase)
 │   ├── test_scraper.py             # 10: timeouts, WAF/blocked detection, table fallback, bad rows, detail parsing, legacy headers, missing tables
 │   ├── test_manager_update.py      # 7: safety guard, dedup/sort/GITHUB_OUTPUT, deterministic ordering, source-unavailable, +3 sync return-value regressions
 │   ├── test_manager_enrichment.py  # 3: enrichment save, registration mismatch, null serial_number regression
@@ -85,7 +85,11 @@ tgpc/
 │   ├── test_manager_photos.py      # 11: photo upload/verify/retry pipeline, batch error isolation
 │   ├── test_quota.py               # 8: quota reporter helpers + fail-closed paths
 │   ├── test_inactive_sweep.py      # 6: JSONL parsing, checkpoint roundtrip, resume/partial runs
-│   └── test_bugfix_regressions.py  # 9: restore/backup/release/force regressions
+│   ├── test_bugfix_regressions.py  # 18: restore/backup/release/force regressions
+│   ├── test_security_audit_regressions.py  # 27: audit remediations (DG PII RLS posture, R2 publicity gate, email escaping, rclone temp paths)
+│   ├── test_check_health.py        # 17: prod health monitor classification + exit codes
+│   ├── test_details_dg.py          # 37: DG caption/detail parsing, captcha handling, RLS/Storage posture
+│   └── test_dg_dashboard.py        # 12: DG monitor status merge, zombie-PID detection, IST formatting
 └── (credentials stored in macOS Keychain, not files)
 ```
 
@@ -185,7 +189,7 @@ Config is loaded via `Config.load()` classmethod (reads env vars for proxy and e
 - `extract_basic_records()` → `List[PharmacistRecord]` — fetches total endpoint, finds `<table id="tablesorter-demo">` (fallback to any `<table>`), extracts rows with ≥5 cells (serial, reg_no, name, father, category)
 - `extract_detailed_info(reg_no, img_dir)` → `Optional[PharmacistRecord]` — POSTs to search endpoint, parses detail page for: registration table (name, father, gender, category, status, validity), education table (qualification → category, university, college, years, HT No), work experience table (address, state, district, pin code), and photos (base64 data URI or URL download → saved to `img_dir`)
 
-### `tgpc/manager.py` — Orchestration (~1550 lines)
+### `tgpc/manager.py` — Orchestration (~1600 lines)
 
 **`DataIntegrityError`** — raised when enrichment scraped data doesn't match the expected registration.
 
@@ -517,7 +521,7 @@ Job permissions: `actions: write`, `contents: write` (release upload).
 | `RELEASE_PASSWORD` | Password for the encrypted release zip |
 
 **Quality gates:**
-- `.github/workflows/ui.yml` runs on push/PR touching `ui/` — ESLint + brand-color gate (`check:colors`) + svelte-check + the 18 unit tests + a build with placeholder PUBLIC env vars (real values live in the Cloudflare Pages dashboard) + `npm audit --audit-level=high`. Auto-deploys from `main` build `ui/`.
+- `.github/workflows/ui.yml` runs on push/PR touching `ui/` — ESLint + brand-color gate (`check:colors`) + svelte-check + the 24 unit tests + a build with placeholder PUBLIC env vars (real values live in the Cloudflare Pages dashboard) + `npm audit --audit-level=high`. Auto-deploys from `main` build `ui/`.
 - `.github/workflows/python.yml` runs on push/PR touching `tgpc/`, `tests/`, `scripts/`, or `pyproject.toml` — `ruff check`, `ruff format --check` (pinned 0.16.6, matching pre-commit), the full pytest suite, and a `pip-audit` dependency vulnerability scan.
 - `.github/workflows/health.yml` is **scheduled** (`17 */6 * * *`, plus manual dispatch), not push-triggered. It polls production `/api/health` and fails when `last_sync` is older than 48h (exit 1) or when the endpoint is unreachable, non-200, or reports a failing check (exit 2). `scripts/check_health.py` is stdlib-only, and `--max-hours` / `--url` (or the `PROD_URL` repository variable) adjust the threshold and target. Data freshness deliberately does **not** gate pushes: it is an operational condition, so it is alerted on its own schedule rather than reddening unrelated `ui/` changes — see `ui/e2e/smoke.spec.ts`, which asserts the health *contract* and leaves staleness here.
 
@@ -553,7 +557,7 @@ All tests use mocking (no real HTTP or Supabase calls). The `supabase` module is
 
 ### Frontend
 
-**Unit tests:** `ui/test:unit` runs `node --experimental-strip-types --test 'src/**/*.test.ts'` — 18 tests covering signed-cookie session creation/verification, constant-time comparison, and the `isAuthed` fail-closed path (no secret). No test framework beyond Node's built-in runner.
+**Unit tests:** `ui/test:unit` runs `node --experimental-strip-types --test 'src/**/*.test.ts'` — 24 tests: 18 covering signed-cookie session creation/verification, constant-time comparison, and the `isAuthed` fail-closed path (no secret), plus 6 search-limit invariants in `searchLimits.test.ts` (every query path keeps its row cap). No test framework beyond Node's built-in runner.
 
 ---
 

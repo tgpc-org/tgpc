@@ -51,6 +51,7 @@ data/dg_stop
 *.tmp
 *.log
 debug_*.html
+tgpc-workflow-links.html
 
 # Dispatch PDFs (hosted on R2, not in git)
 docs/dispatch/
