@@ -6,3 +6,6 @@
 node_modules/
 build/
 dist/
+
+# local wrangler dev secrets (preview only)
+.dev.vars*

@@ -102,7 +102,7 @@
         <!-- Single Module -->
         <div class="bg-[var(--t-bg)] border border-[var(--t-border)] rounded-xl p-3 space-y-3">
           <div class="flex gap-4 items-start">
-            <div class="flex-shrink-0 w-24 h-30 rounded-lg bg-[var(--t-surface)] overflow-hidden relative" style="width:80px;height:100px">
+            <div class="flex-shrink-0 rounded-lg bg-[var(--t-surface)] overflow-hidden relative" style="width:80px;height:100px">
               <img src={photo} alt={`${record.name}'s photo`} onerror={handlePhotoError} decoding="async" class="w-full h-full object-cover {photoError ? 'hidden' : ''}" />
               {#if photoError}
                 <div class="w-full h-full flex items-center justify-center bg-[var(--t-surface)]">
@@ -113,9 +113,9 @@
             <div class="flex-1 min-w-0 space-y-2">
               <h2 class="text-base font-bold text-[var(--t-ink)] truncate">{record.name}</h2>
               <div class="flex flex-wrap items-center gap-2">
-                <span class="px-2.5 py-1 rounded-full text-[0.6rem] font-semibold uppercase tracking-wider tabular-nums" style="background:color-mix(in srgb, #2563eb 10%, transparent);color:var(--t-link)">RPC: {record.registration_number}</span>
-                <span class="px-2.5 py-1 rounded-full text-[0.6rem] font-semibold uppercase tracking-wider" style="background:color-mix(in srgb, {categoryColor(record.category)} 10%, transparent);color:{categoryColor(record.category)}">{record.category}</span>
-                <span class="px-2.5 py-1 rounded-full text-[0.6rem] font-semibold uppercase tracking-wider" style="background:{record.status === 'Active' ? 'rgba(0,204,102,0.1)' : 'rgba(239,68,68,0.1)'};color:{statusColor(record.status)}">{record.status || 'Unknown'}</span>
+                <span class="px-2.5 py-1 rounded-full text-[0.65rem] font-semibold uppercase tracking-wider tabular-nums" style="background:color-mix(in srgb, #2563eb 12%, transparent);color:var(--t-ink)">RPC: {record.registration_number}</span>
+                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[0.65rem] font-semibold uppercase tracking-wider" style="background:color-mix(in srgb, {categoryColor(record.category)} 14%, transparent);color:var(--t-ink)"><span class="h-1.5 w-1.5 rounded-full shrink-0" style="background:{categoryColor(record.category)}"></span>{record.category}</span>
+                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[0.65rem] font-semibold uppercase tracking-wider" style="background:{record.status === 'Active' ? 'rgba(0,204,102,0.14)' : 'rgba(239,68,68,0.12)'};color:var(--t-ink)"><span class="h-1.5 w-1.5 rounded-full shrink-0" style="background:{statusColor(record.status)}"></span>{record.status || 'Unknown'}</span>
               </div>
               <div class="flex flex-wrap gap-3 text-xs text-[var(--t-muted)]">
                 <span>Serial: <span class="text-[var(--t-ink-soft)] font-medium">#{record.serial_number || '—'}</span></span>
@@ -124,25 +124,25 @@
             </div>
           </div>
           <div class="border-t border-[var(--t-surface)] pt-2 flex flex-wrap gap-3 text-sm">
-            <div class="flex items-center gap-1.5"><span class="text-[#9ca3af] text-xs">Father:</span><span class="text-[var(--t-ink-soft)] font-medium text-sm">{record.father_name || '—'}</span></div>
-            {#if record.gender}<div class="flex items-center gap-1.5"><span class="text-[#9ca3af] text-xs">Gender:</span><span class="text-[var(--t-ink-soft)] font-medium text-sm">{record.gender}</span></div>{/if}
+            <div class="flex items-center gap-1.5"><span class="text-[var(--t-muted)] text-xs">Father:</span><span class="text-[var(--t-ink-soft)] font-medium text-sm">{record.father_name || '—'}</span></div>
+            {#if record.gender}<div class="flex items-center gap-1.5"><span class="text-[var(--t-muted)] text-xs">Gender:</span><span class="text-[var(--t-ink-soft)] font-medium text-sm">{record.gender}</span></div>{/if}
           </div>
 
           {#if record.education && record.education.length > 0}
             <div class="border-t border-[var(--t-surface)] pt-2 space-y-2">
               <h3 class="text-xs font-semibold text-[var(--t-ink)] flex items-center gap-2"><svg class="w-4 h-4 text-[#00cc66]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg> Education</h3>
               <div class="space-y-3">
-                {#each record.education as edu (edu['HT No'] || edu.Category)}
+                {#each record.education as edu, ei (ei)}
                   <div class="rounded-lg border border-[var(--t-surface)] bg-[var(--t-surface-3)] p-2 space-y-1.5">
                     <div class="flex items-center justify-between gap-2">
-                      <span class="text-[0.6rem] font-semibold uppercase tracking-wider text-[#9ca3af]">Category</span>
-                      <span class="text-xs font-semibold" style="color:{categoryColor(edu.Category || '')}">{edu.Category || '—'}</span>
+                      <span class="text-[0.6rem] font-semibold uppercase tracking-wider text-[var(--t-muted)]">Category</span>
+                      <span class="text-xs font-semibold" style="color:var(--t-ink)">{edu.Category || '—'}</span>
                     </div>
                     <div class="grid grid-cols-1 gap-1.5 text-xs">
-                      <div><span class="text-[#9ca3af]">Board / University:</span> <span class="text-[var(--t-ink-soft)] font-medium">{edu['Board/University'] || '—'}</span></div>
-                      <div><span class="text-[#9ca3af]">College:</span> <span class="text-[var(--t-ink-soft)] font-medium">{edu['College Name'] || '—'}</span></div>
-                      {#if edu['College Address']}<div><span class="text-[#9ca3af]">Address:</span> <span class="text-[var(--t-ink-soft)]">{edu['College Address']}</span></div>{/if}
-                      <div class="flex gap-4"><span class="text-[#9ca3af]">HT No:</span> <span class="text-[var(--t-ink-soft)] font-medium tabular-nums">{edu['HT No'] || '—'}</span> {#if edu.From || edu.To}<span class="text-[#9ca3af]">From–To:</span> <span class="text-[var(--t-ink-soft)]">{edu.From || ''}{#if edu.From && edu.To} – {/if}{edu.To || ''}</span>{/if}</div>
+                      <div><span class="text-[var(--t-muted)]">Board / University:</span> <span class="text-[var(--t-ink-soft)] font-medium">{edu['Board/University'] || '—'}</span></div>
+                      <div><span class="text-[var(--t-muted)]">College:</span> <span class="text-[var(--t-ink-soft)] font-medium">{edu['College Name'] || '—'}</span></div>
+                      {#if edu['College Address']}<div><span class="text-[var(--t-muted)]">Address:</span> <span class="text-[var(--t-ink-soft)]">{edu['College Address']}</span></div>{/if}
+                      <div class="flex gap-4"><span class="text-[var(--t-muted)]">HT No:</span> <span class="text-[var(--t-ink-soft)] font-medium tabular-nums">{edu['HT No'] || '—'}</span> {#if edu.From || edu.To}<span class="text-[var(--t-muted)]">From–To:</span> <span class="text-[var(--t-ink-soft)]">{edu.From || ''}{#if edu.From && edu.To} – {/if}{edu.To || ''}</span>{/if}</div>
                     </div>
                   </div>
                 {/each}
@@ -154,12 +154,12 @@
             <div class="border-t border-[var(--t-surface)] pt-2 space-y-2">
               <h3 class="text-xs font-semibold text-[var(--t-ink)] flex items-center gap-2"><svg class="w-4 h-4 text-[#00cc66]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg> Work Experience</h3>
               <dl class="grid grid-cols-1 gap-2 text-xs">
-                <div><dt class="text-[#9ca3af] text-[0.65rem] font-semibold uppercase tracking-wider">Address</dt><dd class="text-[var(--t-ink-soft)] mt-0.5">{displayWork(record.work_experience.Address)}</dd></div>
+                <div><dt class="text-[var(--t-muted)] text-[0.65rem] font-semibold uppercase tracking-wider">Address</dt><dd class="text-[var(--t-ink-soft)] mt-0.5">{displayWork(record.work_experience.Address)}</dd></div>
                 <div class="grid grid-cols-2 gap-2">
-                  <div><dt class="text-[#9ca3af] text-[0.65rem] font-semibold uppercase tracking-wider">State</dt><dd class="text-[var(--t-ink-soft)] mt-0.5">{displayWork(record.work_experience.State)}</dd></div>
-                  <div><dt class="text-[#9ca3af] text-[0.65rem] font-semibold uppercase tracking-wider">District</dt><dd class="text-[var(--t-ink-soft)] mt-0.5">{displayWork(record.work_experience.District)}</dd></div>
+                  <div><dt class="text-[var(--t-muted)] text-[0.65rem] font-semibold uppercase tracking-wider">State</dt><dd class="text-[var(--t-ink-soft)] mt-0.5">{displayWork(record.work_experience.State)}</dd></div>
+                  <div><dt class="text-[var(--t-muted)] text-[0.65rem] font-semibold uppercase tracking-wider">District</dt><dd class="text-[var(--t-ink-soft)] mt-0.5">{displayWork(record.work_experience.District)}</dd></div>
                 </div>
-                <div><dt class="text-[#9ca3af] text-[0.65rem] font-semibold uppercase tracking-wider">Pin Code</dt><dd class="text-[var(--t-ink-soft)] mt-0.5">{displayWork(record.work_experience['Pin code'])}</dd></div>
+                <div><dt class="text-[var(--t-muted)] text-[0.65rem] font-semibold uppercase tracking-wider">Pin Code</dt><dd class="text-[var(--t-ink-soft)] mt-0.5">{displayWork(record.work_experience['Pin code'])}</dd></div>
               </dl>
             </div>
           {/if}

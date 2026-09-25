@@ -157,10 +157,10 @@
         <button
           type="submit"
           disabled={loading}
-          class="mt-2 w-full bg-[#00cc66] text-white text-sm font-semibold px-4 py-1.5 rounded disabled:opacity-50"
+          class="mt-2 w-full bg-[#00cc66] text-[var(--t-ink)] text-sm font-semibold px-4 py-2 rounded hover:opacity-90 disabled:opacity-50 transition-opacity"
         >{loading ? 'Checking...' : 'Unlock'}</button>
         {#if error}
-          <p class="text-xs text-[#ef4444] mt-2">{error}</p>
+          <p class="text-xs text-[var(--t-ink)] bg-[rgba(239,68,68,0.12)] rounded px-2 py-1 mt-2 inline-block">{error}</p>
         {/if}
       </form>
     </div>
@@ -186,10 +186,10 @@
         <div style="flex:1;min-height:0;overflow-y:auto">
           <div class="flex items-center justify-end mb-2 whitespace-nowrap">
             <button onclick={loadUsage} disabled={usageLoading}
-              class="shrink-0 bg-[#00cc66] text-white text-xs font-semibold px-3 py-1 rounded hover:bg-[#00b359] disabled:opacity-50">
+              class="shrink-0 bg-[#00cc66] text-[var(--t-ink)] text-xs font-semibold px-3 py-1.5 rounded hover:opacity-90 disabled:opacity-50 transition-opacity">
               {usageLoading ? 'Loading...' : 'Refresh'}
             </button>
-            <span class="text-xs text-[#9ca3af] ml-1">
+            <span class="text-xs text-[var(--t-muted)] ml-1">
               {#if report?.generated_at}
                 Updated {new Date(report.generated_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}
               {/if}
@@ -197,14 +197,14 @@
           </div>
 
           {#if report?.missing_vars?.length}
-            <div class="text-xs bg-[rgba(239,68,68,0.06)] border border-[rgba(239,68,68,0.35)] text-[#ef4444] rounded px-3 py-2 mb-4">
+            <div class="text-xs bg-[rgba(239,68,68,0.12)] border border-[rgba(239,68,68,0.35)] text-[var(--t-ink)] rounded px-3 py-2 mb-4">
               <strong>Note:</strong> Some credentials are not configured as Cloudflare Pages environment variables:
               {report.missing_vars.join(', ')}. Set them in the Cloudflare dashboard for live data.
             </div>
           {/if}
 
           {#if usageError}
-            <div class="text-xs text-[#ef4444] mb-4">{usageError}</div>
+            <div class="inline-block text-xs text-[var(--t-ink)] bg-[rgba(239,68,68,0.12)] rounded px-2 py-1 mb-4">{usageError}</div>
           {/if}
 
           {#if report}
@@ -214,13 +214,13 @@
                   {service.name}
                 </div>
                 {#if service.error}
-                  <div class="px-3 py-3 text-xs text-[#ef4444]">{service.error}</div>
+                  <div class="px-3 py-3 text-xs text-[var(--t-ink)] bg-[rgba(239,68,68,0.12)]">{service.error}</div>
                 {:else if service.items.length === 0}
-                  <div class="px-3 py-3 text-xs text-[#9ca3af]">No data available.</div>
+                  <div class="px-3 py-3 text-xs text-[var(--t-muted)]">No data available.</div>
                 {:else}
                   <table class="w-full text-xs">
                     <thead>
-                      <tr class="text-left text-[#9ca3af] border-b border-[var(--t-border)]">
+                      <tr class="text-left text-[var(--t-muted)] border-b border-[var(--t-border)]">
                         <th class="px-3 py-1.5 font-medium">Metric</th>
                         <th class="px-3 py-1.5 font-medium text-right">Value</th>
                       </tr>
@@ -238,7 +238,7 @@
               </div>
             {/each}
           {:else if !usageLoading && !usageError}
-            <div class="px-3 py-3 text-xs text-[#9ca3af]">No usage data yet.</div>
+            <div class="px-3 py-3 text-xs text-[var(--t-muted)]">No usage data yet.</div>
           {/if}
         </div>
       {:else}
@@ -261,7 +261,7 @@
                         href={item.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        class="shrink-0 bg-[#00cc66] text-white text-xs font-semibold px-2 py-1 rounded hover:bg-[#00b359] transition-colors"
+                        class="shrink-0 bg-[#00cc66] text-[var(--t-ink)] text-xs font-semibold px-2 py-1.5 rounded hover:opacity-90 transition-opacity"
                       >Open <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3 h-3 inline" aria-hidden="true"><path d="M15 3h6v6"></path><path d="M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path></svg></a>
                     </div>
                   {/each}

@@ -85,10 +85,12 @@
     return () => { supabase.removeChannel(channel); };
   });
 
+  // Text stays on the ink/muted tokens (both AA on every surface); brand
+  // red/green appear as dots/fills, where contrast rules do not apply.
   let statusConfig = $derived.by(() => ({
-    Live: { bg: 'rgba(0,204,102,0.05)', border: 'rgba(0,204,102,0.35)', text: '#00b359', dot: '#00cc66' },
-    Busy: { bg: 'rgba(239,68,68,0.05)', border: 'rgba(239,68,68,0.35)', text: '#ef4444', dot: '#ef4444' },
-    Offline: { bg: 'rgba(239,68,68,0.05)', border: 'rgba(239,68,68,0.35)', text: '#ef4444', dot: '#ef4444' }
+    Live: { bg: 'rgba(0,204,102,0.08)', border: 'rgba(0,204,102,0.35)', dot: '#00cc66' },
+    Busy: { bg: 'rgba(239,68,68,0.06)', border: 'rgba(239,68,68,0.35)', dot: '#ef4444' },
+    Offline: { bg: 'rgba(239,68,68,0.06)', border: 'rgba(239,68,68,0.35)', dot: '#ef4444' }
   })[status]);
 
   function val(key: keyof Stats): string {
@@ -105,117 +107,180 @@
     });
   });
 
+  // One flat tile list so the strip can scroll as a single row on phones
+  // without the 7-column layout spilling out of the header.
+  let tiles = $derived.by(() => {
+    const out: { label: string; value: string; dot: string }[] = [
+      { label: 'Total RPh', value: val('total'), dot: '#ef4444' }
+    ];
+    for (const cat of sortedCategories) {
+      const color = CATEGORY_COLORS[cat];
+      out.push({
+        label: cat,
+        value: val(CATEGORY_KEYS[CATEGORIES.indexOf(cat)] as keyof Stats),
+        dot: color === '#111827' ? 'var(--t-ink)' : color
+      });
+    }
+    return out;
+  });
+
   let activeTab = $derived($page.url.pathname === '/' ? 'search' : $page.url.pathname === '/notice' ? 'notice' : $page.url.pathname === '/dispatch' ? 'dispatch' : '');
 
-  let searchRef: HTMLAnchorElement | undefined;
-  let noticeRef: HTMLAnchorElement | undefined;
-  let dispatchRef: HTMLAnchorElement | undefined;
-  let sliderStyle = $state('');
+  let searchRef = $state<HTMLAnchorElement | undefined>(undefined);
+  let noticeRef = $state<HTMLAnchorElement | undefined>(undefined);
+  let dispatchRef = $state<HTMLAnchorElement | undefined>(undefined);
+
+  const TAB_CLASS = 'px-3 py-2.5 text-[0.75rem] font-bold uppercase tracking-wider whitespace-nowrap no-underline transition-colors';
+  const TAB_DIVIDER = 'text-[0.75rem] font-light select-none px-1';
+
+  function tabStyle(active: boolean): string {
+    return `color:${active ? 'var(--t-ink)' : 'var(--t-muted)'}`;
+  }
+
+  // Slider geometry is measured (not derived from a stored string) so it also
+  // follows window resizes and font loading.
+  let slider = $state({ left: 0, width: 0, ready: false });
 
   $effect(() => {
     const tab = activeTab;
-    if (!tab) { sliderStyle = ''; return; }
-    let el = tab === 'search' ? searchRef : tab === 'notice' ? noticeRef : dispatchRef;
-    if (el) {
-      sliderStyle = `transform:translateX(${el.offsetLeft}px);width:${el.offsetWidth}px`;
+    const el = tab === 'search' ? searchRef : tab === 'notice' ? noticeRef : dispatchRef;
+    if (!el) {
+      slider = { left: 0, width: 0, ready: false };
+      return;
     }
+    const measure = () => {
+      slider = { left: el.offsetLeft, width: el.offsetWidth, ready: true };
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
   });
 </script>
+
 <div class="min-h-screen flex flex-col" style="background:var(--t-bg)">
-  <a href="#main-content" class="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[100] focus:rounded-lg focus:px-3 focus:py-2 focus:font-bold focus:no-underline" style="background:var(--t-surface-2);color:#00cc66">Skip to main content</a>
-  <header class="sticky top-0 z-50" style="background:var(--t-bg)">
-    <div class="w-full px-4 sm:px-6 py-2.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-4">
-      <div class="flex flex-col">
-          <div style="display:table;width:0">
-            <a href="/" class="no-underline" style="display:table-row;white-space:nowrap;width:1px">
-              <span class="text-[1.65rem] font-bold tracking-tight inline-flex items-center gap-1" style="color:var(--t-ink);white-space:nowrap">
-                <span style="color:#00cc66">TGPC</span><span style="color:#ef4444">RPh</span><span class="text-[#9ca3af]">Index</span>
+  <a href="#main-content" class="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[100] focus:rounded-lg focus:px-3 focus:py-2 focus:font-bold focus:no-underline" style="background:var(--t-surface-2);color:var(--t-ink)">Skip to main content</a>
+
+  <header class="sticky top-0 z-50 border-b" style="background:var(--t-bg);border-color:var(--t-border)">
+    <div class="w-full px-3 sm:px-5">
+      <!-- Brand row -->
+      <div class="flex items-center justify-between gap-3 py-2">
+        <div class="flex items-center gap-3 min-w-0">
+          <a href="/" class="no-underline shrink-0" title="TGPC RPh Index — home">
+            <span class="text-[1.65rem] font-bold tracking-tight inline-flex items-center gap-1" style="color:var(--t-ink);white-space:nowrap">
+              <span style="color:#00cc66">TGPC</span><span style="color:#ef4444">RPh</span><span class="text-[#9ca3af]">Index</span>
+            </span>
+          </a>
+          <span class="hidden md:inline text-[0.75rem] font-medium truncate" style="color:var(--t-muted)">Open-source TGPC pharmacist data</span>
+        </div>
+
+        <div class="flex items-center gap-2 shrink-0">
+          <span
+            class="inline-flex items-center gap-1.5 h-7 rounded-full px-2.5 text-[0.7rem] font-semibold whitespace-nowrap"
+            style="background:{statusConfig.bg};border:1px solid {statusConfig.border};color:var(--t-ink)"
+            title="Live data status"
+          >
+            <span class="h-1.5 w-1.5 rounded-full shrink-0" style="background:{statusConfig.dot}"></span>
+            {status}
+            {#if status !== 'Offline'}
+              <!-- ink-soft, not muted: the pill's brand tint lowers the
+                   background enough to push muted text under 4.5:1. -->
+              <span class="hidden lg:inline-flex items-center gap-1.5 font-normal" style="color:var(--t-ink-soft)">
+                <span aria-hidden="true">·</span>
+                <Clock />
               </span>
-            </a>
-            <span class="text-[0.65rem] text-[#9ca3af] font-medium truncate mb-0.5" style="display:table-row;width:100%;white-space:nowrap;overflow:hidden">Open-Source TGPC Pharmacist Data</span>
-            <div style="display:table-row;width:100%;white-space:nowrap;overflow:hidden">
-              <div class="flex items-center gap-2 text-[0.7rem] w-full">
-                <span class="flex w-full items-center justify-center gap-px h-5 px-1.5 rounded-full text-[0.75rem] font-medium box-border overflow-hidden"
-                      style="background:{statusConfig.bg};border:1px solid {statusConfig.border};color:{statusConfig.text}">
-                  <span class="w-1.5 h-1.5 rounded-full flex-shrink-0" style="background:{statusConfig.dot}"></span>
-                  <span class="text-[10px] font-medium leading-[18px] inline-block w-[28px] text-center">{status}</span>
-                  {#if status !== 'Offline'}
-                  <Clock/>
-                  {/if}
-                </span>
-              </div>
-            </div>
-          </div>
+            {/if}
+          </span>
+
+          <button
+            onclick={() => toggleTheme()}
+            aria-pressed={$themeName === 'dark'}
+            aria-label="Toggle day and night mode"
+            title={$themeName === 'dark' ? 'Switch to day mode' : 'Switch to night mode'}
+            class="shrink-0 inline-flex items-center justify-center h-9 w-9 rounded-full border transition-colors cursor-pointer"
+            style="border-color:var(--t-border);background:var(--t-surface-2);color:var(--t-muted)"
+          >
+            {#if $themeName === 'dark'}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+            {:else}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+            {/if}
+          </button>
+        </div>
       </div>
-      <div style="background:var(--t-surface-2);border:1px solid var(--t-border);border-radius:8px;padding:6px 10px 4px 10px;display:flex;flex-direction:column;gap:0;min-width:0;width:100%;max-width:100%">
-        <div class="tgpc-stats flex-nowrap overflow-x-auto sm:flex-wrap" style="display:flex;gap:10px 12px;align-items:center;justify-content:center;padding-bottom:4px;scrollbar-width:thin;scrollbar-color:var(--t-border) transparent;-webkit-overflow-scrolling:touch">
-          <div style="border-right:1px solid var(--t-border);padding-right:12px">
-              <div style="display:flex;flex-direction:column;gap:4px;text-align:center">
-              <div style="font-size:0.8rem;font-weight:500;letter-spacing:0.5px;color:#9ca3af">TOTAL <span style="color:#ef4444">RPh</span></div>
-              <div style="font-size:1.25rem;font-weight:700;color:var(--t-ink);line-height:1;font-variant-numeric:tabular-nums">{val('total')}</div>
-            </div>
-          </div>
-          {#each sortedCategories as cat, i (cat)}
-            <div style="border-right:{i < 5 ? '1px solid var(--t-border)' : 'none'};padding-right:{i < 5 ? '12px' : '0'}">
-              <div style="display:flex;flex-direction:column;gap:4px;text-align:center">
-                <div style="font-size:0.8rem;font-weight:500;letter-spacing:0.5px;color:{CATEGORY_COLORS[cat] === '#111827' ? 'var(--t-ink)' : CATEGORY_COLORS[cat]}">{cat}</div>
-                <div style="font-size:1.25rem;font-weight:700;color:var(--t-ink);line-height:1;font-variant-numeric:tabular-nums">{val(CATEGORY_KEYS[CATEGORIES.indexOf(cat)] as keyof Stats)}</div>
-              </div>
+
+      <!-- Registry stats: one scrollable strip, readable at every width -->
+      <div
+        class="-mx-3 sm:-mx-5 px-3 sm:px-5 border-t overflow-x-auto"
+        style="border-color:var(--t-border);scrollbar-width:thin;scrollbar-color:var(--t-border) transparent;-webkit-overflow-scrolling:touch"
+      >
+        <div class="w-full min-w-max flex items-stretch gap-1 py-1.5">
+          {#each tiles as tile, i (tile.label)}
+            <div class="flex flex-col justify-center gap-0.5 px-3 shrink-0" style="border-right:{i < tiles.length - 1 ? '1px solid var(--t-border)' : 'none'}">
+              <span class="flex items-center gap-1.5 text-[0.65rem] font-semibold uppercase tracking-wider whitespace-nowrap" style="color:var(--t-muted)">
+                <span class="h-1.5 w-1.5 rounded-full shrink-0" style="background:{tile.dot}"></span>
+                {tile.label}
+              </span>
+              <span class="text-[1rem] font-bold tabular-nums leading-none" style="color:var(--t-ink)">{tile.value}</span>
             </div>
           {/each}
-        </div>
-              <div style="font-size:0.5rem;color:#9ca3af;font-weight:500;letter-spacing:0.3px;text-transform:uppercase;margin-top:4px;padding-top:4px;border-top:1px solid var(--t-border);display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-          <span style="display:inline-flex;align-items:center;gap:3px;background:rgba(0,204,102,0.1);padding:1px 6px 1px 4px;border-radius:10px">
-            <span style="display:inline-flex;align-items:center;justify-content:center;width:10px;height:10px;background:#00cc66;border-radius:50%;color:white;font-size:6px;font-weight:bold">&#10003;</span>
-            <span style="color:#00cc66;font-size:0.45rem;font-weight:600;text-transform:uppercase;letter-spacing:0.3px">Synced</span>
-          </span>
-          <span style="color:var(--t-link);font-weight:600">{lastSync || '—'}</span>
-          <span style="opacity:0.4">|</span>
-          <span>Active: <span style="color:#00cc66;font-weight:600">{val('active')}</span></span>
-          <span style="opacity:0.4">|</span>
-          <span>Inactive: <span style="color:#ef4444;font-weight:600">{val('inactive')}</span></span>
-          <span style="opacity:0.4">|</span>
-          <span style="color:#9ca3af">Unofficial data — Not for legal use</span>
+
+          <div class="ml-auto flex items-center gap-4 pl-4 shrink-0">
+            <div class="flex flex-col justify-center gap-0.5">
+              <span class="flex items-center gap-1.5 text-[0.65rem] font-semibold uppercase tracking-wider whitespace-nowrap" style="color:var(--t-muted)">
+                <span class="h-1.5 w-1.5 rounded-full shrink-0" style="background:{statusConfig.dot}"></span>
+                Last sync
+              </span>
+              <span class="text-[0.7rem] font-medium whitespace-nowrap" style="color:var(--t-ink)">{lastSync || '—'}</span>
+            </div>
+            <div class="flex flex-col justify-center gap-0.5">
+              <span class="text-[0.65rem] font-semibold uppercase tracking-wider whitespace-nowrap" style="color:var(--t-muted)">Active</span>
+              <span class="text-[0.7rem] font-bold tabular-nums whitespace-nowrap" style="color:var(--t-ink)">{val('active')}</span>
+            </div>
+            <div class="flex flex-col justify-center gap-0.5">
+              <span class="text-[0.65rem] font-semibold uppercase tracking-wider whitespace-nowrap" style="color:var(--t-muted)">Inactive</span>
+              <span class="text-[0.7rem] font-bold tabular-nums whitespace-nowrap" style="color:var(--t-ink)">{val('inactive')}</span>
+            </div>
+          </div>
         </div>
       </div>
-    </div>
-    <nav aria-label="Primary" class="w-full px-4 sm:px-6 border-b" style="display:flex;align-items:center;gap:2px;font-size:0.7rem;padding-top:3px;padding-bottom:3px;overflow-x:auto;position:relative;border-color:var(--t-border)">
-      <a href="/" bind:this={searchRef} style="text-decoration:none;padding:2px 4px;font-weight:700;color:{activeTab === 'search' ? '#00cc66' : 'var(--t-muted)'};white-space:nowrap">SEARCH</a>
-      <span style="color:var(--t-border);font-weight:300;padding:0 2px;user-select:none">/</span>
-      <a href="/notice" bind:this={noticeRef} style="text-decoration:none;padding:2px 4px;font-weight:700;color:{activeTab === 'notice' ? '#00cc66' : 'var(--t-muted)'};white-space:nowrap">NOTICES</a>
-      <span style="color:var(--t-border);font-weight:300;padding:0 2px;user-select:none">/</span>
-      <a href="/dispatch" bind:this={dispatchRef} style="text-decoration:none;padding:2px 4px;font-weight:700;color:{activeTab === 'dispatch' ? '#00cc66' : 'var(--t-muted)'};white-space:nowrap">DISPATCH LIST</a>
-      <button
-        onclick={() => toggleTheme()}
-        aria-pressed={$themeName === 'dark'}
-        aria-label="Toggle day and night mode"
-        title={$themeName === 'dark' ? 'Switch to day mode' : 'Switch to night mode'}
-        style="margin-left:auto;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;border:1px solid var(--t-border);background:var(--t-surface-2);color:var(--t-muted);cursor:pointer"
+
+      <!-- Primary navigation -->
+      <nav
+        aria-label="Primary"
+        class="relative -mx-3 sm:-mx-5 px-3 sm:px-5 border-t flex items-center gap-1 overflow-x-auto"
+        style="border-color:var(--t-border);scrollbar-width:none"
       >
-        {#if $themeName === 'dark'}
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
-        {:else}
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+        <a href="/" bind:this={searchRef} aria-current={activeTab === 'search' ? 'page' : undefined} class={TAB_CLASS} style={tabStyle(activeTab === 'search')}>Search</a>
+        <span aria-hidden="true" class={TAB_DIVIDER} style="color:var(--t-border-soft)">/</span>
+        <a href="/notice" bind:this={noticeRef} aria-current={activeTab === 'notice' ? 'page' : undefined} class={TAB_CLASS} style={tabStyle(activeTab === 'notice')}>Notices</a>
+        <span aria-hidden="true" class={TAB_DIVIDER} style="color:var(--t-border-soft)">/</span>
+        <a href="/dispatch" bind:this={dispatchRef} aria-current={activeTab === 'dispatch' ? 'page' : undefined} class={TAB_CLASS} style={tabStyle(activeTab === 'dispatch')}>Dispatch List</a>
+        {#if slider.ready}
+          <div
+            aria-hidden="true"
+            style="position:absolute;bottom:0;left:0;height:2px;border-radius:1px;background:#00cc66;transition:transform 0.25s ease-out,width 0.25s ease-out;will-change:transform,width;transform:translateX({slider.left}px);width:{slider.width}px"
+          ></div>
         {/if}
-      </button>
-      {#if sliderStyle}
-      <div style="position:absolute;bottom:0;left:0;height:2px;background:#00cc66;border-radius:1px;transition:transform 0.25s ease-out,width 0.25s ease-out;will-change:transform,width;{sliderStyle}"></div>
-      {/if}
-    </nav>
+      </nav>
+    </div>
   </header>
 
-  <main id="main-content" class="flex-1 w-full px-4 sm:px-6 pt-1 pb-4 sm:pb-16">
+  <main id="main-content" class="flex-1 w-full px-3 sm:px-5 pt-2 pb-4 sm:pb-20 lg:pb-24">
     {@render children()}
   </main>
 
-  <footer class="relative mt-4 sm:mt-0 sm:fixed sm:bottom-0 w-full border-t py-1 text-[0.5rem] leading-tight"
-          style="background:var(--t-bg);border-color:var(--t-border);color:#9ca3af;padding-bottom:calc(0.25rem + env(safe-area-inset-bottom, 0px))">
-    <div class="w-full px-4 sm:px-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1 sm:gap-4">
-      <span class="text-left flex-1 sm:pr-4" style="text-wrap:balance"><span style="color:#ef4444">DISCLAIMER:</span> This is an unofficial, third-party tool not affiliated with TGPC or any government body. Data is for reference only — verify all information from official sources before use. Users assume all risk.<br>No warranty as to accuracy, completeness, or timeliness. No liability for errors, omissions, or actions taken based on this content. Operated under fair dealing (Indian Copyright Act, 1957, Section 52).</span>
-      <span class="text-left sm:text-right whitespace-nowrap font-semibold flex-shrink-0 text-[0.7rem]">TGPC RPh Index &copy; {new Date().getFullYear()}</span>
+  <footer
+    class="relative mt-6 sm:mt-0 sm:fixed sm:bottom-0 w-full border-t text-[0.7rem] leading-snug"
+    style="background:var(--t-bg);border-color:var(--t-border);color:var(--t-muted);padding-bottom:calc(0.4rem + env(safe-area-inset-bottom, 0px))"
+  >
+    <div class="w-full px-3 sm:px-5 py-1.5 flex flex-col sm:flex-row sm:items-start justify-between gap-1.5 sm:gap-6">
+      <span class="flex-1" style="text-wrap:pretty">
+        <span class="inline-flex items-center gap-1.5 font-bold uppercase tracking-wide align-baseline" style="color:var(--t-ink)">
+          <span class="h-1.5 w-1.5 rounded-full shrink-0" style="background:#ef4444"></span>Disclaimer
+        </span>
+        — This is an unofficial, third-party tool not affiliated with TGPC or any government body. Data is for reference only — verify all information from official sources before use. Users assume all risk. No warranty as to accuracy, completeness, or timeliness. No liability for errors, omissions, or actions taken based on this content. Operated under fair dealing (Indian Copyright Act, 1957, Section 52).
+      </span>
+      <span class="whitespace-nowrap font-semibold shrink-0" style="color:var(--t-ink)">TGPC RPh Index &copy; {new Date().getFullYear()}</span>
     </div>
   </footer>
 </div>
-
-<style>
-</style>

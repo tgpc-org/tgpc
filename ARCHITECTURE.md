@@ -89,6 +89,7 @@ tgpc/
 │   │       ├── api.ts              # Search/record/stats API + input sanitization + ranking
 │   │       ├── cache.ts            # localStorage TTL cache helpers
 │   │       ├── colors.ts          # CATEGORY_COLORS (exempt from brand gate)
+│   │       ├── fitToViewport.ts    # availableHeight() + `use:fitToViewport` action: list sizing above the fixed footer (+ fitToViewport.test.ts)
 │   │       ├── r2.ts              # R2 public URLs from PUBLIC_R2_PHOTO_BASE
 │   │       ├── searchLimits.ts     # MAX_SEARCH_RESULTS cap + isTruncated() hint (+ searchLimits.test.ts)
 │   │       ├── theme.ts            # Light/dark theme store (localStorage tgpc-theme, system-preference fallback)
@@ -531,9 +532,10 @@ Server-only modules under `ui/src/lib/server/` (`auth.ts`, `adminLinks.ts`, `rat
 
 ### Key Features
 
-- **Stats bar** — 7 category cards with live counts from Supabase RPC, cached in localStorage
+- **Shell** — sticky header (brand lockup · live status pill · theme toggle), a single horizontally scrollable stats strip (total + 6 category tiles + last-sync/active/inactive meta), and a primary tab nav with a measured green slider. Footer is in-flow on phones and fixed on `sm+`, so lists are sized to the footer by the shared `fitToViewport` action instead of hardcoded `100vh - Npx` offsets
+- **Stats strip** — total + per-category counts from the Supabase RPC, cached in localStorage, live-updated over Realtime
 - **Realtime** — Supabase Realtime subscription on `metadata` table for live stats/timestamp updates
-- **Search** — client-side Supabase query (min 3 chars, debounced 300ms) via `search_pharmacists` RPC (capped at `MAX_SEARCH_RESULTS` — 200 rows per query), ranked by prefix priority then numeric; falls back to a sanitized PostgREST `.or()` query if the RPC fails. Result refiners (RPC/name/father/gender/status/valid-till) filter client-side; results render in a single scrollable list sized to the viewport (`content-visibility: auto` on rows). When a result set comes back full, the header says so and asks for a narrower query — `isTruncated()` in `ui/src/lib/searchLimits.ts` drives that hint, and `searchLimits.test.ts` fails if any query path drops its limit or asks for more than the cap
+- **Search** — client-side Supabase query (min 3 chars, debounced 300ms) via `search_pharmacists` RPC (capped at `MAX_SEARCH_RESULTS` — 200 rows per query), ranked by prefix priority then numeric; falls back to a sanitized PostgREST `.or()` query if the RPC fails. Result refiners (RPC/name/father/gender/status/valid-till) filter client-side; results render in a single scrollable list sized by the `fitToViewport` action (`content-visibility: auto` on rows), with sortable headers (RPC / name / category / valid-till / status, `aria-sort`-tracked) that fall back to the server's relevance rank. When a result set comes back full, the header says so and asks for a narrower query — `isTruncated()` in `ui/src/lib/searchLimits.ts` drives that hint, and `searchLimits.test.ts` fails if any query path drops its limit or asks for more than the cap
 
 The 200-row ceiling is a **client-side** cap. It bounds what the browser receives and renders, but it cannot stop a caller from invoking `search_pharmacists` directly with a larger `lim`. The server side needs its own ceiling: clamp inside the RPC (`lim := least(greatest(lim, 1), 200)`) and keep Supabase's API **Max Rows** setting at a sane value as the backstop. Both live in the Supabase dashboard, not in this repository.
 - **Export** — PDF via jsPDF + jspdf-autotable; CSV via Blob download with formula-injection guard
@@ -618,7 +620,7 @@ All tests use mocking (no real HTTP or Supabase calls). The `supabase` module is
 
 ### Frontend
 
-**Unit tests:** `ui/test:unit` runs `node --experimental-strip-types --test 'src/**/*.test.ts'` — 24 tests: 18 covering signed-cookie session creation/verification, constant-time comparison, and the `isAuthed` fail-closed path (no secret), plus 6 search-limit invariants in `searchLimits.test.ts` (every query path keeps its row cap). No test framework beyond Node's built-in runner.
+**Unit tests:** `ui/test:unit` runs `node --experimental-strip-types --test 'src/**/*.test.ts'` — 28 tests: 18 covering signed-cookie session creation/verification, constant-time comparison, and the `isAuthed` fail-closed path (no secret), 6 search-limit invariants in `searchLimits.test.ts` (every query path keeps its row cap), and 4 clamping cases for the list-sizing arithmetic in `fitToViewport.test.ts`. No test framework beyond Node's built-in runner.
 
 **E2E tests:** `ui/test:e2e` runs the Playwright specs in `ui/e2e/` (chromium): smoke (shell + search flow + API locking), axe a11y (zero serious/critical violations, color-contrast excluded), a contrast-regression gate against `contrast-baseline.json`, and mobile layout fingerprints at the iPhone-SE viewport. `ui/test:e2e:update-baseline` refreshes the contrast baseline after intentional palette changes; `check:e2e` typechecks the specs. CI runs these in the `ui.yml` `e2e` job.
 

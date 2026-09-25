@@ -3,6 +3,7 @@
   import { R2_NOTICES } from '$lib/r2';
   import type { Notice } from '$lib/types';
   import { fetchNotices } from '$lib/api';
+  import { fitToViewport } from '$lib/fitToViewport';
   import { browser } from '$app/environment';
 
   const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -11,7 +12,7 @@
 
   let notices = $state<Notice[]>([]);
   let years = $state<string[]>([]);
-  let tab = $state<string | null>(null);
+  let tab = $state<string>('all');
   let query = $state('');
   let loading = $state(true);
 
@@ -22,23 +23,19 @@
 
   function getYr(s: string) { return s.slice(0, 4); }
 
-  function linkType(url: string): string {
-    const e = url.match(/\.([a-z0-9]+)(?:\?.*)?$/i)?.[1]?.toLowerCase() || '';
-    if (e === 'pdf') return '#ef4444';
-    // Blue links use the theme token (lightened for contrast at night).
-    return 'var(--t-link)';
-  }
-
-  // Badge tint that works with both hex colors and var() tokens
-  // (the old `{color}10` suffix trick is only valid for hex).
-  function linkBg(color: string, alpha: number): string {
-    return `color-mix(in srgb, ${color} ${alpha}%, transparent)`;
+  /** PDFs are marked by a red-tinted chip plus a dot (see the style block). */
+  function isPdf(url: string): boolean {
+    return /\.pdf(?:\?.*)?$/i.test(url);
   }
 
   function resolve(url: string) {
     return url.startsWith('http') ? url : `${R2_NOTICES}${url}`;
   }
 
+  // Rows are keyed by index: notice titles and link URLs are not guaranteed
+  // unique, and a keyed each with a duplicate key throws each_key_duplicate,
+  // which would blank the whole page. Index keys are safe here because the
+  // list is replaced wholesale whenever the data reloads.
   let filtered = $derived.by(() => notices.filter(n => {
     if (tab && getYr(n.date) !== tab) return false;
     if (!query) return true;
@@ -73,7 +70,7 @@
   function buildYears() {
     years = [...new Set(notices.map(n => getYr(n.date)))].sort((a, b) => +b - +a);
     // Preserve the user's tab across background refetches.
-    if (!tab || !years.includes(tab)) tab = years[0] || null;
+    if (tab !== 'all' && !years.includes(tab)) tab = 'all';
   }
 
 </script>
@@ -81,6 +78,44 @@
 <svelte:head>
   <title>Notices — TGPC RPh Index</title>
 </svelte:head>
+
+{#snippet linkChips(links: Notice['links'])}
+  {#if links?.length}
+    {#each links as link, li (li)}
+      <a href={resolve(link.url)} target="_blank" rel="noopener" class="notice-link px-2.5 py-1 rounded text-[0.75rem] font-semibold no-underline {isPdf(link.url) ? 'is-pdf' : ''}">
+        {#if isPdf(link.url)}<span class="notice-dot" aria-hidden="true"></span>{/if}{link.label}
+      </a>
+    {/each}
+  {:else}
+    <span class="text-[var(--t-border-soft)]">—</span>
+  {/if}
+{/snippet}
+
+{#snippet noticeRows(list: Notice[])}
+  {#each list as n, i (i)}
+    <div style="display:grid;grid-template-columns:96px 1fr 160px;gap:12px;padding:12px 0;border-bottom:1px solid var(--t-surface);font-size:0.875rem">
+      <span class="text-[var(--t-muted)] tabular-nums">{fmtDate(n.date)}</span>
+      <span style="min-width:0">{n.title}</span>
+      <span class="flex gap-1 flex-wrap" style="min-width:0">
+        {@render linkChips(n.links)}
+      </span>
+    </div>
+  {/each}
+{/snippet}
+
+{#snippet noticeCards(list: Notice[])}
+  {#each list as n, i (i)}
+    <div class="py-2.5 border-b border-[var(--t-surface)]">
+      <div class="text-[0.75rem] text-[var(--t-muted)] tabular-nums">{fmtDate(n.date)}</div>
+      <div class="text-[0.875rem] mt-0.5">{n.title}</div>
+      {#if n.links?.length}
+        <div class="flex gap-1.5 mt-1 flex-wrap">
+          {@render linkChips(n.links)}
+        </div>
+      {/if}
+    </div>
+  {/each}
+{/snippet}
 
 <div class="space-y-4">
   <h1 class="sr-only">TGPC notices and circulars</h1>
@@ -96,12 +131,17 @@
     </div>
   </div>
 
-  <div class="-mx-1 px-1 flex-nowrap overflow-x-auto sm:flex-wrap gap-1 text-[0.75rem]" style="scrollbar-width:thin;scrollbar-color:var(--t-border) transparent;-webkit-overflow-scrolling:touch">
+  <div class="-mx-1 px-1 flex-nowrap overflow-x-auto sm:flex-wrap gap-1.5 text-[0.75rem]" style="scrollbar-width:thin;scrollbar-color:var(--t-border) transparent;-webkit-overflow-scrolling:touch">
+    <button onclick={() => tab = 'all'}
+      class="px-2.5 py-1.5 rounded text-[0.75rem] font-semibold transition-colors cursor-pointer border-none whitespace-nowrap"
+      style={tab === 'all' ? 'background:#00cc66;color:var(--t-ink)' : 'background:var(--t-surface);color:var(--t-ink-soft)'}>
+      All ({notices.length})
+    </button>
     {#each years as y (y)}
       <button onclick={() => tab = y}
-        class="px-2.5 py-1 rounded text-[0.7rem] font-medium transition-all cursor-pointer border-none whitespace-nowrap"
-        style={y === tab ? 'background:#00cc66;color:#fff' : 'background:var(--t-surface);color:var(--t-muted)'}>
-        {y} <span class="opacity-50">({notices.filter(n => getYr(n.date) === y).length})</span>
+        class="px-2.5 py-1.5 rounded text-[0.75rem] font-semibold transition-colors cursor-pointer border-none whitespace-nowrap"
+        style={y === tab ? 'background:#00cc66;color:var(--t-ink)' : 'background:var(--t-surface);color:var(--t-ink-soft)'}>
+        {y} ({notices.filter(n => getYr(n.date) === y).length})
       </button>
     {/each}
   </div>
@@ -113,113 +153,72 @@
       {/each}
     </div>
   {:else if filtered.length === 0}
-    <p class="text-[0.85rem] text-[#9ca3af] py-8 text-center">No notices</p>
+    <p class="text-[0.85rem] py-8 text-center" style="color:var(--t-muted)">No notices</p>
   {:else}
-    <div style="max-height:calc(100vh - 240px);overflow-x:hidden;overflow-y:auto">
+    <div use:fitToViewport class="overflow-x-hidden overflow-y-auto">
       <div class="hidden md:block">
-        <div style="display:grid;grid-template-columns:96px 1fr 160px;gap:12px;align-items:center;justify-items:center;padding:6px 0;border-bottom:1px solid var(--t-border-soft);font-size:0.65rem;font-weight:600;color:#9ca3af;text-transform:uppercase;letter-spacing:0.5px">
+        <div style="display:grid;grid-template-columns:96px 1fr 160px;gap:12px;align-items:center;justify-items:center;padding:6px 0;border-bottom:1px solid var(--t-border-soft);font-size:0.7rem;font-weight:600;color:var(--t-muted);text-transform:uppercase;letter-spacing:0.5px">
           <span>Date</span>
           <span>Title / Description</span>
           <span style="justify-self:start">Links</span>
         </div>
-        {#if tab === null}
+        {#if tab === 'all'}
           {#each years as y (y)}
             {@const fy = filtered.filter(n => getYr(n.date) === y)}
             {#if fy.length > 0}
-              <div class="text-[0.65rem] font-semibold text-[#9ca3af] uppercase tracking-wider py-2 px-1">{y} — {fy.length}</div>
-              {#each fy as n, ni (ni)}
-                <div style="display:grid;grid-template-columns:96px 1fr 160px;gap:12px;padding:10px 0;border-bottom:1px solid var(--t-surface);font-size:0.875rem">
-                  <span class="text-[var(--t-muted)] tabular-nums">{fmtDate(n.date)}</span>
-                  <span style="min-width:0">{n.title}</span>
-                  <span class="flex gap-1 flex-wrap" style="min-width:0">
-                    {#if n.links?.length}
-                      {#each n.links as link, li (li)}
-                        <a href={resolve(link.url)} target="_blank" rel="noopener"
-                          class="px-2 py-0.5 rounded text-[0.7rem] font-medium no-underline transition-colors"
-                          style="color:{linkType(link.url)};background:{linkBg(linkType(link.url), 8)}"
-                          onmouseenter={(e) => e.currentTarget.style.background = linkBg(linkType(link.url), 16)}
-                          onmouseleave={(e) => e.currentTarget.style.background = linkBg(linkType(link.url), 8)}>
-                          {link.label}
-                        </a>
-                      {/each}
-                    {:else}
-                      <span class="text-[var(--t-border-soft)]">—</span>
-                    {/if}
-                  </span>
-                </div>
-              {/each}
+              <div class="text-[0.7rem] font-semibold text-[var(--t-muted)] uppercase tracking-wider py-2 px-1">{y} — {fy.length}</div>
+              {@render noticeRows(fy)}
             {/if}
           {/each}
         {:else}
-          {#each filtered as n, ni (ni)}
-            <div style="display:grid;grid-template-columns:96px 1fr 160px;gap:12px;padding:10px 0;border-bottom:1px solid var(--t-surface);font-size:0.875rem">
-              <span class="text-[var(--t-muted)] tabular-nums">{fmtDate(n.date)}</span>
-              <span style="min-width:0">{n.title}</span>
-              <span class="flex gap-1 flex-wrap" style="min-width:0">
-                {#if n.links?.length}
-                  {#each n.links as link, li (li)}
-                    <a href={resolve(link.url)} target="_blank" rel="noopener"
-                      class="px-2 py-0.5 rounded text-[0.7rem] font-medium no-underline transition-colors"
-                      style="color:{linkType(link.url)};background:{linkBg(linkType(link.url), 8)}"
-                      onmouseenter={(e) => e.currentTarget.style.background = linkBg(linkType(link.url), 16)}
-                      onmouseleave={(e) => e.currentTarget.style.background = linkBg(linkType(link.url), 8)}>
-                      {link.label}
-                    </a>
-                  {/each}
-                {:else}
-                  <span class="text-[var(--t-border-soft)]">—</span>
-                {/if}
-              </span>
-            </div>
-          {/each}
+          {@render noticeRows(filtered)}
         {/if}
       </div>
 
       <div class="md:hidden space-y-1">
-        {#if tab === null}
+        {#if tab === 'all'}
           {#each years as y (y)}
             {@const fy = filtered.filter(n => getYr(n.date) === y)}
             {#if fy.length > 0}
-              <div class="text-[0.65rem] font-semibold text-[#9ca3af] uppercase tracking-wider py-2">{y} — {fy.length}</div>
-              {#each fy as n, ni (ni)}
-                <div class="py-2.5 border-b border-[var(--t-surface)]">
-                  <div class="text-[0.75rem] text-[var(--t-muted)] tabular-nums">{fmtDate(n.date)}</div>
-                  <div class="text-[0.875rem] mt-0.5">{n.title}</div>
-                  {#if n.links?.length}
-                    <div class="flex gap-1.5 mt-1">
-                      {#each n.links as link, li (li)}
-                        <a href={resolve(link.url)} target="_blank" rel="noopener"
-                          class="px-2 py-0.5 rounded text-[0.7rem] font-medium no-underline"
-                          style="color:{linkType(link.url)};background:{linkBg(linkType(link.url), 8)}">
-                          {link.label}
-                        </a>
-                      {/each}
-                    </div>
-                  {/if}
-                </div>
-              {/each}
+              <div class="text-[0.7rem] font-semibold text-[var(--t-muted)] uppercase tracking-wider py-2">{y} — {fy.length}</div>
+              {@render noticeCards(fy)}
             {/if}
           {/each}
         {:else}
-          {#each filtered as n, ni (ni)}
-            <div class="py-2.5 border-b border-[var(--t-surface)]">
-              <div class="text-[0.75rem] text-[var(--t-muted)] tabular-nums">{fmtDate(n.date)}</div>
-              <div class="text-[0.875rem] mt-0.5">{n.title}</div>
-              {#if n.links?.length}
-                <div class="flex gap-1.5 mt-1">
-                  {#each n.links as link, li (li)}
-                    <a href={resolve(link.url)} target="_blank" rel="noopener"
-                      class="px-2 py-0.5 rounded text-[0.7rem] font-medium no-underline"
-                      style="color:{linkType(link.url)};background:{linkBg(linkType(link.url), 8)}">
-                      {link.label}
-                    </a>
-                  {/each}
-                </div>
-              {/if}
-            </div>
-          {/each}
+          {@render noticeCards(filtered)}
         {/if}
       </div>
     </div>
   {/if}
 </div>
+
+<style>
+  /* Link chips keep their label on the ink token: brand red (#ef4444) and
+     blue-on-light-tint both failed AA as small text, so the *type* is carried
+     by the chip tint and a dot instead of by the text colour. */
+  .notice-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    color: var(--t-ink);
+    /* color-mix instead of a literal tint: it tracks --t-link's night value,
+       and only brand red/green may appear as rgba() triplets. */
+    background: color-mix(in srgb, var(--t-link) 12%, transparent);
+  }
+  .notice-link:hover {
+    background: color-mix(in srgb, var(--t-link) 20%, transparent);
+  }
+  .notice-link.is-pdf {
+    background: rgba(239, 68, 68, 0.1);
+  }
+  .notice-link.is-pdf:hover {
+    background: rgba(239, 68, 68, 0.18);
+  }
+  .notice-dot {
+    width: 0.375rem;
+    height: 0.375rem;
+    border-radius: 9999px;
+    background: #ef4444;
+    flex-shrink: 0;
+  }
+</style>
