@@ -112,8 +112,8 @@ tgpc/
 │   │   ├── mobile.spec.ts         # iPhone-SE viewport: no overflow, usable search, footer layering
 │   │   ├── contrast-baseline.json # Tracked contrast debt baseline
 │   │   └── update-baseline.mjs    # Refresh the baseline after intentional palette changes
-├── tests/                          # 173 tests, 12 files (all mocked — no real HTTP/Supabase)
-│   ├── test_scraper.py             # 10: timeouts, WAF/blocked detection, table fallback, bad rows, detail parsing, legacy headers, missing tables
+├── tests/                          # 177 tests, 12 files (all mocked — no real HTTP/Supabase)
+│   ├── test_scraper.py             # 14: timeouts, WAF/blocked detection, table fallback, bad rows, detail parsing, legacy headers, missing tables, opt-in TLS pinning
 │   ├── test_manager_update.py      # 7: safety guard, dedup/sort/GITHUB_OUTPUT, deterministic ordering, source-unavailable, +3 sync return-value regressions
 │   ├── test_manager_enrichment.py  # 3: enrichment save, registration mismatch, null serial_number regression
 │   ├── test_manager_sync.py        # 17: every sync destination's fail-closed/success/failure contract
@@ -192,6 +192,7 @@ class Config:
     read_timeout: int = 180
     max_retries: int = 3
     proxy_url: Optional[str] = None        # from TGPC_PROXY_URL, HTTPS_PROXY, or HTTP_PROXY
+    tls_cert_sha256: Optional[str] = None  # from TGPC_TLS_CERT_SHA256 — opt-in TGPC cert pin
     min_delay: float = 3.0                 # RateLimiter floor
     max_delay: float = 8.0                 # RateLimiter ceiling
     long_break_after: int = 100            # Requests before long break (not actively used in RateLimiter)
@@ -285,7 +286,7 @@ source-unavailable classification), and the photo pipeline
 
 **`Manager.sync_to_r2()`**:
 - Reads `CLOUDFLARE_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`
-- Runs `aws s3api put-object --endpoint-url https://{account_id}.r2.cloudflarestorage.com --bucket tgpc --key rph.json`
+- Uploads `rph.json` via `R2Client` (boto3 `put_object` against `https://{account_id}.r2.cloudflarestorage.com`, bucket `tgpc`) — no `aws` CLI subprocess
 
 **`Manager.sync_to_gdrive()`**:
 - Reads `RCLONE_GDRIVE_CONFIG` (base64-encoded rclone config file)
@@ -335,7 +336,9 @@ dependencies = [
     "beautifulsoup4>=4.12.3",
     "tenacity>=8.2.3",        # @retry decorator in scraper._request
     "supabase>=2.28.0",       # create_client for sync_to_supabase
+    "boto3>=1.28.0",         # R2Client S3 wrapper (sync + photo upload)
     "Pillow>=12.3.0",         # EXIF/alpha flattening + WebP conversion in enrichment
+    "pytesseract>=0.3.13",    # DG captcha OCR (solve_captcha)
     "pyzipper>=0.4.0",        # AES-256 release archive in sync_to_release
 ]
 ```
@@ -491,6 +494,7 @@ captcha-gated at the source.
 | `NOTIFICATION_EMAIL` | `sync_to_email()`, CI | Email recipient for sync report |
 | `RELEASE_PASSWORD` | `sync_to_release()`, CI | Password for the AES-256 encrypted release zip |
 | `TGPC_PROXY_URL` | `Config.load()` | Optional outbound proxy for scraping |
+| `TGPC_TLS_CERT_SHA256` | `Config.load()` | Optional SHA-256 fingerprint pin for the TGPC host certificate (hex, colons allowed). Unset = current behaviour (hostname match relaxed, chain validated); set = fingerprint enforced in place of the hostname check (audit F5/F10) |
 | `TGPC_ENRICHMENT_DIR` | `Config.load()` | Override enrichment working directory |
 | `TGPC_R2_PUBLIC_BASE` | `Config.load()` | R2 public bucket base URL (default: the `pub-…r2.dev` host) |
 | `TGPC_R2_DG_BUCKET` | `details_dg.push_file_to_r2()` | **Private** bucket for DG PII artifacts. Unset (or set to the public bucket) = pushes refuse; never falls back to the public bucket |
@@ -558,7 +562,7 @@ The 200-row ceiling is a **client-side** cap. It bounds what the browser receive
 **Single job `rphsync`** with these steps:
 
 1. **Checkout** repository
-2. **Install Python deps** (`pip install -e .` + `supabase` + `awscli`)
+2. **Install Python deps** (`pip install -e .` + `supabase`)
 3. **Setup Cloudflare WARP** — install, register, connect (outbound routing for scraping/sync)
 4. **Create data directory** (`mkdir -p data/backups`)
 5. **Restore artifact** — `gh run download` artifact `rph-data` if `data/rph.json` doesn't exist locally
@@ -597,11 +601,11 @@ Dependabot was removed (2026-09) in favour of manual bumps. CVE coverage comes f
 python3 -m pytest tests/ -v
 ```
 
-173 tests across 12 files:
+177 tests across 12 files:
 
 | File | Tests | What's tested |
 |---|---|---|
-| `test_scraper.py` | 10 | `_request` timeouts + clean pass-through, WAF/blocked detection (`BlockedError`), `extract_basic_records` (no table, bad rows, fallback table), `extract_detailed_info` (no records, full parse with photo/education/validity, legacy headers, missing tables) |
+| `test_scraper.py` | 14 | `_request` timeouts + clean pass-through, WAF/blocked detection (`BlockedError`), `extract_basic_records` (no table, bad rows, fallback table), `extract_detailed_info` (no records, full parse with photo/education/validity, legacy headers, missing tables), opt-in TLS certificate pinning |
 | `test_manager_update.py` | 7 | Safety guard (90% threshold), dedup/sort/GITHUB_OUTPUT, deterministic detail ordering, source-unavailable skip, +3 regressions covering `sync_to_*` return values |
 | `test_manager_enrichment.py` | 3 | Enrichment saves first pending record, raises DataIntegrityError on registration mismatch, resolves records with `serial_number = None` (M2 regression) |
 | `test_manager_sync.py` | 17 | Every `sync_to_*` destination's contract: fail-closed on missing credentials, True on success, False on transport/API failure. Release test uses real pyzipper and verifies encryption at upload time; email test asserts the Resend request shape |

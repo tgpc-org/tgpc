@@ -558,17 +558,6 @@ class Manager:
     # Photo upload pipeline (kept here — tests patch these Manager methods)
     # ------------------------------------------------------------------
 
-    def _get_r2_env(self):
-        """Build env dict with R2 credentials for aws s3api commands."""
-        access_key = os.environ.get("R2_ACCESS_KEY_ID")
-        secret_key = os.environ.get("R2_SECRET_ACCESS_KEY")
-        env = os.environ.copy()
-        if access_key:
-            env["AWS_ACCESS_KEY_ID"] = access_key
-        if secret_key:
-            env["AWS_SECRET_ACCESS_KEY"] = secret_key
-        return env
-
     def _get_r2_endpoint(self):
         """Build R2 endpoint URL."""
         account_id = os.environ.get("CLOUDFLARE_ACCOUNT_ID")

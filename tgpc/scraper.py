@@ -58,23 +58,35 @@ class _TGPCTLSAdapter(HTTPAdapter):
     against a tampered cert is still detected, but skips the hostname
     match (`check_hostname = False`) because the TGPC certificate is
     issued for a different name (CODE_REVIEW.md C4).
+
+    Pass ``cert_fingerprint`` (SHA-256, hex) to additionally pin the exact
+    peer certificate. urllib3 then enforces the fingerprint in place of the
+    relaxed hostname match, restoring an explicit identity check without
+    depending on the source fixing its certificate (audit F5/F10). Unset by
+    default, so scrape behaviour is unchanged unless configured.
     """
 
-    def init_poolmanager(self, *args, **kwargs):
+    def __init__(self, *args, cert_fingerprint: Optional[str] = None, **kwargs):
+        self._cert_fingerprint = cert_fingerprint
+        super().__init__(*args, **kwargs)
+
+    def _tls_pool_kwargs(self, kwargs):
         ctx = create_urllib3_context()
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_REQUIRED
         kwargs["ssl_context"] = ctx
         kwargs["assert_hostname"] = False
-        return super().init_poolmanager(*args, **kwargs)
+        if self._cert_fingerprint:
+            # Setting assert_fingerprint makes urllib3 skip the hostname match
+            # and require the peer certificate to match this exact digest.
+            kwargs["assert_fingerprint"] = self._cert_fingerprint
+        return kwargs
+
+    def init_poolmanager(self, *args, **kwargs):
+        return super().init_poolmanager(*args, **self._tls_pool_kwargs(kwargs))
 
     def proxy_manager_for(self, *args, **kwargs):
-        ctx = create_urllib3_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_REQUIRED
-        kwargs["ssl_context"] = ctx
-        kwargs["assert_hostname"] = False
-        return super().proxy_manager_for(*args, **kwargs)
+        return super().proxy_manager_for(*args, **self._tls_pool_kwargs(kwargs))
 
 
 # --- Models ---
@@ -165,6 +177,7 @@ class Scraper:
             pool_connections=10,
             pool_maxsize=10,
             max_retries=3,
+            cert_fingerprint=self.config.tls_cert_sha256,
         )
         self.session.mount("https://www.pharmacycouncil.telangana.gov.in", tgpc_tls)
         self.session.mount("https://pharmacycouncil.telangana.gov.in", tgpc_tls)

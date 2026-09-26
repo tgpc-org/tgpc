@@ -146,12 +146,6 @@ class BackupManager:
     def __init__(self, config: Config):
         self.config = config
 
-    def _r2_env(self):
-        env = os.environ.copy()
-        env["AWS_ACCESS_KEY_ID"] = os.environ.get("R2_ACCESS_KEY_ID", "")
-        env["AWS_SECRET_ACCESS_KEY"] = os.environ.get("R2_SECRET_ACCESS_KEY", "")
-        return env
-
     def _r2_endpoint(self):
         account_id = os.environ.get("CLOUDFLARE_ACCOUNT_ID")
         return f"https://{account_id}.r2.cloudflarestorage.com" if account_id else None

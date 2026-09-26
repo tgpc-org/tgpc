@@ -25,7 +25,6 @@ jobs:
         python3 -m pip install --upgrade pip
         python3 -m pip install -e .
         python3 -m pip install supabase
-        python3 -m pip install awscli --break-system-packages --quiet 2>&1 | tail -1
 
     - name: Setup Cloudflare WARP
       run: |

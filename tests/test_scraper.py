@@ -1,3 +1,4 @@
+import os
 import sys
 import unittest
 from unittest.mock import MagicMock, call, patch
@@ -5,8 +6,8 @@ from unittest.mock import MagicMock, call, patch
 # Mock supabase before importing tgpc package modules
 sys.modules["supabase"] = MagicMock()
 
-from tgpc.scraper import Scraper, _is_blocked, BLOCKED_MARKERS
-from tgpc.utils import BlockedError
+from tgpc.scraper import Scraper, _is_blocked, _TGPCTLSAdapter, BLOCKED_MARKERS
+from tgpc.utils import BlockedError, Config
 
 
 def make_response(html: str) -> MagicMock:
@@ -292,6 +293,34 @@ class ScraperParsingTests(unittest.TestCase):
             record = scraper.extract_detailed_info("RPH321")
 
         self.assertIsNone(record)
+
+
+class TlsPinningTests(unittest.TestCase):
+    """Opt-in certificate pinning for the TGPC host (audit F5/F10)."""
+
+    def _pool_kwargs(self, adapter):
+        adapter.init_poolmanager(1, 1)
+        return adapter.poolmanager.connection_pool_kw
+
+    def test_fingerprint_is_asserted_when_configured(self):
+        adapter = _TGPCTLSAdapter(cert_fingerprint="ab" * 32)
+        kwargs = self._pool_kwargs(adapter)
+        self.assertEqual(kwargs.get("assert_fingerprint"), "ab" * 32)
+        # Hostname match stays relaxed; the fingerprint takes over the check.
+        self.assertIs(kwargs.get("assert_hostname"), False)
+
+    def test_no_fingerprint_by_default(self):
+        kwargs = self._pool_kwargs(_TGPCTLSAdapter())
+        self.assertNotIn("assert_fingerprint", kwargs)
+        self.assertIs(kwargs.get("assert_hostname"), False)
+
+    def test_config_loads_fingerprint_from_env(self):
+        with patch.dict(os.environ, {"TGPC_TLS_CERT_SHA256": "ab" * 32}):
+            self.assertEqual(Config.load().tls_cert_sha256, "ab" * 32)
+
+    def test_config_blanks_fingerprint_when_unset(self):
+        with patch.dict(os.environ, {"TGPC_TLS_CERT_SHA256": "  "}):
+            self.assertIsNone(Config.load().tls_cert_sha256)
 
 
 if __name__ == "__main__":

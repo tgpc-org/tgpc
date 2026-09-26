@@ -45,6 +45,13 @@ class Config:
     max_retries: int = 3
     proxy_url: Optional[str] = None
 
+    # Optional SHA-256 fingerprint (hex, colons allowed) of the TGPC host
+    # certificate. Empty (the default) preserves current behaviour: chain
+    # validation stays on and only the hostname match is relaxed, because the
+    # source certificate is issued for a different name. Set it to pin the
+    # exact certificate and close the remaining MITM gap (audit F5/F10).
+    tls_cert_sha256: Optional[str] = None
+
     # Rate Limiting
     min_delay: float = 3.0
     max_delay: float = 8.0
@@ -69,11 +76,13 @@ class Config:
             os.environ.get("TGPC_PROXY_URL") or os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY") or None
         )
         enrichment_dir = os.environ.get("TGPC_ENRICHMENT_DIR", "data")
+        tls_cert_sha256 = (os.environ.get("TGPC_TLS_CERT_SHA256") or "").strip() or None
 
         return cls(
             proxy_url=proxy_url,
             enrichment_directory=enrichment_dir,
             r2_public_base=os.environ.get("TGPC_R2_PUBLIC_BASE", Config.r2_public_base),
+            tls_cert_sha256=tls_cert_sha256,
         )
 
 
