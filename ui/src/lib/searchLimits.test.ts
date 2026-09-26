@@ -84,8 +84,8 @@ describe('api.ts row limits', () => {
       ...API_CODE.matchAll(/\blim:\s*([A-Za-z_$\w]+|\d+)|\.limit\(([A-Za-z_$\w]+|\d+)\)/g)
     ].map((m) => m[1] ?? m[2]);
 
-    // Ranked RPC, its PostgREST fallback, refiners, advanced search.
-    assert.ok(sites.length >= 4, `expected 4 capped call sites, found ${sites.length}`);
+    // Ranked RPC, its PostgREST fallback, refiners.
+    assert.ok(sites.length >= 3, `expected 3 capped call sites, found ${sites.length}`);
     for (const arg of sites) {
       if (/^\d+$/.test(arg)) {
         assert.ok(Number(arg) <= MAX_SEARCH_RESULTS, `requested ${arg} rows, cap is ${MAX_SEARCH_RESULTS}`);

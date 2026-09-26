@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { PharmacistRecord, CategoryFilter } from '$lib/types';
   import { searchRecords, searchWithRefiners, type AdvancedFilters } from '$lib/api';
+  import { MONTHS, formatDDMonYYYY, parseDDMonYYYY } from '$lib/dates';
   import DatePicker from '$lib/DatePicker.svelte';
   import { CATEGORY_COLORS, CATEGORIES as CAT_NAMES } from '$lib/colors';
   import { MAX_SEARCH_RESULTS, isTruncated } from '$lib/searchLimits';
@@ -35,13 +36,6 @@
 
   let refinersActive = $derived(hasAnyRefiner());
 
-  const REV_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  function formatValidTillForDisplay(iso: string): string | null {
-    const d = new Date(iso + 'T00:00:00');
-    if (isNaN(d.getTime())) return null;
-    return `${String(d.getDate()).padStart(2,'0')}-${REV_MONTHS[d.getMonth()]}-${d.getFullYear()}`;
-  }
-
   // Result-bound filters — client-side over fetched results (no extra server fetch)
   let filtered = $derived.by(() => {
     let base = category === 'all' ? results : results.filter(r => r.category === category);
@@ -60,7 +54,7 @@
     if (advFilters.gender && advFilters.gender !== '') base = base.filter(r => r.gender === advFilters.gender);
     if (advFilters.status && advFilters.status !== '') base = base.filter(r => r.status === advFilters.status);
     if (advFilters.valid_till?.trim()) {
-      const dbDate = formatValidTillForDisplay(advFilters.valid_till);
+      const dbDate = formatDDMonYYYY(advFilters.valid_till);
       if (dbDate) base = base.filter(r => r.validity_date === dbDate);
     }
     return base;
@@ -80,16 +74,13 @@
   const TH_BTN = 'inline-flex items-center gap-1 cursor-pointer border-none bg-transparent p-0 uppercase tracking-wider text-[0.7rem] font-semibold transition-colors';
   const TH_HEAD = 'font-inherit text-left py-2 border-b-2 border-[var(--t-border)] uppercase tracking-wider text-[0.7rem] font-semibold text-[var(--t-muted)]';
   const COLLATOR = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
-  const MONTH_INDEX: Record<string, number> = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 };
 
   /** `validity_date` ("07-Mar-2028") as a timestamp, or null when unusable. */
   function validityTime(v: string | null | undefined): number | null {
     if (!v) return null;
-    const m = v.trim().match(/^(\d{2})-([A-Za-z]{3})-(\d{4})$/);
-    if (!m) return null;
-    const month = MONTH_INDEX[m[2][0].toUpperCase() + m[2].slice(1).toLowerCase()];
-    if (month === undefined) return null;
-    return Date.UTC(Number(m[3]), month, Number(m[1]));
+    const parsed = parseDDMonYYYY(v);
+    if (!parsed) return null;
+    return Date.UTC(parsed.year, parsed.monthIndex, parsed.day);
   }
 
   function compareBy(key: ColumnKey, a: PharmacistRecord, b: PharmacistRecord): number {
@@ -273,7 +264,6 @@
     advFilters = { valid_till: '' };
   }
 
-  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
   function fmtDate(d: Date) {

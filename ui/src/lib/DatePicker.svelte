@@ -1,5 +1,6 @@
 <script lang="ts">
   import { fade } from 'svelte/transition';
+  import { MONTHS } from './dates';
 
   let { value = $bindable(''), placeholder = 'DD/MM/YYYY' }: { value?: string; placeholder?: string } = $props();
 
@@ -10,7 +11,6 @@
   let pickerRef: HTMLDivElement | undefined;
 
   const WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
-  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
   function isOpen() {
     return open;
