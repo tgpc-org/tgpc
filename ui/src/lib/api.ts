@@ -1,6 +1,7 @@
 import type { PharmacistRecord, Notice, DispatchFile, Stats, Category } from './types';
 import { supabase } from './supabase';
 import { MAX_SEARCH_RESULTS } from './searchLimits';
+import { formatDDMonYYYY } from './dates';
 
 // Strip PostgREST filter syntax (,()) and LIKE wildcards (%_*) so raw input can
 // never alter the fallback .or() expression (CODE_REVIEW.md H4).
@@ -63,24 +64,6 @@ export async function searchRecords(query: string): Promise<PharmacistRecord[]> 
   }
 }
 
-export async function searchCount(query: string): Promise<number | null> {
-  const q = query.trim();
-  if (q.length < 3) return null;
-  try {
-    // Use count with head:true so we don't fetch rows — accurate total
-    // Do this for both RPC and fallback paths via the same fallback filter
-    const safe = sanitizeQuery(q);
-    const { count, error } = await supabase
-      .from('rph')
-      .select('registration_number', { count: 'exact', head: true })
-      .or(`registration_number.ilike.%${safe}%,name.ilike.%${safe}%`);
-    if (error) return null;
-    return count;
-  } catch {
-    return null;
-  }
-}
-
 export interface AdvancedFilters {
   name?: string;
   father_name?: string;
@@ -89,27 +72,6 @@ export interface AdvancedFilters {
   gender?: string;
   status?: string;
   valid_till?: string;
-}
-
-const VALIDITY_RE = /^(\d{2})-([A-Za-z]{3})-(\d{4})$/;
-const MONTHS: Record<string, number> = {
-  Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5,
-  Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11
-};
-
-function parseValidityDate(v: string): Date | null {
-  const m = v.trim().match(VALIDITY_RE);
-  if (!m) return null;
-  const month = MONTHS[m[2]];
-  if (month === undefined) return null;
-  return new Date(parseInt(m[3], 10), month, parseInt(m[1], 10));
-}
-
-const REV_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-function formatValidTillForDB(iso: string): string | null {
-  const d = new Date(iso + 'T00:00:00');
-  if (isNaN(d.getTime())) return null;
-  return `${String(d.getDate()).padStart(2,'0')}-${REV_MONTHS[d.getMonth()]}-${d.getFullYear()}`;
 }
 
 // Unified search: live query + advanced refiners as AND (Phase 1 refiners atop live)
@@ -135,7 +97,7 @@ export async function searchWithRefiners(query: string, f: AdvancedFilters & { c
     if (f.gender && f.gender !== 'Any' && f.gender.trim()) qb = qb.eq('gender', f.gender);
     if (f.status && f.status !== 'Any' && f.status.trim()) qb = qb.eq('status', f.status);
     if (f.valid_till && f.valid_till.trim()) {
-      const dbDate = formatValidTillForDB(f.valid_till);
+      const dbDate = formatDDMonYYYY(f.valid_till);
       if (dbDate) qb = qb.eq('validity_date', dbDate);
     }
     qb = qb.limit(MAX_SEARCH_RESULTS);
@@ -145,53 +107,6 @@ export async function searchWithRefiners(query: string, f: AdvancedFilters & { c
     return hasQ ? rankRecords(rows, q) : sortRecords(rows);
   } catch {
     return [];
-  }
-}
-
-export async function advancedSearch(f: AdvancedFilters): Promise<PharmacistRecord[]> {
-  try {
-    let query = supabase
-      .from('rph')
-      .select('registration_number, name, father_name, category, gender, validity_date, status, photo_url');
-    if (f.name && f.name.trim()) query = query.ilike('name', `%${stripWildcards(f.name)}%`);
-    if (f.father_name && f.father_name.trim()) query = query.ilike('father_name', `%${stripWildcards(f.father_name)}%`);
-    if (f.registration_number && f.registration_number.trim()) query = query.ilike('registration_number', `${stripWildcards(f.registration_number)}%`);
-    if (f.category && f.category.length > 0) query = query.in('category', f.category);
-    if (f.gender && f.gender !== 'Any') query = query.eq('gender', f.gender);
-    if (f.status && f.status !== 'Any') query = query.eq('status', f.status);
-    query = query.limit(MAX_SEARCH_RESULTS);
-    const { data, error } = await query;
-    if (error) throw error;
-    const rows = (data as PharmacistRecord[]) || [];
-    if (!f.valid_till) return sortRecords(rows);
-    const ref = new Date(f.valid_till + 'T00:00:00');
-    const filtered = rows.filter((r) => {
-      const d = parseValidityDate(r.validity_date || '');
-      if (!d) return false;
-      return d.getTime() === ref.getTime();
-    });
-    return sortRecords(filtered);
-  } catch {
-    return [];
-  }
-}
-
-export async function advancedCount(f: AdvancedFilters): Promise<number | null> {
-  try {
-    // valid_till is client-side filtered — count would be inaccurate if we hit cap, so don't report accurate total in that case
-    if (f.valid_till) return null;
-    let query = supabase.from('rph').select('registration_number', { count: 'exact', head: true });
-    if (f.name && f.name.trim()) query = query.ilike('name', `%${stripWildcards(f.name)}%`);
-    if (f.father_name && f.father_name.trim()) query = query.ilike('father_name', `%${stripWildcards(f.father_name)}%`);
-    if (f.registration_number && f.registration_number.trim()) query = query.ilike('registration_number', `${stripWildcards(f.registration_number)}%`);
-    if (f.category && f.category.length > 0) query = query.in('category', f.category);
-    if (f.gender && f.gender !== 'Any') query = query.eq('gender', f.gender);
-    if (f.status && f.status !== 'Any') query = query.eq('status', f.status);
-    const { count, error } = await query;
-    if (error) return null;
-    return count;
-  } catch {
-    return null;
   }
 }
 

@@ -5,8 +5,7 @@
   import { fetchNotices } from '$lib/api';
   import { fitToViewport } from '$lib/fitToViewport';
   import { browser } from '$app/environment';
-
-  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  import { MONTHS } from '$lib/dates';
 
   let { data } = $props();
 

@@ -88,6 +88,7 @@ tgpc/
 │   │       ├── api.ts              # Search/record/stats API + input sanitization + ranking
 │   │       ├── cache.ts            # localStorage TTL cache helpers
 │   │       ├── colors.ts          # CATEGORY_COLORS (exempt from brand gate)
+│   │       ├── dates.ts            # Shared MONTHS table + DD-Mon-YYYY parse/format helpers
 │   │       ├── fitToViewport.ts    # availableHeight() + `use:fitToViewport` action: list sizing above the fixed footer (+ fitToViewport.test.ts)
 │   │       ├── r2.ts              # R2 public URLs from PUBLIC_R2_PHOTO_BASE
 │   │       ├── searchLimits.ts     # MAX_SEARCH_RESULTS cap + isTruncated() hint (+ searchLimits.test.ts)
