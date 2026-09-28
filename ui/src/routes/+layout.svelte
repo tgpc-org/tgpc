@@ -186,7 +186,7 @@
                    background enough to push muted text under 4.5:1. -->
               <span class="hidden lg:inline-flex items-center gap-1.5 font-normal" style="color:var(--t-ink-soft)">
                 <span aria-hidden="true">·</span>
-                <Clock />
+                <span class="text-[0.75rem]"><Clock /></span>
               </span>
             {/if}
           </span>
@@ -216,7 +216,7 @@
         <div class="w-full min-w-max flex items-stretch gap-1 py-1.5">
           {#each tiles as tile, i (tile.label)}
             <div class="flex flex-col justify-center gap-0.5 px-3 shrink-0" style="border-right:{i < tiles.length - 1 ? '1px solid var(--t-border)' : 'none'}">
-              <span class="flex items-center gap-1.5 text-[0.65rem] font-semibold uppercase tracking-wider whitespace-nowrap" style="color:var(--t-muted)">
+              <span class="flex items-center gap-1.5 text-[0.7rem] font-semibold uppercase tracking-wider whitespace-nowrap" style="color:var(--t-muted)">
                 <span class="h-1.5 w-1.5 rounded-full shrink-0" style="background:{tile.dot}"></span>
                 {tile.label}
               </span>
@@ -226,18 +226,18 @@
 
           <div class="ml-auto flex items-center gap-4 pl-4 shrink-0">
             <div class="flex flex-col justify-center gap-0.5">
-              <span class="flex items-center gap-1.5 text-[0.65rem] font-semibold uppercase tracking-wider whitespace-nowrap" style="color:var(--t-muted)">
+              <span class="flex items-center gap-1.5 text-[0.7rem] font-semibold uppercase tracking-wider whitespace-nowrap" style="color:var(--t-muted)">
                 <span class="h-1.5 w-1.5 rounded-full shrink-0" style="background:{statusConfig.dot}"></span>
                 Last sync
               </span>
               <span class="text-[0.7rem] font-medium whitespace-nowrap" style="color:var(--t-ink)">{lastSync || '—'}</span>
             </div>
             <div class="flex flex-col justify-center gap-0.5">
-              <span class="text-[0.65rem] font-semibold uppercase tracking-wider whitespace-nowrap" style="color:var(--t-muted)">Active</span>
+              <span class="text-[0.7rem] font-semibold uppercase tracking-wider whitespace-nowrap" style="color:var(--t-muted)">Active</span>
               <span class="text-[0.7rem] font-bold tabular-nums whitespace-nowrap" style="color:var(--t-ink)">{val('active')}</span>
             </div>
             <div class="flex flex-col justify-center gap-0.5">
-              <span class="text-[0.65rem] font-semibold uppercase tracking-wider whitespace-nowrap" style="color:var(--t-muted)">Inactive</span>
+              <span class="text-[0.7rem] font-semibold uppercase tracking-wider whitespace-nowrap" style="color:var(--t-muted)">Inactive</span>
               <span class="text-[0.7rem] font-bold tabular-nums whitespace-nowrap" style="color:var(--t-ink)">{val('inactive')}</span>
             </div>
           </div>

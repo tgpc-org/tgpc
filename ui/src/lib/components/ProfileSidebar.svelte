@@ -2,6 +2,7 @@
   import { CATEGORY_COLORS } from '$lib/colors';
   import type { PharmacistRecord } from '$lib/types';
   import { fly, fade } from 'svelte/transition';
+import { prefersReducedMotion } from '$lib/motion';
 
   let { open = false, record = null as PharmacistRecord | null, photo = '', loading = false, error = null as string | null, onClose = () => {} }: {
     open?: boolean;
@@ -112,7 +113,7 @@
     role="dialog"
     aria-modal="true"
     aria-label={record ? `${record.name} profile` : 'Pharmacist profile'}
-    transition:fly={{ x: 420, duration: 220 }}
+    transition:fly={{ x: 420, duration: prefersReducedMotion() ? 0 : 220 }}
   >
     <div data-print-omit class="sticky top-0 z-10 flex items-center justify-between gap-2 bg-[var(--t-bg)] border-b border-[var(--t-border)] px-4 py-3">
       <span class="text-sm font-semibold text-[var(--t-ink)] truncate">{loading ? 'Loading…' : error ? 'Not found' : 'Profile'}</span>

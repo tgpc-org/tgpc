@@ -289,6 +289,13 @@
     return 'background:#00cc66;color:var(--t-ink)';
   }
 
+  // ---- Empty landing state -------------------------------------------------
+  // The first visit used to be a bare search input over ~450px of blank
+  // space. These starter chips carry verified live examples so every tap
+  // lands on results; a missed tap falls through to the existing actionable
+  // "No results" state. Kept an <h2> so smoke.spec.ts's single-h1 rule holds.
+  const STARTER_SEARCHES = ['reddy', 'sharma', 'kumar', 'TG061874'];
+
   // ---- Exports ------------------------------------------------------------
   function exportContext(): ExportContext {
     const filters: string[] = [];
@@ -381,6 +388,30 @@
   <h1 class="sr-only">Search Telangana State Pharmacy Council pharmacist records by name or RPC number</h1>
 
   <SearchForm bind:query bind:searched onsearch={doSearch} onreset={reset} />
+
+  {#if !searched}
+    <!-- First-visit empty state: show the way in, not a blank page. -->
+    <div class="py-8 sm:py-12 text-center space-y-4">
+      <h2 class="text-[1.1rem] font-bold" style="color:var(--t-ink)">Find a registered pharmacist</h2>
+      <p class="text-[0.85rem] max-w-md mx-auto" style="color:var(--t-muted)">
+        Search the registry by name, or by the RPC number printed on the certificate (e.g. <span class="tabular-nums">TG061874</span>).
+      </p>
+      <div class="flex flex-wrap justify-center gap-2">
+        {#each STARTER_SEARCHES as s (s)}
+          <button
+            onclick={() => { query = s; void doSearch(); }}
+            class="px-3 py-1.5 rounded-full text-[0.75rem] font-semibold cursor-pointer border-none transition-colors tabular-nums hover:bg-[rgba(0,204,102,0.14)]"
+            style="background:var(--t-surface-3);color:var(--t-ink-soft)"
+          >
+            {s}
+          </button>
+        {/each}
+      </div>
+      <p class="text-[0.75rem]">
+        <a href="/notice" class="underline underline-offset-2" style="color:var(--t-link)">Browse the latest council notices</a>
+      </p>
+    </div>
+  {/if}
 
   <!-- Result count, category chips, exports -->
   {#if searched}

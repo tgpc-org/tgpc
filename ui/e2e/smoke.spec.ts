@@ -20,6 +20,26 @@ test('search flow resolves to results or empty state', async ({ page }) => {
 	await expect(table.or(empty)).toBeVisible({ timeout: 30_000 });
 });
 
+test('homepage empty state: starter chips render and run a search', async ({ page }) => {
+	await page.goto('/');
+	// First visit must not be a blank page: the empty state offers a way in.
+	await expect(page.getByRole('heading', { name: 'Find a registered pharmacist' })).toBeVisible();
+	const chip = page.getByRole('button', { name: 'reddy', exact: true });
+	await expect(chip).toBeVisible();
+	await expect(page.getByRole('link', { name: 'Browse the latest council notices' })).toBeVisible();
+	// A starter chip runs the real search flow: results replace the state.
+	// The empty state is in the SSR HTML, so the first click can land before
+	// hydration attaches the handler — retry the click until the app reacts.
+	const reacted = page.locator('table').or(page.getByText('No results'));
+	await expect(async () => {
+		await chip.click();
+		await expect(reacted).toBeVisible({ timeout: 5_000 });
+	}).toPass({ timeout: 30_000 });
+	await expect(page.locator('table')).toBeVisible();
+	expect(new URL(page.url()).searchParams.get('q')).toBe('reddy');
+	await expect(page.getByRole('heading', { name: 'Find a registered pharmacist' })).toBeHidden();
+});
+
 test('notice page renders index', async ({ page }) => {
 	await page.goto('/notice');
 	await expect(page).toHaveTitle(/Notices/);

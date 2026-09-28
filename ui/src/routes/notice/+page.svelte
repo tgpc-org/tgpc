@@ -83,7 +83,7 @@
 {#snippet linkChips(links: Notice['links'])}
   {#if links?.length}
     {#each links as link, li (li)}
-      <a href={resolve(link.url)} target="_blank" rel="noopener" class="notice-link px-2.5 py-1 rounded text-[0.75rem] font-semibold no-underline {isPdf(link.url) ? 'is-pdf' : ''}">
+      <a href={resolve(link.url)} target="_blank" rel="noopener" class="notice-link px-2.5 py-1.5 rounded text-[0.75rem] font-semibold no-underline {isPdf(link.url) ? 'is-pdf' : ''}">
         {#if isPdf(link.url)}<span class="notice-dot" aria-hidden="true"></span>{/if}{link.label}
       </a>
     {/each}

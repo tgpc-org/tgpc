@@ -45,11 +45,15 @@
 
 <div class="space-y-2" data-testid="mobile-results">
   {#each rows as r (r.registration_number)}
-    <div class="flex gap-3 p-3 rounded-xl border border-[var(--t-surface)] bg-[var(--t-surface-3)] text-[0.875rem]" style="content-visibility:auto;contain-intrinsic-size:150px">
+    <!-- 'relative' + the link's stretched ::after make the whole card the tap
+         target: the bare RPC text link was only ~21px tall, under the 24px
+         WCAG 2.5.8 minimum and far under the 44px app guideline. No other
+         interactive element lives inside a card, so the overlay is safe. -->
+    <div class="relative flex gap-3 p-3 rounded-xl border border-[var(--t-surface)] bg-[var(--t-surface-3)] text-[0.875rem]" style="content-visibility:auto;contain-intrinsic-size:150px">
       <img src={photoUrl(r)} alt="" loading="lazy" decoding="async" width="48" height="58" class="w-12 h-14 rounded-md object-cover bg-[var(--t-surface)] flex-shrink-0" />
       <div class="min-w-0 flex-1">
         <div class="flex items-center justify-between gap-2">
-          <a href="/rph/{r.registration_number}" onclick={(e) => { e.preventDefault(); onopen(r.registration_number); }} class="text-[var(--t-link)] hover:underline no-underline cursor-pointer tabular-nums font-semibold" aria-label="View profile for {r.registration_number}">{r.registration_number}</a>
+          <a href="/rph/{r.registration_number}" onclick={(e) => { e.preventDefault(); onopen(r.registration_number); }} class="inline-flex items-center h-6 text-[var(--t-link)] hover:underline no-underline cursor-pointer tabular-nums font-semibold after:content-[''] after:absolute after:inset-0 after:rounded-xl" aria-label="View profile for {r.registration_number}">{r.registration_number}</a>
           {#if r.status}
             <span class="flex-shrink-0">{@render statusBadge(r.status)}</span>
           {/if}

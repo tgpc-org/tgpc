@@ -22,7 +22,7 @@
     onclick={() => (open = !open)}
     aria-expanded={open}
     aria-controls="refiner-fields"
-    class="lg:hidden w-full flex items-center justify-between gap-2 text-[0.7rem] font-semibold uppercase tracking-widest text-[var(--t-muted)] cursor-pointer border-none bg-transparent p-0"
+    class="lg:hidden w-full flex items-center justify-between gap-2 py-2 text-[0.7rem] font-semibold uppercase tracking-widest text-[var(--t-muted)] cursor-pointer border-none bg-transparent p-0"
   >
     <span class="flex items-center gap-1.5">
       <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 6h18M7 12h10M10 18h4"/></svg>

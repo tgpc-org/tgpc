@@ -14,6 +14,13 @@
   let query = $state('');
   let loading = $state(true);
 
+  // Render the 200+ cards in chunks: the list grows on demand instead of
+  // mounting every card at once on low-end phones.
+  const PAGE_SIZE = 40;
+  let visibleCount = $state(PAGE_SIZE);
+  // A tab or query change invalidates what is visible — back to one page.
+  $effect(() => { void tab; void query; visibleCount = PAGE_SIZE; });
+
   function parse(n: string) {
     const m = n.match(/DL(\d{2})(\d{2})(\d{4})[A-Z]*\.pdf/i);
     return m ? { d: m[1], mo: m[2], y: m[3], date: new Date(+m[3], +m[2]-1, +m[1]) } : null;
@@ -46,6 +53,26 @@
     const q = query.toLowerCase();
     return f.name.toLowerCase().includes(q) || fmt(f.parsed).toLowerCase().includes(q);
   }));
+
+  // Chunked views of `filtered`: on the 'all' tab the budget is spent year
+  // by year so a group can be cut mid-way and continue after "Load more".
+  let limitedGroups = $derived.by(() => {
+    if (tab !== 'all') return [];
+    let remaining = visibleCount;
+    const groups: { y: string; files: DispatchFile[]; total: number }[] = [];
+    for (const y of years) {
+      const fy = filtered.filter(f => f.parsed?.y === y);
+      if (fy.length === 0) continue;
+      const take = fy.slice(0, Math.max(0, remaining));
+      groups.push({ y, files: take, total: fy.length });
+      remaining -= take.length;
+      if (remaining <= 0) break;
+    }
+    return groups;
+  });
+
+  let limitedFlat = $derived(tab === 'all' ? [] : filtered.slice(0, visibleCount));
+  let remainingCount = $derived(Math.max(0, filtered.length - visibleCount));
 
   const cached = browser && cachedOrNull<{ name: string; size?: number; stale?: boolean }[]>("tgpc_dispatch");
   // An empty cached array means a past failed fetch — treat as absent so the
@@ -81,7 +108,7 @@
     <div class="min-w-0">
       <div class="text-[0.65rem] font-semibold uppercase tracking-widest text-[var(--t-muted)]">Dispatch List</div>
       <div class="text-[0.85rem] font-semibold truncate">{fmt(f.parsed!)}</div>
-      <div class="text-[0.7rem] text-[var(--t-muted)]">{sizes[f.name] ? Math.round(sizes[f.name] / 1024) + ' KB' : ''}{f.stale ? ' · may be stale' : ''}</div>
+      <div class="text-[0.7rem] text-[var(--t-muted)]">{sizes[f.name] ? Math.round(sizes[f.name] / 1024) + ' KB' : ''}{#if f.stale}<span class="ml-1 inline-block rounded px-1.5 py-0.5 text-[0.65rem] font-semibold" style="background:rgba(239,68,68,0.12);color:var(--t-ink)">may be stale</span>{/if}</div>
     </div>
   </a>
 {/snippet}
@@ -133,20 +160,26 @@
   {:else}
     <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
       {#if tab === 'all'}
-        {#each years as y (y)}
-          {@const fy = filtered.filter(f => f.parsed?.y === y)}
-          {#if fy.length > 0}
-            <div class="col-span-full text-[0.7rem] font-semibold text-[var(--t-muted)] uppercase tracking-wider py-2">{y} — {fy.length}</div>
-            {#each fy as f (f.name)}
-              {@render dispatchCard(f)}
-            {/each}
-          {/if}
+        {#each limitedGroups as g (g.y)}
+          <div class="col-span-full text-[0.7rem] font-semibold text-[var(--t-muted)] uppercase tracking-wider py-2">{g.y} — {g.total}</div>
+          {#each g.files as f (f.name)}
+            {@render dispatchCard(f)}
+          {/each}
         {/each}
       {:else}
-        {#each filtered as f (f.name)}
+        {#each limitedFlat as f (f.name)}
           {@render dispatchCard(f)}
         {/each}
       {/if}
     </div>
+    {#if remainingCount > 0}
+      <div class="flex justify-center pt-3">
+        <button type="button" onclick={() => (visibleCount += PAGE_SIZE)}
+          class="px-4 py-2.5 rounded-full text-[0.75rem] font-semibold cursor-pointer border-none transition-colors hover:bg-[rgba(0,204,102,0.14)]"
+          style="background:var(--t-surface-3);color:var(--t-ink-soft)">
+          Load more · {remainingCount.toLocaleString()} remaining
+        </button>
+      </div>
+    {/if}
   {/if}
 </div>
