@@ -9,6 +9,24 @@
   let open = $state(false);
   let view = $state<Date>(new Date());
   let pickerRef: HTMLDivElement | undefined;
+  let inputRef = $state<HTMLInputElement | undefined>(undefined);
+
+  // When the popover closes, hand focus back to the field it came from —
+  // unless focus already moved to something else outside the picker (e.g.
+  // the click that dismissed it landed on another control).
+  let pickerWasOpen = false;
+  $effect(() => {
+    if (open) {
+      pickerWasOpen = true;
+      return;
+    }
+    if (!pickerWasOpen) return;
+    pickerWasOpen = false;
+    setTimeout(() => {
+      const ae = document.activeElement;
+      if ((!ae || ae === document.body || (pickerRef && pickerRef.contains(ae))) && inputRef) inputRef.focus();
+    }, 0);
+  });
 
   const WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
@@ -40,6 +58,15 @@
     return iso(new Date());
   }
 
+  // Screen readers get the full date; the visible cell is just the number.
+  function ariaDate(d: Date): string {
+    return d.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  }
+
+  function addDays(d: Date, n: number): Date {
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+  }
+
   function cells(): Array<Date | null> {
     const first = new Date(view.getFullYear(), view.getMonth(), 1);
     const startDay = first.getDay();
@@ -59,11 +86,44 @@
     return '';
   }
 
-  function onKeydown(e: KeyboardEvent) {
+  function onInputKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape') {
       open = false;
       e.stopPropagation();
+    } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      open = true;
     }
+  }
+
+  const NAV_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End']);
+
+  // Roving focus over the day grid: arrows step by day/week, Home/End jump
+  // to the month edges. Crossing an edge clamps instead of changing months.
+  function onDialogKeydown(e: KeyboardEvent) {
+    if (e.key === 'Escape') {
+      open = false;
+      e.stopPropagation();
+      return;
+    }
+    if (!NAV_KEYS.has(e.key)) return;
+    const btn = (e.target as HTMLElement).closest?.('button[data-date]') as HTMLElement | null;
+    if (!btn) return;
+    e.preventDefault();
+    const days = cells().filter((c): c is Date => c !== null);
+    const [y, m, d] = (btn.getAttribute('data-date') || '').split('-').map(Number);
+    const current = new Date(y, m - 1, d);
+    let target: Date | null = null;
+    if (e.key === 'ArrowLeft') target = addDays(current, -1);
+    else if (e.key === 'ArrowRight') target = addDays(current, 1);
+    else if (e.key === 'ArrowUp') target = addDays(current, -7);
+    else if (e.key === 'ArrowDown') target = addDays(current, 7);
+    else if (e.key === 'Home') target = days[0] || null;
+    else if (e.key === 'End') target = days[days.length - 1] || null;
+    if (!target) return;
+    if (target < days[0]) target = days[0];
+    if (target > days[days.length - 1]) target = days[days.length - 1];
+    pickerRef?.querySelector<HTMLButtonElement>(`button[data-date="${iso(target)}"]`)?.focus();
   }
 
   function onClickOutside(e: MouseEvent) {
@@ -79,6 +139,9 @@
     readonly
     value={display}
     placeholder={placeholder}
+    bind:this={inputRef}
+    aria-haspopup="dialog"
+    aria-expanded={open}
     onfocus={() => {
       open = true;
       if (value) {
@@ -86,7 +149,7 @@
         if (p.length === 3 && p[1] >= 1 && p[1] <= 12) view = new Date(p[0], p[1] - 1, 1);
       }
     }}
-    onkeydown={onKeydown}
+    onkeydown={onInputKeydown}
     class="w-full h-8 px-2.5 text-[0.8rem] rounded-lg border border-[var(--t-border)] bg-[var(--t-bg)] outline-none transition-colors focus:border-[#00cc66] focus:ring-2 focus:ring-[rgba(0,204,102,0.15)] cursor-pointer"
   />
   {#if isOpen()}
@@ -96,7 +159,7 @@
       aria-label="Date picker"
       tabindex="-1"
       transition:fade={{ duration: 100 }}
-      onkeydown={onKeydown}
+      onkeydown={onDialogKeydown}
     >
 <div class="flex items-center justify-between mb-1">
         <button type="button" onclick={prevMonth} aria-label="Previous month"
@@ -113,11 +176,16 @@
         <!-- Weekday initials repeat (S, T) so key by index — keying by value
              throws Svelte's each_key_duplicate when the calendar opens. -->
         {#each WEEKDAYS as w, i (i)}
-          <span class="text-[0.65rem] font-semibold text-[var(--t-muted)] py-1">{w}</span>
+          <!-- Single letters are noise for AT; the day buttons carry full labels. -->
+          <span aria-hidden="true" class="text-[0.65rem] font-semibold text-[var(--t-muted)] py-1">{w}</span>
         {/each}
         {#each cells() as d, index (d?.toISOString() || index)}
           {#if d}
             <button type="button" onclick={() => select(d)}
+              data-date={iso(d)}
+              aria-label={ariaDate(d)}
+              aria-selected={value === iso(d)}
+              aria-current={iso(d) === today() ? 'date' : undefined}
               class="h-8 text-[0.8rem] rounded-md transition-colors hover:bg-[rgba(0,204,102,0.12)] cursor-pointer border-none"
               style={cellStyle(d)}>
               {d.getDate()}

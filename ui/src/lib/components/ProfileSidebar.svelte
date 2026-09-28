@@ -14,6 +14,9 @@
 
   let photoError = $state(false);
 
+  // Fixed widths keep the loading skeleton stable between renders.
+  const SKELETON_WIDTHS = [92, 70, 84, 60, 78, 66];
+
   $effect(() => {
     if (open) photoError = false;
   });
@@ -28,7 +31,25 @@
     if (!c) return 'var(--t-muted)';
     return c === '#111827' ? 'var(--t-ink)' : c;
   }
-  function printPage() { window.print(); }
+  // Printing from the drawer must print the profile card itself, not the page
+  // behind it. A detached clone is appended to <body> for the duration of the
+  // print; print CSS hides everything else while it exists.
+  function buildPrintPortal() {
+    if (!open || !record || !drawerEl) return;
+    removePrintPortal();
+    const portal = document.createElement('div');
+    portal.setAttribute('data-print-portal', '');
+    portal.innerHTML = drawerEl.innerHTML;
+    portal.querySelectorAll('button').forEach((b) => b.remove());
+    portal.querySelectorAll('[data-print-omit]').forEach((el) => el.remove());
+    document.body.appendChild(portal);
+    document.body.classList.add('print-portal-open');
+  }
+  function removePrintPortal() {
+    document.querySelector('[data-print-portal]')?.remove();
+    document.body.classList.remove('print-portal-open');
+  }
+  function printPage() { buildPrintPortal(); window.print(); }
   function displayWork(v: string | null | undefined): string {
     if (!v) return '—';
     const t = v.trim();
@@ -44,8 +65,11 @@
       document.body.style.overflow = 'hidden';
       // Focus close button on open
       setTimeout(() => closeBtn?.focus(), 50);
-    } else document.body.style.overflow = '';
-    return () => { document.body.style.overflow = ''; };
+    } else {
+      document.body.style.overflow = '';
+      removePrintPortal();
+    }
+    return () => { document.body.style.overflow = ''; removePrintPortal(); };
   });
 
   function handleKeydown(e: KeyboardEvent) {
@@ -61,7 +85,7 @@
   }
 </script>
 
-<svelte:window onkeydown={handleKeydown} />
+<svelte:window onkeydown={handleKeydown} onbeforeprint={buildPrintPortal} onafterprint={removePrintPortal} />
 
 {#if open}
   <!-- Overlay -->
@@ -82,7 +106,7 @@
     aria-label={record ? `${record.name} profile` : 'Pharmacist profile'}
     transition:fly={{ x: 420, duration: 220 }}
   >
-    <div class="sticky top-0 z-10 flex items-center justify-between gap-2 bg-[var(--t-bg)] border-b border-[var(--t-border)] px-4 py-3">
+    <div data-print-omit class="sticky top-0 z-10 flex items-center justify-between gap-2 bg-[var(--t-bg)] border-b border-[var(--t-border)] px-4 py-3">
       <span class="text-sm font-semibold text-[var(--t-ink)] truncate">{loading ? 'Loading…' : error ? 'Not found' : 'Profile'}</span>
       <button bind:this={closeBtn} onclick={onClose} aria-label="Close" class="w-8 h-8 flex items-center justify-center rounded-full border border-[var(--t-border)] text-[var(--t-muted)] hover:bg-[var(--t-surface-3)] transition-colors">
         <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
@@ -92,8 +116,8 @@
     <div class="flex-1 p-3 space-y-3">
       {#if loading}
         <div class="space-y-3 py-4">
-          {#each Array(6) as _, i (i)}
-            <div class="h-4 bg-[var(--t-surface)] rounded animate-pulse" style="width:{40 + Math.random()*60}%"></div>
+          {#each SKELETON_WIDTHS as w, i (i)}
+            <div class="h-4 bg-[var(--t-surface)] rounded animate-pulse" style="width:{w}%"></div>
           {/each}
         </div>
       {:else if error}
@@ -177,6 +201,13 @@
 
 <style>
   @media print {
+    /* Ctrl+P with the drawer open prints the page behind it (pre-existing
+       behaviour); the Print button and beforeprint swap in a print-only clone
+       of the drawer instead. */
     div[role="dialog"] { display: none !important; }
+    :global(body.print-portal-open > :not([data-print-portal])) { display: none !important; }
+    :global([data-print-portal]) { display: block !important; }
   }
+  /* The clone must never show on screen, even if afterprint never fires. */
+  :global([data-print-portal]) { display: none; }
 </style>

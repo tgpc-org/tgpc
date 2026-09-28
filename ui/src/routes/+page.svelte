@@ -26,6 +26,24 @@
   // more matches may exist than are displayed — the header says so.
   let capped = $derived(isTruncated(results.length));
 
+  // Fixed widths keep the loading skeleton stable between renders (it used to
+  // use Math.random(), so every render reshuffled the bars).
+  const SKELETON_WIDTHS = [92, 68, 80, 55, 74, 61, 88, 70];
+
+  // Render exactly one results list. Previously the desktop table AND the
+  // mobile cards were both mounted for every row (toggled by CSS only), which
+  // doubled DOM node count on phones. Results only exist after a client
+  // search, so this is never part of SSR output and there is no hydration
+  // mismatch — the media query is correct before the first rows render.
+  let isDesktop = $state(true);
+  $effect(() => {
+    const mq = window.matchMedia('(min-width: 768px)');
+    const update = () => { isDesktop = mq.matches; };
+    update();
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  });
+
   let advFilters = $state<AdvancedFilters>({ valid_till: '' });
   let refinersOpen = $state(false);
 
@@ -492,8 +510,8 @@
     <div transition:fly={{ y: 10, duration: 250, opacity: 0 }}>
     {#if loading}
       <div class="space-y-3 py-4">
-        {#each Array(8) as _, i (i)}
-          <div class="h-4 bg-[var(--t-surface)] rounded animate-pulse" style="width:{40 + Math.random() * 60}%"></div>
+        {#each SKELETON_WIDTHS as w, i (i)}
+          <div class="h-4 bg-[var(--t-surface)] rounded animate-pulse" style="width:{w}%"></div>
         {/each}
       </div>
     {:else}
@@ -559,7 +577,7 @@
       {#if filtered.length === 0}
         <p class="text-[0.85rem] py-8 text-center" style="color:var(--t-muted)">No results</p>
       {:else}
-        <div class="hidden md:block">
+        {#if isDesktop}
         <div use:fitToViewport class="overflow-y-auto overflow-x-auto">
         <table class="w-full" style="table-layout:auto">
           <thead class="sticky top-0 bg-[var(--t-bg)] z-10">
@@ -617,8 +635,8 @@
           </tbody>
         </table>
         </div>
-      </div>
-      <div class="md:hidden space-y-2">
+      {:else}
+        <div class="space-y-2" data-testid="mobile-results">
           {#each sorted as r (r.registration_number)}
             <div class="flex gap-3 p-3 rounded-xl border border-[var(--t-surface)] bg-[var(--t-surface-3)] text-[0.875rem]" style="content-visibility:auto;contain-intrinsic-size:150px">
               <img src={photoUrl(r)} alt="" loading="lazy" decoding="async" width="48" height="58" class="w-12 h-14 rounded-md object-cover bg-[var(--t-surface)] flex-shrink-0" />
@@ -640,6 +658,7 @@
             </div>
           {/each}
         </div>
+      {/if}
       {/if}
     {/if}
     </div>

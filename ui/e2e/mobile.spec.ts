@@ -6,10 +6,10 @@ import { expect, test, type Page } from '@playwright/test';
 // results. Fingerprints are structural, not pixel-based, so they survive
 // copy/stat changes.
 
-// On mobile the results render as cards (the desktop <table> is hidden).
-// This locator targets the card list only; the desktop table is hidden here.
+// On mobile the results render as cards (the desktop table isn't mounted at
+// all). This locator targets the card list only.
 function resultsLocator(page: Page) {
-	return page.locator('.md\\:hidden a[href^="/rph/"]').first().or(page.getByText('No results', { exact: true }));
+	return page.locator('[data-testid="mobile-results"] a[href^="/rph/"]').first().or(page.getByText('No results', { exact: true }));
 }
 
 test('no horizontal overflow on key pages', async ({ page }) => {
@@ -65,7 +65,7 @@ test('footer does not overlay the results list', async ({ page }) => {
 	await expect(footer).toBeVisible();
 	const overlap = await page.evaluate(() => {
 		const f = document.querySelector('footer');
-		const rows = document.querySelectorAll('table tbody tr, .md\\:hidden > div');
+		const rows = document.querySelectorAll('[data-testid="mobile-results"] > div');
 		if (!f || rows.length === 0) return 0;
 		const fr = f.getBoundingClientRect();
 		let worst = 0;

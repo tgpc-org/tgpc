@@ -96,7 +96,14 @@
       <label for="dispatch-search" class="sr-only">Search dispatch files</label>
       <input id="dispatch-search" type="text" bind:value={query} placeholder="Search files"
         aria-label="Search dispatch files"
-        class="w-full pl-9 pr-4 py-1.5 border-b-2 border-[var(--t-border)] text-[0.95rem] bg-transparent outline-none transition-colors focus:border-[#00cc66] max-sm:text-base" />
+        class="w-full pl-9 pr-9 py-1.5 border-b-2 border-[var(--t-border)] text-[0.95rem] bg-transparent outline-none transition-colors focus:border-[#00cc66] max-sm:text-base" />
+      {#if query}
+        <button type="button" onclick={() => (query = '')} aria-label="Clear search"
+          class="absolute right-2 top-1/2 -translate-y-1/2 flex h-5 w-5 items-center justify-center rounded-full border-none cursor-pointer transition-colors"
+          style="background:var(--t-surface);color:var(--t-muted)">
+          <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      {/if}
     </div>
   </div>
 
