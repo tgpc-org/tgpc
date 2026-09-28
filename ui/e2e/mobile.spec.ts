@@ -9,7 +9,9 @@ import { expect, test, type Page } from '@playwright/test';
 // On mobile the results render as cards (the desktop table isn't mounted at
 // all). This locator targets the card list only.
 function resultsLocator(page: Page) {
-	return page.locator('[data-testid="mobile-results"] a[href^="/rph/"]').first().or(page.getByText('No results', { exact: true }));
+	// The empty state may append the query ("No results for “xyz”"), so match
+	// by substring, not exact text.
+	return page.locator('[data-testid="mobile-results"] a[href^="/rph/"]').first().or(page.getByText('No results'));
 }
 
 test('no horizontal overflow on key pages', async ({ page }) => {

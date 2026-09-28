@@ -36,8 +36,11 @@
   }
 
   function backToSearch() {
-    if (window.history.length > 1 && document.referrer) window.history.back();
-    else goto('/');
+    if (window.history.length > 1 && document.referrer) { window.history.back(); return; }
+    // No history (direct/shared link): restore the last search from the
+    // session instead of landing on a blank home page.
+    const last = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('tgpc_last_search') : null;
+    goto(last ? `/?${last}` : '/');
   }
 
   function displayWork(v: string | null | undefined): string {

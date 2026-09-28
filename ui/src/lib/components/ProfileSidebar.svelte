@@ -13,15 +13,23 @@
   } = $props();
 
   let photoError = $state(false);
+  let photoLoaded = $state(false);
 
   // Fixed widths keep the loading skeleton stable between renders.
   const SKELETON_WIDTHS = [92, 70, 84, 60, 78, 66];
 
   $effect(() => {
-    if (open) photoError = false;
+    if (open) { photoError = false; photoLoaded = false; }
   });
 
-  function handlePhotoError() { photoError = true; }
+  function handlePhotoError() { photoError = true; photoLoaded = false; }
+
+  // Initials avatar on a brand tint: more intentional than a generic icon
+  // when the registry photo is missing (or still loading).
+  function initials(name: string | null | undefined): string {
+    if (!name) return '—';
+    return name.trim().split(/\s+/).slice(0, 2).map((w) => w.charAt(0).toUpperCase()).join('') || '—';
+  }
   function formatDate(v: string | null | undefined) { return v || '—'; }
   function statusColor(s: string | null | undefined) { return s === 'Active' ? '#00cc66' : '#ef4444'; }
   // Theme-aware: MPharm's #111827 is invisible on night backgrounds, and
@@ -127,10 +135,18 @@
         <div class="bg-[var(--t-bg)] border border-[var(--t-border)] rounded-xl p-3 space-y-3">
           <div class="flex gap-4 items-start">
             <div class="flex-shrink-0 rounded-lg bg-[var(--t-surface)] overflow-hidden relative" style="width:80px;height:100px">
-              <img src={photo} alt={`${record.name}'s photo`} onerror={handlePhotoError} decoding="async" class="w-full h-full object-cover {photoError ? 'hidden' : ''}" />
-              {#if photoError}
+              {#if !photoLoaded && !photoError}
+                <!-- Shimmer + initials while the photo streams in. -->
+                <div class="absolute inset-0 flex items-center justify-center animate-pulse" aria-hidden="true">
+                  <span class="text-sm font-bold" style="color:var(--t-faint)">{initials(record.name)}</span>
+                </div>
+              {/if}
+              {#if !photoError}
+                <img src={photo} alt={`${record.name}'s photo`} onerror={handlePhotoError} onload={() => (photoLoaded = true)} decoding="async" class="w-full h-full object-cover relative {photoLoaded ? '' : 'opacity-0'}" />
+              {:else}
                 <div class="w-full h-full flex items-center justify-center bg-[var(--t-surface)]">
-                  <svg class="w-10 h-10 text-[var(--t-border-soft)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                  <span class="text-lg font-bold" style="color:var(--t-faint)" aria-hidden="true">{initials(record.name)}</span>
+                  <span class="sr-only">Photo unavailable</span>
                 </div>
               {/if}
             </div>
