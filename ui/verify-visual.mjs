@@ -210,8 +210,10 @@ try {
   await mob.screenshot({ path: `${SHOTS}/mobile-home.png` });
   await mob.locator('#tgpc-search').fill('ram');
   await mob.getByRole('button', { name: 'SEARCH' }).click();
-  await mob.locator('.md\\:hidden > div').first().waitFor({ timeout: 30000 });
-  check('mobile: result cards render', (await mob.locator('.md\\:hidden > div').count()) > 0);
+  // Home results render via matchMedia (isDesktop), not CSS classes —
+  // target the card list by its testid.
+  await mob.locator('[data-testid="mobile-results"] > div').first().waitFor({ timeout: 30000 });
+  check('mobile: result cards render', (await mob.locator('[data-testid="mobile-results"] > div').count()) > 0);
   check('mobile: hint usable (input wide)', await mob.locator('#tgpc-search').boundingBox().then((b) => b && b.width > 250));
   await mob.screenshot({ path: `${SHOTS}/mobile-cards.png` });
   // Refiner collapse on mobile

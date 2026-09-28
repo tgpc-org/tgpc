@@ -74,17 +74,22 @@
   // out to the URL never re-enters here and re-triggers a search.
   let lastPushedQs: string | null = null;
   let firstNav = true;
+  // URL writes are blocked until the first navigation sync has run — the
+  // initial effect flush must not canonicalize an entry URL like /?q=ram to
+  // bare / while state still holds defaults. $state so that flipping it
+  // re-runs the writeUrl effect: a state change that lands entirely within
+  // this window (e.g. typing before hydration finishes) would otherwise
+  // never trigger a URL write, since nothing else changes afterwards.
+  let navSynced = $state(false);
 
   afterNavigate(() => {
     const qs = $page.url.search.replace(/^\?/, '');
-    if (qs === lastPushedQs) return;
-    if (firstNav) {
-      // Initial load: hydration already merged any pre-hydration typing into
-      // state, so an empty query string must not clobber it. Only a URL that
-      // actually carries params (shared link) rehydrates from the URL.
-      firstNav = false;
-      if (!qs) return;
-    }
+    const echoed = qs === lastPushedQs;
+    const isFirst = firstNav;
+    firstNav = false;
+    navSynced = true;
+    if (echoed) return; // our own replaceState echoed back — nothing to sync
+    if (isFirst && !qs) return; // initial load: pre-hydration typing already merged into state
     syncFromUrl(new URLSearchParams($page.url.search));
   });
 
@@ -92,6 +97,9 @@
   // replaceState (no history spam; share/refresh/back still work). The loop
   // terminates because parse(build(state)) === state.
   function writeUrl() {
+    // Read all tracked state BEFORE the navSynced guard: a Svelte 5 effect
+    // that returns before reading anything collects no dependencies and
+    // would never re-run when the state later changes.
     const s: SearchUrlState = {
       q: query.trim(),
       cat: category,
@@ -104,8 +112,11 @@
       status: (advFilters.status || '') as SearchUrlState['status'],
       valid: advFilters.valid_till || ''
     };
+    if (!navSynced) return;
     const qs = buildSearchQuery(s).toString();
-    const current = $page.url.search.replace(/^\?/, '');
+    // location.search, not $page.url: our own replaceState can leave the
+    // SvelteKit page store stale, which would make this comparison lie.
+    const current = location.search.replace(/^\?/, '');
     if (qs === current) return;
     lastPushedQs = qs;
     // history.state is the deserialized (plain) history entry — passing
