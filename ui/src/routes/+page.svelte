@@ -283,6 +283,18 @@
     return m;
   });
 
+  // ---- Chunked rendering ----------------------------------------------------
+  // A full result slice is 200 rows; mounting every row (and its photo) at
+  // once hurts low-end phones even with content-visibility on each row. Show
+  // 50 and grow on demand, mirroring the dispatch list. Reset on anything
+  // that reorders/replaces the list — refiner edits can only shrink the
+  // filtered set, so they need no reset.
+  const RESULT_PAGE_SIZE = 50;
+  let visibleCount = $state(RESULT_PAGE_SIZE);
+  $effect(() => { void results; void category; void sortKey; void sortDir; visibleCount = RESULT_PAGE_SIZE; });
+  let visibleRows = $derived(sorted.slice(0, visibleCount));
+  let remainingRows = $derived(Math.max(0, filtered.length - visibleRows.length));
+
   // Brand fills carry ink text: white on brand green is only 2.1:1.
   function chipStyle(cat: CategoryFilter): string {
     if (cat !== category) return 'background:var(--t-surface);color:var(--t-ink-soft)';
@@ -483,9 +495,18 @@
             {/if}
           </div>
         {:else if isDesktop}
-          <ResultsTable rows={sorted} sortKey={sortKey} sortDir={sortDir} onsort={toggleSort} onopen={openDrawer} />
+          <ResultsTable rows={visibleRows} sortKey={sortKey} sortDir={sortDir} onsort={toggleSort} onopen={openDrawer} />
         {:else}
-          <MobileCards rows={sorted} onopen={openDrawer} />
+          <MobileCards rows={visibleRows} onopen={openDrawer} />
+        {/if}
+        {#if remainingRows > 0}
+          <div class="flex justify-center py-3">
+            <button type="button" onclick={() => (visibleCount += RESULT_PAGE_SIZE)}
+              class="px-4 py-2.5 rounded-full text-[0.75rem] font-semibold cursor-pointer border-none transition-colors hover:bg-[rgba(0,204,102,0.14)]"
+              style="background:var(--t-surface-3);color:var(--t-ink-soft)">
+              Load more · {remainingRows.toLocaleString()} remaining
+            </button>
+          </div>
         {/if}
       {/if}
     </div>
