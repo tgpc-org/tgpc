@@ -3,7 +3,8 @@
   import { searchRecords, searchWithRefiners, getRecord, type AdvancedFilters } from '$lib/api';
   import { parseDDMonYYYY, formatDDMonYYYY } from '$lib/dates';
   import { PUBLIC_R2_PHOTO_BASE } from '$env/static/public';
-  import { CATEGORIES as CAT_NAMES } from '$lib/colors';
+  import { CATEGORIES as CAT_NAMES, CATEGORY_COLORS } from '$lib/colors';
+  import { recentRecords, recordViewed } from '$lib/recent';
   import { MAX_SEARCH_RESULTS, isTruncated } from '$lib/searchLimits';
   import { fly } from 'svelte/transition';
   import { page } from '$app/stores';
@@ -301,6 +302,13 @@
     return 'background:#00cc66;color:var(--t-ink)';
   }
 
+  /** Category colour as a dot: the hues fail AA as small text. */
+  function categoryDot(cat: string): string {
+    const c = CATEGORY_COLORS[cat as keyof typeof CATEGORY_COLORS];
+    if (!c || c === '#111827') return 'var(--t-ink)';
+    return c;
+  }
+
   // ---- Empty landing state -------------------------------------------------
   // The first visit used to be a bare search input over ~450px of blank
   // space. These starter chips carry verified live examples so every tap
@@ -360,6 +368,17 @@
 
   let drawerSeq = 0;
 
+  // ---- Recently viewed (homepage empty state) ------------------------------
+  // Loaded client-side only (localStorage); entries record on successful
+  // drawer fetches and the strip re-opens the drawer by RPC number, with the
+  // full record refetched so stale entries can't show outdated data.
+  // localStorage isn't reactive, so a version bump drives re-reads.
+  let recentVersion = $state(0);
+  let recent = $derived.by(() => {
+    void recentVersion;
+    return recentRecords();
+  });
+
   async function openDrawer(reg: string) {
     const clean = reg.trim().toUpperCase();
     if (drawerOpen && drawerReg === clean) { closeDrawer(); return; }
@@ -373,7 +392,11 @@
       const rec = await getRecord(clean);
       if (mySeq !== drawerSeq) return; // user clicked another profile meanwhile
       if (!rec) { drawerError = `No record found for ${clean}`; }
-      else drawerRecord = rec;
+      else {
+        drawerRecord = rec;
+        recordViewed({ registration_number: rec.registration_number, name: rec.name, category: rec.category });
+        recentVersion++;
+      }
     } catch {
       if (mySeq !== drawerSeq) return;
       drawerError = 'Failed to load profile';
@@ -419,6 +442,24 @@
           </button>
         {/each}
       </div>
+      {#if recent.length > 0}
+        <div class="space-y-2 pt-1">
+          <p class="text-[0.65rem] font-semibold uppercase tracking-widest" style="color:var(--t-muted)">Recently viewed</p>
+          <div class="flex flex-wrap justify-center gap-2">
+            {#each recent as r (r.registration_number)}
+              <button
+                onclick={() => openDrawer(r.registration_number)}
+                class="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[0.75rem] font-semibold cursor-pointer border-none transition-colors hover:bg-[rgba(0,204,102,0.14)]"
+                style="background:var(--t-surface-3);color:var(--t-ink-soft)"
+                aria-label="Open profile for {r.name}, {r.registration_number}"
+              >
+                <span class="h-1.5 w-1.5 rounded-full shrink-0" style="background:{categoryDot(r.category)}" aria-hidden="true"></span>
+                {r.name}
+              </button>
+            {/each}
+          </div>
+        </div>
+      {/if}
       <p class="text-[0.75rem]">
         <a href="/notice" class="underline underline-offset-2" style="color:var(--t-link)">Browse the latest council notices</a>
       </p>
