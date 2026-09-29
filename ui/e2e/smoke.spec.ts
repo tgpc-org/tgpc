@@ -20,6 +20,28 @@ test('search flow resolves to results or empty state', async ({ page }) => {
 	await expect(table.or(empty)).toBeVisible({ timeout: 30_000 });
 });
 
+test('input typed before hydration survives and enables SEARCH', async ({ page }) => {
+	// Regression guard: a template or dependency change once wiped any input
+	// typed during boot (hydration re-rendered the field from empty state),
+	// silently killing every test that fills before the app is ready — and
+	// every real user who beats hydration to the keyboard.
+	//
+	// The race is load-dependent (on an idle machine hydration usually wins),
+	// so it is forced here: JS modules get 400ms of artificial latency and
+	// goto resolves at 'commit' (HTML streamed, modules still in flight),
+	// making fill() land pre-hydration deterministically. Hydration must
+	// preserve the user's typing; the SEARCH button existing afterwards
+	// proves hydrated state holds the query.
+	await page.route(/\.js(\?|$)/, async (route) => {
+		await new Promise((r) => setTimeout(r, 400));
+		await route.continue();
+	});
+	await page.goto('/', { waitUntil: 'commit' });
+	await page.locator('#tgpc-search').fill('ram');
+	await expect(page.locator('#tgpc-search')).toHaveValue('ram', { timeout: 30_000 });
+	await expect(page.getByRole('button', { name: 'SEARCH' })).toBeVisible({ timeout: 30_000 });
+});
+
 test('homepage empty state: starter chips render and run a search', async ({ page }) => {
 	await page.goto('/');
 	// First visit must not be a blank page: the empty state offers a way in.
