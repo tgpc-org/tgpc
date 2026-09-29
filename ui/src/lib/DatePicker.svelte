@@ -93,6 +93,11 @@
     } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
       open = true;
+    } else if (open && (e.key === 'Enter' || e.key === ' ')) {
+      // Combobox pattern: activate the focused day, mirroring Space so the
+      // semantic role and keyboard behaviour agree.
+      e.preventDefault();
+      pickerRef?.querySelector<HTMLElement>('button[data-date]:focus')?.click();
     }
   }
 
@@ -142,6 +147,8 @@
     bind:this={inputRef}
     aria-haspopup="dialog"
     aria-expanded={open}
+    role="combobox"
+    aria-controls="datepicker-dialog"
     onfocus={() => {
       open = true;
       if (value) {
@@ -156,6 +163,7 @@
 <div
       class="absolute left-0 lg:left-auto lg:right-0 top-full mt-1 z-30 w-60 max-w-[calc(100vw-1.5rem)] bg-[var(--t-bg)] border border-[var(--t-border)] rounded-lg shadow-lg p-2"
       role="dialog"
+      id="datepicker-dialog"
       aria-label="Date picker"
       tabindex="-1"
       transition:fade={{ duration: 100 }}
@@ -184,7 +192,7 @@
             <button type="button" onclick={() => select(d)}
               data-date={iso(d)}
               aria-label={ariaDate(d)}
-              aria-selected={value === iso(d)}
+              aria-pressed={value === iso(d)}
               aria-current={iso(d) === today() ? 'date' : undefined}
               class="h-8 text-[0.8rem] rounded-md transition-colors hover:bg-[rgba(0,204,102,0.12)] cursor-pointer border-none"
               style={cellStyle(d)}>

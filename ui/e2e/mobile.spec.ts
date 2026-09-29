@@ -56,6 +56,33 @@ test('refiners collapse behind the toggle and expand on tap', async ({ page }) =
 	await expect(page.locator('#refiner-fields')).toBeVisible();
 });
 
+test('profile drawer is a full-width bottom sheet', async ({ page }) => {
+	await page.goto('/');
+	await page.locator('#tgpc-search').fill('ram');
+	await page.getByRole('button', { name: 'SEARCH' }).click();
+	const link = page.locator('[data-testid="mobile-results"] a[href^="/rph/"]').first().or(page.getByText('No results'));
+	await expect(link).toBeVisible({ timeout: 30_000 });
+	if (await page.getByText('No results', { exact: true }).isVisible()) test.skip(true, 'no results to open');
+	const profileLink = page.locator('[data-testid="mobile-results"] a[aria-label^="View profile"]').first();
+	// Retry: hydration may not have attached the click handler yet.
+	await expect(async () => {
+		await profileLink.click();
+		await expect(page.locator('[role="dialog"]')).toBeVisible({ timeout: 5_000 });
+	}).toPass({ timeout: 30_000 });
+	const dlg = page.locator('[role="dialog"]');
+	const vp = page.viewportSize()!;
+	// Final resting geometry: pinned to the bottom edge, full width, capped
+	// at 88dvh — the native-style bottom sheet. (A parked fly-in would fail
+	// the bottom-edge assertion, since the sheet starts 1500px below.)
+	await expect(async () => {
+		const box = await dlg.boundingBox();
+		expect(box).not.toBeNull();
+		expect(Math.abs(box!.y + box!.height - vp.height)).toBeLessThanOrEqual(2);
+		expect(box!.x).toBeLessThanOrEqual(1);
+		expect(box!.width).toBeGreaterThanOrEqual(vp.width - 1);
+	}).toPass({ timeout: 10_000 });
+});
+
 test('footer does not overlay the results list', async ({ page }) => {
 	await page.goto('/');
 	await page.locator('#tgpc-search').fill('ram');

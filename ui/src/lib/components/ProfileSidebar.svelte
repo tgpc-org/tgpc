@@ -4,6 +4,19 @@
   import { fly, fade } from 'svelte/transition';
 import { prefersReducedMotion } from '$lib/motion';
 
+// Drawer mode follows the component's own CSS breakpoint (Tailwind sm,
+// 640px): side sheet on desktop, bottom sheet on phones — like a native
+// app. The fly-in axis matches the mode so the sheet rises from the
+// bottom edge instead of sliding in from off-screen right.
+let isWide = $state(true);
+let flyFrom = $derived(
+  prefersReducedMotion()
+    ? { x: 0, y: 0, duration: 0 }
+    : isWide
+      ? { x: 420, y: 0, duration: 220 }
+      : { x: 0, y: 1500, duration: 240 }
+);
+
   let { open = false, record = null as PharmacistRecord | null, photo = '', loading = false, error = null as string | null, onClose = () => {} }: {
     open?: boolean;
     record?: PharmacistRecord | null;
@@ -70,6 +83,14 @@ import { prefersReducedMotion } from '$lib/motion';
   let closeBtn = $state<HTMLButtonElement | undefined>(undefined);
 
   $effect(() => {
+    const mq = window.matchMedia('(min-width: 640px)');
+    const update = () => { isWide = mq.matches; };
+    update();
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  });
+
+  $effect(() => {
     if (open) {
       document.body.style.overflow = 'hidden';
       // Focus close button on open
@@ -109,12 +130,18 @@ import { prefersReducedMotion } from '$lib/motion';
   <div
     bind:this={drawerEl}
     tabindex="-1"
-    class="fixed right-0 top-0 z-50 h-dvh w-full sm:w-[420px] bg-[var(--t-bg)] border-l border-[var(--t-border)] overflow-y-auto flex flex-col focus:outline-none"
+    class="fixed z-50 bg-[var(--t-bg)] border-[var(--t-border)] overflow-y-auto flex flex-col focus:outline-none {isWide
+      ? 'right-0 top-0 bottom-0 left-auto h-dvh w-full sm:w-[420px] border-l'
+      : 'left-0 right-0 bottom-0 top-auto max-h-[88dvh] rounded-t-2xl border-t pb-[env(safe-area-inset-bottom,0px)]'}"
     role="dialog"
     aria-modal="true"
     aria-label={record ? `${record.name} profile` : 'Pharmacist profile'}
-    transition:fly={{ x: 420, duration: prefersReducedMotion() ? 0 : 220 }}
+    transition:fly={{ x: flyFrom.x, y: flyFrom.y, duration: flyFrom.duration }}
   >
+    {#if !isWide}
+      <!-- Native-style grab handle; purely decorative. -->
+      <div class="shrink-0 mx-auto mt-2 h-1 w-9 rounded-full" style="background:var(--t-border-soft)" aria-hidden="true"></div>
+    {/if}
     <div data-print-omit class="sticky top-0 z-10 flex items-center justify-between gap-2 bg-[var(--t-bg)] border-b border-[var(--t-border)] px-4 py-3">
       <span class="text-sm font-semibold text-[var(--t-ink)] truncate">{loading ? 'Loading…' : error ? 'Not found' : 'Profile'}</span>
       <button bind:this={closeBtn} onclick={onClose} aria-label="Close" class="w-8 h-8 flex items-center justify-center rounded-full border border-[var(--t-border)] text-[var(--t-muted)] hover:bg-[var(--t-surface-3)] transition-colors">
