@@ -10,7 +10,10 @@
 
   let files = $state<DispatchFile[]>([]);
   let years = $state<string[]>([]);
-  let tab = $state<string>('all');
+  // Visitors browse dispatch lists by year, not across all of them at once,
+  // so there is deliberately no "All" tab: null means "auto" and resolves
+  // to the latest year as soon as the year list is known.
+  let tab = $state<string | null>(null);
   let query = $state('');
   let loading = $state(true);
 
@@ -40,38 +43,23 @@
       .filter(f => f.parsed)
       .sort((a, b) => b.parsed!.date.getTime() - a.parsed!.date.getTime());
     years = [...new Set(files.map(f => f.parsed!.y))].sort((a, b) => +b - +a);
-    // Preserve the user's tab across background refetches.
-    if (tab !== 'all' && !years.includes(tab)) tab = 'all';
+    // Preserve the user's tab across background refetches; auto/latest when
+    // unset or gone (e.g. a refetch that lost the newest year's files).
+    if (tab === null || !years.includes(tab)) tab = years[0] ?? null;
   }
 
   let filtered = $derived.by(() => files.filter(f => {
     if (!f.parsed) return false;
-    // 'all' is the unfiltered tab, not a year — comparing a year to the
-    // literal 'all' emptied the list on the default tab.
-    if (tab !== 'all' && f.parsed.y !== tab) return false;
+    // tab is null only before the first build(); the loading gate keeps
+    // that state off-screen.
+    if (tab === null || f.parsed.y !== tab) return false;
     if (!query) return true;
     const q = query.toLowerCase();
     return f.name.toLowerCase().includes(q) || fmt(f.parsed).toLowerCase().includes(q);
   }));
 
-  // Chunked views of `filtered`: on the 'all' tab the budget is spent year
-  // by year so a group can be cut mid-way and continue after "Load more".
-  let limitedGroups = $derived.by(() => {
-    if (tab !== 'all') return [];
-    let remaining = visibleCount;
-    const groups: { y: string; files: DispatchFile[]; total: number }[] = [];
-    for (const y of years) {
-      const fy = filtered.filter(f => f.parsed?.y === y);
-      if (fy.length === 0) continue;
-      const take = fy.slice(0, Math.max(0, remaining));
-      groups.push({ y, files: take, total: fy.length });
-      remaining -= take.length;
-      if (remaining <= 0) break;
-    }
-    return groups;
-  });
-
-  let limitedFlat = $derived(tab === 'all' ? [] : filtered.slice(0, visibleCount));
+  // Chunked view of `filtered`: renders PAGE_SIZE cards and grows on demand.
+  let limited = $derived(filtered.slice(0, visibleCount));
   let remainingCount = $derived(Math.max(0, filtered.length - visibleCount));
 
   const cached = browser && cachedOrNull<{ name: string; size?: number; stale?: boolean }[]>("tgpc_dispatch");
@@ -135,11 +123,6 @@
   </div>
 
   <div class="-mx-1 px-1 flex-nowrap overflow-x-auto sm:flex-wrap gap-1.5 text-[0.75rem]" style="scrollbar-width:thin;scrollbar-color:var(--t-border) transparent;-webkit-overflow-scrolling:touch">
-    <button onclick={() => tab = 'all'}
-      class="px-2.5 py-1.5 rounded text-[0.75rem] font-semibold transition-colors cursor-pointer border-none whitespace-nowrap"
-      style={tab === 'all' ? 'background:#00cc66;color:var(--t-ink)' : 'background:var(--t-surface);color:var(--t-ink-soft)'}>
-      All ({files.length})
-    </button>
     {#each years as y (y)}
       <button onclick={() => tab = y}
         class="px-2.5 py-1.5 rounded text-[0.75rem] font-semibold transition-colors cursor-pointer border-none whitespace-nowrap"
@@ -159,18 +142,9 @@
     <p class="text-[0.85rem] py-8 text-center" style="color:var(--t-muted)">No files</p>
   {:else}
     <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-      {#if tab === 'all'}
-        {#each limitedGroups as g (g.y)}
-          <div class="col-span-full text-[0.7rem] font-semibold text-[var(--t-muted)] uppercase tracking-wider py-2">{g.y} — {g.total}</div>
-          {#each g.files as f (f.name)}
-            {@render dispatchCard(f)}
-          {/each}
-        {/each}
-      {:else}
-        {#each limitedFlat as f (f.name)}
-          {@render dispatchCard(f)}
-        {/each}
-      {/if}
+      {#each limited as f (f.name)}
+        {@render dispatchCard(f)}
+      {/each}
     </div>
     {#if remainingCount > 0}
       <div class="flex justify-center pt-3">

@@ -11,7 +11,10 @@
 
   let notices = $state<Notice[]>([]);
   let years = $state<string[]>([]);
-  let tab = $state<string>('all');
+  // Visitors browse notices by year, not across all of them at once, so
+  // there is deliberately no "All" tab: null means "auto" and resolves to
+  // the latest year as soon as the year list is known.
+  let tab = $state<string | null>(null);
   let query = $state('');
   let loading = $state(true);
 
@@ -36,9 +39,9 @@
   // which would blank the whole page. Index keys are safe here because the
   // list is replaced wholesale whenever the data reloads.
   let filtered = $derived.by(() => notices.filter(n => {
-    // 'all' is the unfiltered tab, not a year — comparing a year to the
-    // literal 'all' emptied the list on the default tab.
-    if (tab !== 'all' && getYr(n.date) !== tab) return false;
+    // tab is null only before the first buildYears(); the loading gate keeps
+    // that state off-screen.
+    if (tab === null || getYr(n.date) !== tab) return false;
     if (!query) return true;
     const q = query.toLowerCase();
     return n.title.toLowerCase().includes(q) || fmtDate(n.date).toLowerCase().includes(q);
@@ -70,8 +73,9 @@
 
   function buildYears() {
     years = [...new Set(notices.map(n => getYr(n.date)))].sort((a, b) => +b - +a);
-    // Preserve the user's tab across background refetches.
-    if (tab !== 'all' && !years.includes(tab)) tab = 'all';
+    // Preserve the user's tab across background refetches; auto/latest when
+    // unset or gone (e.g. a refetch that lost the newest year's files).
+    if (tab === null || !years.includes(tab)) tab = years[0] ?? null;
   }
 
 </script>
@@ -140,11 +144,6 @@
   </div>
 
   <div class="-mx-1 px-1 flex-nowrap overflow-x-auto sm:flex-wrap gap-1.5 text-[0.75rem]" style="scrollbar-width:thin;scrollbar-color:var(--t-border) transparent;-webkit-overflow-scrolling:touch">
-    <button onclick={() => tab = 'all'}
-      class="px-2.5 py-1.5 rounded text-[0.75rem] font-semibold transition-colors cursor-pointer border-none whitespace-nowrap"
-      style={tab === 'all' ? 'background:#00cc66;color:var(--t-ink)' : 'background:var(--t-surface);color:var(--t-ink-soft)'}>
-      All ({notices.length})
-    </button>
     {#each years as y (y)}
       <button onclick={() => tab = y}
         class="px-2.5 py-1.5 rounded text-[0.75rem] font-semibold transition-colors cursor-pointer border-none whitespace-nowrap"
@@ -170,31 +169,11 @@
           <span>Title / Description</span>
           <span style="justify-self:start">Links</span>
         </div>
-        {#if tab === 'all'}
-          {#each years as y (y)}
-            {@const fy = filtered.filter(n => getYr(n.date) === y)}
-            {#if fy.length > 0}
-              <div class="text-[0.7rem] font-semibold text-[var(--t-muted)] uppercase tracking-wider py-2 px-1">{y} — {fy.length}</div>
-              {@render noticeRows(fy)}
-            {/if}
-          {/each}
-        {:else}
-          {@render noticeRows(filtered)}
-        {/if}
+        {@render noticeRows(filtered)}
       </div>
 
       <div class="md:hidden space-y-1">
-        {#if tab === 'all'}
-          {#each years as y (y)}
-            {@const fy = filtered.filter(n => getYr(n.date) === y)}
-            {#if fy.length > 0}
-              <div class="text-[0.7rem] font-semibold text-[var(--t-muted)] uppercase tracking-wider py-2">{y} — {fy.length}</div>
-              {@render noticeCards(fy)}
-            {/if}
-          {/each}
-        {:else}
-          {@render noticeCards(filtered)}
-        {/if}
+        {@render noticeCards(filtered)}
       </div>
     </div>
   {/if}
