@@ -16,6 +16,7 @@ from tgpc.utils import (
     CREDENTIAL_KEYS,
     _get_keychain,
     _set_keychain,
+    warp_cli_run,
 )
 
 
@@ -27,7 +28,7 @@ _warp_connected_by_us = False
 def _warp_available() -> bool:
     """Check if warp-cli is installed and reachable."""
     try:
-        r = subprocess.run(["warp-cli", "status"], capture_output=True, text=True, timeout=5)
+        r = warp_cli_run("status", timeout=5)
         return r.returncode == 0 or "Connected" in r.stdout or "Disconnected" in r.stdout
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return False
@@ -42,12 +43,12 @@ def _warp_connect() -> bool:
         return False
 
     try:
-        r = subprocess.run(["warp-cli", "status"], capture_output=True, text=True, timeout=5)
+        r = warp_cli_run("status", timeout=5)
         if "Connected" in r.stdout:
             print("WARP: already connected (leaving it up on exit)")
             return False
 
-        r = subprocess.run(["warp-cli", "connect"], capture_output=True, text=True, timeout=15)
+        r = warp_cli_run("connect", timeout=15)
         if r.returncode == 0:
             print("WARP: connected")
             return True
@@ -65,7 +66,7 @@ def _warp_disconnect():
         return
 
     try:
-        r = subprocess.run(["warp-cli", "disconnect"], capture_output=True, text=True, timeout=15)
+        r = warp_cli_run("disconnect", timeout=15)
         if r.returncode == 0:
             print("WARP: disconnected")
         else:

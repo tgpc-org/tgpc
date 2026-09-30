@@ -36,7 +36,7 @@ from bs4 import BeautifulSoup
 
 from tgpc.progress import ProgressBar, step
 from tgpc.scraper import _TGPCTLSAdapter
-from tgpc.utils import BlockedError, Config, setup_logging
+from tgpc.utils import BlockedError, Config, setup_logging, warp_cli_run
 
 logger = setup_logging("tgpc.details_dg")
 
@@ -541,7 +541,7 @@ WARP_EGRESS_URL = "https://api.ipify.org"
 
 def warp_available() -> bool:
     try:
-        r = subprocess.run(["warp-cli", "status"], capture_output=True, text=True, timeout=10)
+        r = warp_cli_run("status", timeout=10)
         return r.returncode == 0
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return False
@@ -560,11 +560,11 @@ def egress_ip(timeout: int = 15) -> str:
 def cycle_warp(connect_timeout: int = 20) -> bool:
     """Disconnect+reconnect WARP. True only if tunnel reports connected after."""
     try:
-        subprocess.run(["warp-cli", "disconnect"], capture_output=True, text=True, timeout=15)
+        warp_cli_run("disconnect", timeout=15)
         time.sleep(2)
-        subprocess.run(["warp-cli", "connect"], capture_output=True, text=True, timeout=connect_timeout)
+        warp_cli_run("connect", timeout=connect_timeout)
         time.sleep(5)
-        r = subprocess.run(["warp-cli", "status"], capture_output=True, text=True, timeout=10)
+        r = warp_cli_run("status", timeout=10)
         return "Connected" in (r.stdout or "")
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return False

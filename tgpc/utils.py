@@ -101,6 +101,31 @@ def setup_logging(name: str = "tgpc") -> logging.Logger:
     return logger
 
 
+# --- Cloudflare WARP ---
+
+
+def warp_cli_run(*args: str, timeout: int = 10):
+    """Run `warp-cli`, tolerating both CLI generations.
+
+    2026.x clients require `--accept-tos` on mutating calls (and gate even
+    `status` behind it); older clients reject the unknown global flag. So:
+    try flagged first, fall back to bare when the flag itself is refused.
+    Returns the CompletedProcess (never raises on flag mismatch).
+    """
+    try:
+        r = subprocess.run(
+            ["warp-cli", "--accept-tos", *args],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        raise
+    if r.returncode != 0 and ("unexpected argument" in (r.stderr or "") or "unrecognized" in (r.stderr or "")):
+        r = subprocess.run(["warp-cli", *args], capture_output=True, text=True, timeout=timeout)
+    return r
+
+
 # --- Credentials ---
 
 KEYCHAIN_SERVICE = "tgpc"
