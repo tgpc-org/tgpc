@@ -105,7 +105,7 @@ Checkpoint + stats are pushed to `tgpc-dg-private/ops/` after every batch.
 |---|---|
 | Progress | `ssh ubuntu@<vm> 'python3 -c "import json;s=json.load(open(\"tgpc/data/dg_stats.json\"));print(s.get(\"done\"),s.get(\"failed\"),s.get(\"fail_by_reason\"))"'` |
 | Dashboard | `ssh -L 8899:localhost:8899 ubuntu@<vm>` → `~/tgpc` → `python3 scripts/dg_dashboard.py --port 8899` → open `http://localhost:8899/` |
-| Clean stop | `ssh ubuntu@<vm> 'touch ~/tgpc/data/dg_halt'` (halts after current batch) then `sudo systemctl stop tgpc-dg-fetch` |
+| Clean stop | Dashboard STOP (halts after current record, stays stopped) or `touch ~/tgpc/data/dg_halt` (halts after current batch). Resume: `sudo systemctl restart tgpc-dg-fetch`. Do NOT use dashboard START on the VM page — it spawns a second fetch outside systemd; START is Mac-only. |
 | Egress IP | `curl -s https://api.ipify.org` during a run (must differ from the VM's external IP = masked via WARP) |
 | SSH survival | Operator IPs in `TGPC_SSH_EXCLUDE` (`~/.tgpc_env`) bypass the tunnel; tunnel is DOWN between runs (disconnect-on-exit trap) |
 | Logs | `journalctl -u tgpc-dg-fetch -f` + `~/tgpc/data/dg_fetch.log` |

@@ -172,7 +172,15 @@ while true; do
     --sync-cloud --sync-every 50 \
     --warp-rotate-every 500 --warp-max-cycles 3
   backup_checkpoint
-  # fetch-dg exit 0 covers both batch-complete and STOP-file halt; loop on.
+  # Dashboard STOP writes data/dg_stop, which fetch-dg honors by halting the
+  # batch (recording stopped:true in stats). Without this break the loop would
+  # march straight into the next batch — STOP must stay stopped. Resume with:
+  #   sudo systemctl restart tgpc-dg-fetch   (VM) — or dashboard START (Mac).
+  if python3 -c "import json,sys; sys.exit(0 if json.load(open('data/dg_stats.json')).get('stopped') else 1)" 2>/dev/null; then
+    echo "stop requested via dashboard — loop halted (restart service to resume)"
+    break
+  fi
+  # fetch-dg exit 0 covers batch-complete; loop on.
 done
 backup_checkpoint
 echo "vps_fetch.sh finished"
