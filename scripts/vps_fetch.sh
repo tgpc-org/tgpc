@@ -169,15 +169,19 @@ while true; do
   gen_ids "$BATCH"
   [ -s data/dg_ids_vps.txt ] || { echo "ID pool exhausted — all done"; break; }
   python3 -m tgpc fetch-dg --ids-file data/dg_ids_vps.txt \
-    --sync-cloud --sync-every 50 \
-    --warp-rotate-every 500 --warp-max-cycles 3
+    --sync-cloud --sync-every 50
   backup_checkpoint
   # Dashboard STOP writes data/dg_stop, which fetch-dg honors by halting the
   # batch (recording stopped:true in stats). Without this break the loop would
   # march straight into the next batch — STOP must stay stopped. Resume with:
   #   sudo systemctl restart tgpc-dg-fetch   (VM) — or dashboard START (Mac).
+  # NOTE: no --warp-rotate-every here. Consumer WARP egress is sticky per
+  # account, so the rotation gate can never verify a *different* IP and halts
+  # every 500 records instead. The tunnel itself (masked egress) is what
+  # matters and is established above; blocks are monitored via fail reasons.
   if python3 -c "import json,sys; sys.exit(0 if json.load(open('data/dg_stats.json')).get('stopped') else 1)" 2>/dev/null; then
-    echo "stop requested via dashboard — loop halted (restart service to resume)"
+    reason=$(python3 -c "import json; print(json.load(open('data/dg_stats.json')).get('stop_reason','stop file'))" 2>/dev/null)
+    echo "halted ($reason) — loop stopped (restart service to resume)"
     break
   fi
   # fetch-dg exit 0 covers batch-complete; loop on.
