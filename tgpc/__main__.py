@@ -201,6 +201,12 @@ def main():
     fetch_dg_parser.add_argument("--sync-every", type=int, default=50, help="Supabase batch size for --sync-cloud")
     fetch_dg_parser.add_argument("--max-records", type=int, default=None, help="Stop after N newly processed records")
     fetch_dg_parser.add_argument(
+        "--workers",
+        type=int,
+        default=None,
+        help="Fetch pool size (default: TGPC_DG_WORKERS or 4; max 16 — raise in steps, site filters aggressively)",
+    )
+    fetch_dg_parser.add_argument(
         "--warp-rotate-every",
         type=int,
         default=0,
@@ -348,6 +354,11 @@ def main():
             except Exception as e:
                 print(f"fetch-dg: ignoring unreadable reference ({e})", file=sys.stderr)
         solver = None
+        if args.workers is not None:
+            import tgpc.details_dg as _dg
+
+            _dg.DG_WORKERS = min(max(args.workers, 1), 16)
+            print(f"fetch-dg: workers={_dg.DG_WORKERS} (override)")
         if args.captcha == "manual":
 
             def solver(image_bytes: bytes) -> str:  # noqa: F811

@@ -43,7 +43,22 @@ logger = setup_logging("tgpc.details_dg")
 FORM_PATH = "/pharmacy/getdetailsdg"
 CAPTCHA_PATH = "/captchaimage.jsp"  # root — /pharmacy/captchaimage.jsp 404s
 VIEW_PATH = "/pharmacy/getdetailsviewdg.action"
-DG_WORKERS = 4
+
+
+def _dg_workers() -> int:
+    """Fetch pool size: TGPC_DG_WORKERS override, default 4.
+
+    The source filters aggressively, so raise in steps (6, then 8) and watch
+    the BlockedError rate — back off at the first streak. Clamped to 1..16.
+    """
+    try:
+        n = int(os.environ.get("TGPC_DG_WORKERS", "") or 0)
+    except ValueError:
+        n = 0
+    return min(max(n or 4, 1), 16)
+
+
+DG_WORKERS = _dg_workers()
 
 REG_RE = re.compile(r"^(TS|TG|TSDR|TGDR)\d+$", re.I)
 MOBILE_RE = re.compile(r"^[6-9]\d{9}$")

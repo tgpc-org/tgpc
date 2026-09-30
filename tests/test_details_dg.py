@@ -489,6 +489,27 @@ class WorkerFixedTests(unittest.TestCase):
             rows = [json.loads(line) for line in out.read_text().splitlines()]
             self.assertEqual(sorted(r["registration_number"] for r in rows), sorted(regs))
 
+    def test_workers_env_override_and_clamp(self):
+        import importlib
+        import os
+        import tgpc.details_dg as dg
+
+        old = os.environ.get("TGPC_DG_WORKERS")
+        try:
+            for value, expected in (("6", 6), ("99", 16), ("0", 4), ("abc", 4), ("-3", 1)):
+                os.environ["TGPC_DG_WORKERS"] = value
+                dg = importlib.reload(dg)
+                self.assertEqual(dg.DG_WORKERS, expected, f"TGPC_DG_WORKERS={value!r}")
+        finally:
+            if old is None:
+                os.environ.pop("TGPC_DG_WORKERS", None)
+            else:
+                os.environ["TGPC_DG_WORKERS"] = old
+            importlib.reload(dg)
+        from tgpc.details_dg import DG_WORKERS
+
+        self.assertEqual(DG_WORKERS, 4)
+
 
 class LiveWatchTests(unittest.TestCase):
     def _paths(self, tmp):
