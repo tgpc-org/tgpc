@@ -1,5 +1,5 @@
 import type { PharmacistRecord, Notice, DispatchFile, Stats, Category } from './types';
-import { supabase } from './supabase';
+import { getSupabase } from './supabase';
 import { MAX_SEARCH_RESULTS } from './searchLimits';
 import { formatDDMonYYYY } from './dates';
 
@@ -43,6 +43,7 @@ function stripWildcards(s: string): string {
 export async function searchRecords(query: string): Promise<PharmacistRecord[]> {
   const q = validateQuery(query);
   if (q.length < 3) return [];
+  const supabase = await getSupabase();
   try {
     // Capped at MAX_SEARCH_RESULTS (CODE_REVIEW.md H5) — previously `lim: 100000`,
     // which pulled essentially the whole registry into the browser on a broad query.
@@ -84,6 +85,7 @@ export async function searchWithRefiners(query: string, f: AdvancedFilters & { c
   // If only live query and no refiners, keep RPC path for ranked results
   if (hasQ && !hasFilters) return searchRecords(query);
   // Otherwise build filtered query (server-side, capped like every other path)
+  const supabase = await getSupabase();
   try {
     let qb = supabase.from('rph').select('registration_number, name, father_name, category, gender, validity_date, status, photo_url');
     if (hasQ) {
@@ -113,6 +115,7 @@ export async function searchWithRefiners(query: string, f: AdvancedFilters & { c
 export async function getRecord(regNo: string): Promise<PharmacistRecord | null> {
   const clean = regNo.trim().toUpperCase();
   if (!clean) return null;
+  const supabase = await getSupabase();
   try {
     const { data, error } = await supabase
       .from('rph')
@@ -127,6 +130,7 @@ export async function getRecord(regNo: string): Promise<PharmacistRecord | null>
 }
 
 export async function getStats(): Promise<Stats | null> {
+  const supabase = await getSupabase();
   try {
     const { data, error } = await supabase.rpc('get_rph_stats');
     if (error) throw error;

@@ -1,12 +1,14 @@
 import type { LayoutLoad } from './$types';
 import type { Stats } from '$lib/types';
-import { supabase } from '$lib/supabase';
+import { getSupabase } from '$lib/supabase';
 
 export const load: LayoutLoad = async () => {
   let stats: Stats | null = null;
   let lastSync = '';
 
   // Parallel — both must resolve before first paint, so don't await sequentially.
+  // One lazy supabase client awaited once; both queries share it and run concurrently.
+  const supabase = await getSupabase();
   const [statsRes, syncRes] = await Promise.all([
     supabase.rpc('get_rph_stats').then(
       (r) => r,

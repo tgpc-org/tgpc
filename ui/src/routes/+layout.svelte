@@ -20,7 +20,7 @@
   import '../app.css';
   import type { ConnectionStatus, Stats } from '$lib/types';
   import { getStats } from '$lib/api';
-  import { supabase } from '$lib/supabase';
+  import { getSupabase, type RealtimeChannel } from '$lib/supabase';
   import { page } from '$app/stores';
   import { CATEGORY_COLORS, CATEGORIES, CATEGORY_KEYS } from '$lib/colors';
   import { PUBLIC_SUPABASE_URL } from '$env/static/public';
@@ -54,6 +54,7 @@
 
   async function loadLastSync() {
     try {
+      const supabase = await getSupabase();
       const { data, error } = await supabase
         .from('metadata')
         .select('value')
@@ -78,12 +79,29 @@
     // below keeps them fresh.
     if (!ssrStats) loadStats();
     if (!ssrSync) loadLastSync();
-    const channel = supabase
-      .channel('metadata-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'metadata', filter: `key=eq.last_sync` }, () => { loadStats(); loadLastSync(); })
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    // supabase-js loads lazily (lib/supabase.ts), so the realtime subscription
+    // resolves once the lazy chunk arrives. An async effect body cannot return
+    // cleanup directly, so unsubscription happens inside the promise with a
+    // disposed flag (no leak on navigation).
+    let disposed = false;
+    let channel: RealtimeChannel | undefined;
+    getSupabase().then((supabase) => {
+      if (disposed) return;
+      channel = supabase
+        .channel('metadata-changes')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'metadata', filter: `key=eq.last_sync` }, () => { loadStats(); loadLastSync(); })
+        .subscribe();
+    });
+    return () => {
+      disposed = true;
+      if (channel) supabaseRemoveChannel(channel);
+    };
   });
+
+  async function supabaseRemoveChannel(channel: RealtimeChannel) {
+    const supabase = await getSupabase();
+    supabase.removeChannel(channel);
+  }
 
   // Text stays on the ink/muted tokens (both AA on every surface); brand
   // red/green appear as dots/fills, where contrast rules do not apply.
