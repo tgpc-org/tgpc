@@ -55,10 +55,10 @@ scp scripts/vps_bootstrap.sh ubuntu@<vm>:~/
 ssh ubuntu@<vm> 'bash ~/vps_bootstrap.sh'
 ```
 
-This installs `tesseract-ocr` (captcha OCR), `rclone`, `cloudflare-warp`,
-connects **WARP (mandatory — the source blocks datacenter IPs)**,
-clones the repo, `pip install -e .`, pulls `data/rph.json` from Supabase
-Storage, and creates `~/.tgpc_env` (chmod 600) with placeholders.
+This installs `tesseract-ocr` (captcha OCR), `rclone`, clones the repo,
+`pip install -e .`, pulls `data/rph.json` from Supabase Storage, and creates
+`~/.tgpc_env` (chmod 600) with placeholders. No WARP — direct connection
+first (see §4 for the verdict logic).
 
 Fill in `~/.tgpc_env` — same values as the Mac Keychain / `rphsync.yml`
 secrets: `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `R2_ACCESS_KEY_ID`,
@@ -82,10 +82,10 @@ local file is missing.)
 cd ~/tgpc && ./scripts/vps_fetch.sh --smoke
 ```
 
-50 records, no WARP rotation. **Pass bar:** `done > 0` in the printed stats
-and raw snapshots appearing in the private bucket. If you see a `BlockedError`
-streak or 0 saved, WARP egress isn't dodging the block — stop here, the idea
-is dead on this provider.
+50 records, direct connection (no WARP). **Pass bar:** `+N saved` delta > 0
+with no `BlockedError` streak, and raw snapshots appearing in the private
+bucket. If you see a `BlockedError` streak or 0 saved, the provider IP is
+blocked — see "Source blocking (WARP fallback)" below instead of proceeding.
 
 ## 5. Long run (on the VM)
 
@@ -96,7 +96,7 @@ sudo systemctl enable --now tgpc-dg-fetch
 ```
 
 Loops 1000-record batches until the ID pool is exhausted:
-`--sync-cloud --sync-every 50 --warp-rotate-every 500 --warp-max-cycles 3`.
+`--sync-cloud --sync-every 50`.
 Checkpoint + stats are pushed to `tgpc-dg-private/ops/` after every batch.
 
 ## 6. Ops from the Mac
@@ -106,22 +106,22 @@ Checkpoint + stats are pushed to `tgpc-dg-private/ops/` after every batch.
 | Progress | `ssh ubuntu@<vm> 'python3 -c "import json;s=json.load(open(\"tgpc/data/dg_stats.json\"));print(s.get(\"done\"),s.get(\"failed\"),s.get(\"fail_by_reason\"))"'` |
 | Dashboard | `ssh -L 8899:localhost:8899 ubuntu@<vm>` → `~/tgpc` → `python3 scripts/dg_dashboard.py --port 8899` → open `http://localhost:8899/` |
 | Clean stop | `ssh ubuntu@<vm> 'touch ~/tgpc/data/dg_halt'` (halts after current batch) then `sudo systemctl stop tgpc-dg-fetch` |
-| WARP check | `warp-cli status` must say Connected **during a run**; between runs the tunnel is deliberately DOWN (see headless rule below) |
-| SSH survival | Operator IPs in `TGPC_SSH_EXCLUDE` (`~/.tgpc_env`) bypass the tunnel; confirm with `warp-cli show-excluded-routes` or equivalent |
+| Egress IP | `curl -s https://api.ipify.org` (confirm it matches the VM's external IP = direct, unmasked) |
 | Logs | `journalctl -u tgpc-dg-fetch -f` + `~/tgpc/data/dg_fetch.log` |
 
 ## Troubleshooting
 
-- **Locked out after WARP connects (SSH timeout):** an active tunnel reroutes
-  the default gateway and blackholes inbound SSH. Headless rule (already in
-  the scripts): `warp-svc` daemon runs but NEVER autostarts the tunnel;
-  `vps_fetch.sh` connects per run and disconnects on exit. If locked out:
-  Stop the VM, set a startup script with `systemctl disable --now warp-svc`
-  + `warp-cli disconnect`, Start. Then put your IP in `TGPC_SSH_EXCLUDE` so
-  future tunnels keep SSH reachable.
-- **Old `warp-cli register` fails:** 2026.x clients use `warp-cli
-  --accept-tos registration new` and `warp-cli --accept-tos connect` —
-  `register` no longer exists. Bootstrap already uses the new syntax.
+- **Source blocking (WARP fallback):** if the smoke test shows a
+  `BlockedError` streak / 0 saved, the provider IP is blocked like Actions
+  IPs were. Re-add WARP then: apt-install `cloudflare-warp` from
+  `https://pkg.cloudflareclient.com`, `warp-cli --accept-tos registration
+  new`, and connect per run with `warp-cli --accept-tos connect` (2026.x
+  syntax — old `register` no longer exists). Headless warnings: NEVER let
+  the tunnel autostart (`warp-svc` must stay down at boot — an unattended
+  connect reroutes the gateway and blackholes inbound SSH; we got locked out
+  exactly this way), and exclude operator IPs so SSH survives an active
+  tunnel. Git history of `scripts/vps_fetch.sh` has the old per-run
+  connect/disconnect block to crib from.
 - **All-terminal run (Not authorized streak):** normal in gap ranges — the loop
   skips them via checkpoint and keeps going. Only worry on `unexpected` /
   `BlockedError` streaks.
@@ -136,5 +136,7 @@ Checkpoint + stats are pushed to `tgpc-dg-private/ops/` after every batch.
 
 ## Cost note
 
-Always Free ARM (4 OCPU/24 GB, 10 TB egress) covers this comfortably. Only
-metered risk is R2 Class-A writes (photos) — same as Mac runs today.
+e2-micro free tier (1 vCPU/1 GB, 30 GB disk, 1 GB egress/mo in US regions)
+fits DG-fetch-only comfortably: ~60 KB/record ≈ 16k records per free GB, raw
+snapshots ~4 KB each. Only metered risk is R2 Class-A writes — same as Mac
+runs today.
