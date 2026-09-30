@@ -40,18 +40,33 @@ for var in SUPABASE_URL SUPABASE_SECRET_KEY R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KE
 done
 mkdir -p data
 
-# --- WARP must be up: the source blocks datacenter IPs -----------------------
-if command -v warp-cli >/dev/null 2>&1; then
-  if ! warp-cli status 2>/dev/null | grep -qi "connected"; then
-    echo "WARP not connected — connecting…"
-    warp-cli connect
-    sleep 3
-  fi
+# --- WARP: connect explicitly per run, never autostart ------------------------
+# The source blocks datacenter IPs, so the tunnel is mandatory for fetching —
+# but a headless box must manage it deliberately: warp-svc autostart once
+# blackholed our SSH. We connect here, exclude operator IPs so SSH survives,
+# and disconnect on exit (trap) so the box is always reachable between runs.
+warp_up() {
+  warp-cli --accept-tos connect
+  sleep 5
+  # Excluded routes keep operator SSH reachable through an active tunnel.
+  # Syntax varies by warp-cli generation — try known forms, warn on all-fail.
+  for net in ${TGPC_SSH_EXCLUDE:-}; do
+    warp-cli add-excluded-route "$net" 2>/dev/null \
+      || warp-cli tunnel add-excluded-route "$net" 2>/dev/null \
+      || echo "WARNING: could not exclude $net from WARP — SSH may drop while tunnel is up" >&2
+  done
   warp-cli status | head -2
-else
+  echo "egress now: $(curl -s --max-time 10 https://api.ipify.org)"
+}
+warp_down() {
+  warp-cli --accept-tos disconnect 2>/dev/null || true
+}
+if ! command -v warp-cli >/dev/null 2>&1; then
   echo "FATAL: warp-cli missing — source will block this IP. Run vps_bootstrap.sh." >&2
   exit 1
 fi
+warp_up
+trap warp_down EXIT
 
 # --- reference data -----------------------------------------------------------
 if [ ! -f data/rph.json ]; then

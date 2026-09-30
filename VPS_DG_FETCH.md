@@ -106,11 +106,22 @@ Checkpoint + stats are pushed to `tgpc-dg-private/ops/` after every batch.
 | Progress | `ssh ubuntu@<vm> 'python3 -c "import json;s=json.load(open(\"tgpc/data/dg_stats.json\"));print(s.get(\"done\"),s.get(\"failed\"),s.get(\"fail_by_reason\"))"'` |
 | Dashboard | `ssh -L 8899:localhost:8899 ubuntu@<vm>` → `~/tgpc` → `python3 scripts/dg_dashboard.py --port 8899` → open `http://localhost:8899/` |
 | Clean stop | `ssh ubuntu@<vm> 'touch ~/tgpc/data/dg_halt'` (halts after current batch) then `sudo systemctl stop tgpc-dg-fetch` |
-| WARP check | `warp-cli status` must say Connected; egress IP via `curl -s https://api.ipify.org` |
+| WARP check | `warp-cli status` must say Connected **during a run**; between runs the tunnel is deliberately DOWN (see headless rule below) |
+| SSH survival | Operator IPs in `TGPC_SSH_EXCLUDE` (`~/.tgpc_env`) bypass the tunnel; confirm with `warp-cli show-excluded-routes` or equivalent |
 | Logs | `journalctl -u tgpc-dg-fetch -f` + `~/tgpc/data/dg_fetch.log` |
 
 ## Troubleshooting
 
+- **Locked out after WARP connects (SSH timeout):** an active tunnel reroutes
+  the default gateway and blackholes inbound SSH. Headless rule (already in
+  the scripts): `warp-svc` daemon runs but NEVER autostarts the tunnel;
+  `vps_fetch.sh` connects per run and disconnects on exit. If locked out:
+  Stop the VM, set a startup script with `systemctl disable --now warp-svc`
+  + `warp-cli disconnect`, Start. Then put your IP in `TGPC_SSH_EXCLUDE` so
+  future tunnels keep SSH reachable.
+- **Old `warp-cli register` fails:** 2026.x clients use `warp-cli
+  --accept-tos registration new` and `warp-cli --accept-tos connect` —
+  `register` no longer exists. Bootstrap already uses the new syntax.
 - **All-terminal run (Not authorized streak):** normal in gap ranges — the loop
   skips them via checkpoint and keeps going. Only worry on `unexpected` /
   `BlockedError` streaks.

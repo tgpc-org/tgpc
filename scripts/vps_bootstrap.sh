@@ -25,13 +25,17 @@ if ! command -v warp-cli >/dev/null 2>&1; then
   sudo apt-get update -qq
   sudo apt-get install -y -qq cloudflare-warp
 fi
-sudo systemctl enable --now warp-svc 2>/dev/null || sudo service warp-svc start 2>/dev/null || true
+# Headless-box rule: the tunnel must NEVER autostart. An unattended connect
+# reroutes the default gateway and blackholes inbound SSH (we got locked out
+# exactly this way). The daemon runs; the tunnel stays down until vps_fetch.sh
+# connects explicitly around a run.
+sudo systemctl enable warp-svc 2>/dev/null || true
+sudo systemctl start warp-svc 2>/dev/null || sudo service warp-svc start 2>/dev/null || true
 sleep 5
-# Headless registration: --accept-tos first (new clients), plain register as fallback.
-warp-cli --accept-tos register 2>/dev/null || warp-cli register 2>/dev/null || echo "(warp already registered)"
-warp-cli connect
-sleep 3
-warp-cli status
+# New (2026.x) CLI: `registration new` (`register` is gone).
+warp-cli --accept-tos registration new 2>/dev/null || echo "(warp already registered)"
+warp-cli --accept-tos disconnect 2>/dev/null || true
+echo "(WARP installed + registered, tunnel DOWN by design — fetch script connects per run)"
 
 echo "==> repo"
 if [ ! -d "$TARGET_DIR/.git" ]; then
@@ -59,6 +63,10 @@ export CLOUDFLARE_ACCOUNT_ID=
 export TGPC_R2_DG_BUCKET=tgpc-dg-private
 # Optional (GDrive slice is skipped gracefully when absent):
 export RCLONE_GDRIVE_CONFIG=
+# Optional: space-separated IPs/CIDRs that must bypass WARP (operator SSH).
+# The fetch script adds these as excluded routes right after connecting, so an
+# active tunnel never blackholes your SSH session. Example: "49.37.155.244/32"
+export TGPC_SSH_EXCLUDE=
 EOF
   chmod 600 "$HOME/.tgpc_env"
   echo "created ~/.tgpc_env — fill it in before running anything"
