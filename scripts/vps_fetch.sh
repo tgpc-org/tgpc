@@ -56,8 +56,8 @@ warp_up() {
       || warp-cli --accept-tos tunnel ip add "${net%%/*}" 2>/dev/null \
       || echo "WARNING: could not exclude $net from WARP — SSH may drop while tunnel is up" >&2
   done
-  warp-cli status | head -2
-  echo "egress now: $(curl -s --max-time 10 https://api.ipify.org)"
+  warp-cli --accept-tos status 2>/dev/null | head -2 || true
+  echo "egress now: $(curl -s --max-time 10 https://icanhazip.com)"
 }
 warp_down() {
   warp-cli --accept-tos disconnect 2>/dev/null || true
