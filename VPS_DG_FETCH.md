@@ -131,6 +131,11 @@ Checkpoint + stats are pushed to `tgpc-dg-private/ops/` after every batch.
 - **All-terminal run (Not authorized streak):** normal in gap ranges — the loop
   skips them via checkpoint and keeps going. Only worry on `unexpected` /
   `BlockedError` streaks.
+- **Halt with `stop_reason: block_storm`:** circuit breaker tripped on 25
+  consecutive `BlockedError`s (filtering, not gaps) — the loop stays stopped
+  by design. Investigate (tunnel up? egress changed?), then `sudo systemctl
+  restart tgpc-dg-fetch` to resume. Tune via `--max-consecutive-blocks`
+  (0 disables).
 - **`captcha_solver_missing`:** tesseract binary or `pytesseract` missing —
   re-run the bootstrap apt/pip steps.
 - **R2 `AccessDenied` on `ops/` backup:** R2 keys lack rights on the DG bucket;
