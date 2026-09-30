@@ -166,6 +166,12 @@ fi
 
 while true; do
   if [ -f data/dg_halt ]; then echo "dg_halt present — stopping cleanly"; break; fi
+  # Multi-day runs: re-verify the tunnel every batch. If it dropped, fetches
+  # would silently go direct (datacenter IP = blocks), so reconnect first.
+  if ! warp-cli --accept-tos status 2>/dev/null | grep -qi "connected"; then
+    echo "tunnel down mid-run — reconnecting…"
+    warp_up
+  fi
   gen_ids "$BATCH"
   [ -s data/dg_ids_vps.txt ] || { echo "ID pool exhausted — all done"; break; }
   python3 -m tgpc fetch-dg --ids-file data/dg_ids_vps.txt \
