@@ -55,10 +55,12 @@ scp scripts/vps_bootstrap.sh ubuntu@<vm>:~/
 ssh ubuntu@<vm> 'bash ~/vps_bootstrap.sh'
 ```
 
-This installs `tesseract-ocr` (captcha OCR), `rclone`, clones the repo,
-`pip install -e .`, pulls `data/rph.json` from Supabase Storage, and creates
-`~/.tgpc_env` (chmod 600) with placeholders. No WARP — direct connection
-first (see §4 for the verdict logic).
+This installs `tesseract-ocr` (captcha OCR), `rclone`, `cloudflare-warp`
+(tunnel — mandatory: GCE IPs are source-blocked, proven 2026-09-30 with 0/20
+direct), clones the repo, `pip install -e .`, pulls `data/rph.json` from
+Supabase Storage, and creates `~/.tgpc_env` (chmod 600) with placeholders.
+WARP is installed + registered but left DOWN — the fetch script connects per
+run (autostart on a headless box blackholes SSH).
 
 Fill in `~/.tgpc_env` — same values as the Mac Keychain / `rphsync.yml`
 secrets: `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `R2_ACCESS_KEY_ID`,
@@ -82,10 +84,8 @@ local file is missing.)
 cd ~/tgpc && ./scripts/vps_fetch.sh --smoke
 ```
 
-50 records, direct connection (no WARP). **Pass bar:** `+N saved` delta > 0
-with no `BlockedError` streak, and raw snapshots appearing in the private
-bucket. If you see a `BlockedError` streak or 0 saved, the provider IP is
-blocked — see "Source blocking (WARP fallback)" below instead of proceeding.
+50 records via WARP. **Pass bar:** `+N saved` delta > 0 with no
+`BlockedError` streak, and raw snapshots appearing in the private bucket.
 
 ## 5. Long run (on the VM)
 
@@ -96,7 +96,7 @@ sudo systemctl enable --now tgpc-dg-fetch
 ```
 
 Loops 1000-record batches until the ID pool is exhausted:
-`--sync-cloud --sync-every 50`.
+`--sync-cloud --sync-every 50 --warp-rotate-every 500 --warp-max-cycles 3`.
 Checkpoint + stats are pushed to `tgpc-dg-private/ops/` after every batch.
 
 ## 6. Ops from the Mac
@@ -106,22 +106,22 @@ Checkpoint + stats are pushed to `tgpc-dg-private/ops/` after every batch.
 | Progress | `ssh ubuntu@<vm> 'python3 -c "import json;s=json.load(open(\"tgpc/data/dg_stats.json\"));print(s.get(\"done\"),s.get(\"failed\"),s.get(\"fail_by_reason\"))"'` |
 | Dashboard | `ssh -L 8899:localhost:8899 ubuntu@<vm>` → `~/tgpc` → `python3 scripts/dg_dashboard.py --port 8899` → open `http://localhost:8899/` |
 | Clean stop | `ssh ubuntu@<vm> 'touch ~/tgpc/data/dg_halt'` (halts after current batch) then `sudo systemctl stop tgpc-dg-fetch` |
-| Egress IP | `curl -s https://api.ipify.org` (confirm it matches the VM's external IP = direct, unmasked) |
+| Egress IP | `curl -s https://api.ipify.org` during a run (must differ from the VM's external IP = masked via WARP) |
+| SSH survival | Operator IPs in `TGPC_SSH_EXCLUDE` (`~/.tgpc_env`) bypass the tunnel; tunnel is DOWN between runs (disconnect-on-exit trap) |
 | Logs | `journalctl -u tgpc-dg-fetch -f` + `~/tgpc/data/dg_fetch.log` |
 
 ## Troubleshooting
 
-- **Source blocking (WARP fallback):** if the smoke test shows a
-  `BlockedError` streak / 0 saved, the provider IP is blocked like Actions
-  IPs were. Re-add WARP then: apt-install `cloudflare-warp` from
-  `https://pkg.cloudflareclient.com`, `warp-cli --accept-tos registration
-  new`, and connect per run with `warp-cli --accept-tos connect` (2026.x
-  syntax — old `register` no longer exists). Headless warnings: NEVER let
-  the tunnel autostart (`warp-svc` must stay down at boot — an unattended
-  connect reroutes the gateway and blackholes inbound SSH; we got locked out
-  exactly this way), and exclude operator IPs so SSH survives an active
-  tunnel. Git history of `scripts/vps_fetch.sh` has the old per-run
-  connect/disconnect block to crib from.
+- **Locked out after WARP connects (SSH timeout):** an active tunnel reroutes
+  the default gateway and blackholes inbound SSH. Headless discipline (in the
+  scripts): `warp-svc` daemon runs but NEVER autostarts the tunnel;
+  `vps_fetch.sh` connects per run, excludes `TGPC_SSH_EXCLUDE` IPs, and
+  disconnects on exit. If locked out anyway: Stop the VM, set a startup
+  script with `systemctl disable --now warp-svc` + `warp-cli disconnect`,
+  Start.
+- **Old `warp-cli register` fails:** 2026.x clients use `warp-cli
+  --accept-tos registration new` and `warp-cli --accept-tos connect` —
+  `register` no longer exists. Bootstrap uses the new syntax.
 - **All-terminal run (Not authorized streak):** normal in gap ranges — the loop
   skips them via checkpoint and keeps going. Only worry on `unexpected` /
   `BlockedError` streaks.

@@ -5,7 +5,7 @@
 #
 # Usage:
 #   ./scripts/vps_fetch.sh [--smoke] [--batch N]
-#     --smoke   50-record trial (proves direct fetch + creds before a long run)
+#     --smoke   50-record trial (proves WARP egress + creds before a long run)
 #     --batch N records per loop iteration (default 1000, smoke forces 50)
 #
 # Stop cleanly:  touch data/dg_halt   (halts after the current batch)
@@ -40,16 +40,34 @@ for var in SUPABASE_URL SUPABASE_SECRET_KEY R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KE
 done
 mkdir -p data
 
-# --- WARP: deliberately absent (2026-09-30 decision) ---------------------------
-# No tunnel: GCE IPs may not be blocked the way Actions IPs were, and WARP
-# autostart once blackholed our SSH. The smoke test is the verdict — if it
-# comes back BlockedError-streaked, re-add WARP per VPS_DG_FETCH.md and the
-# git history of this file. Nothing to do here either way: fetch-dg's
-# --warp-rotate-every defaults to 0 (off) and __main__ only touches WARP when
-# warp-cli is actually installed.
-if command -v warp-cli >/dev/null 2>&1; then
-  echo "NOTE: warp-cli present but unused by this harness (see header)" >&2
+# --- WARP: connect explicitly per run, never autostart ------------------------
+# GCE IPs are source-blocked (proven 2026-09-30: 0/20 direct, ConnectTimeout),
+# so the tunnel is mandatory — but a headless box manages it deliberately:
+# warp-svc autostart once blackholed our SSH. We connect here, exclude
+# operator IPs so SSH survives, and disconnect on exit (trap) so the box is
+# always reachable between runs.
+warp_up() {
+  warp-cli --accept-tos connect
+  sleep 5
+  # Excluded routes keep operator SSH reachable through an active tunnel.
+  # Syntax varies by warp-cli generation — try known forms, warn on all-fail.
+  for net in ${TGPC_SSH_EXCLUDE:-}; do
+    warp-cli add-excluded-route "$net" 2>/dev/null \
+      || warp-cli tunnel add-excluded-route "$net" 2>/dev/null \
+      || echo "WARNING: could not exclude $net from WARP — SSH may drop while tunnel is up" >&2
+  done
+  warp-cli status | head -2
+  echo "egress now: $(curl -s --max-time 10 https://api.ipify.org)"
+}
+warp_down() {
+  warp-cli --accept-tos disconnect 2>/dev/null || true
+}
+if ! command -v warp-cli >/dev/null 2>&1; then
+  echo "FATAL: warp-cli missing — GCE IPs are source-blocked. Run vps_bootstrap.sh." >&2
+  exit 1
 fi
+warp_up
+trap warp_down EXIT
 
 # --- reference data -----------------------------------------------------------
 if [ ! -f data/rph.json ]; then
@@ -128,7 +146,7 @@ PYEOF
 
 # --- main loop ----------------------------------------------------------------
 if [ "$SMOKE" = "1" ]; then
-  echo "=== SMOKE: 50 records, direct connection (no WARP) ==="
+  echo "=== SMOKE: 50 records via WARP tunnel ==="
   gen_ids 50
   [ -s data/dg_ids_vps.txt ] || { echo "nothing to fetch"; exit 0; }
   before=$(python3 -c "import json;s=json.load(open('data/dg_stats.json'));print(str(s.get('done',0))+' '+str(s.get('failed',0)))" 2>/dev/null || echo "0 0")
@@ -151,7 +169,8 @@ while true; do
   gen_ids "$BATCH"
   [ -s data/dg_ids_vps.txt ] || { echo "ID pool exhausted — all done"; break; }
   python3 -m tgpc fetch-dg --ids-file data/dg_ids_vps.txt \
-    --sync-cloud --sync-every 50
+    --sync-cloud --sync-every 50 \
+    --warp-rotate-every 500 --warp-max-cycles 3
   backup_checkpoint
   # fetch-dg exit 0 covers both batch-complete and STOP-file halt; loop on.
 done

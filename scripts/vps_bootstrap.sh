@@ -3,13 +3,8 @@
 # Run ONCE on the fresh VM as the normal user (uses sudo for apt only).
 #
 # Installs: python3-venv, git, curl, tesseract-ocr (captcha OCR),
-#           rclone (GDrive slice).
-# NOTE: no Cloudflare WARP by design (2026-09-30 decision). GCE IPs may not
-# be blocked the way Actions IPs were — the smoke test proves it. If fetches
-# come back BlockedError-streaked, re-add WARP: apt-install cloudflare-warp
-# from https://pkg.cloudflareclient.com, `warp-cli --accept-tos registration
-# new`, and connect per run (never autostart on a headless box — it
-# blackholes inbound SSH). See git history of this file for the old block.
+#           rclone (GDrive slice), cloudflare-warp (tunnel — GCE IPs are
+#           source-blocked, proven 2026-09-30: 0/20 direct, all ConnectTimeout).
 # Clones the repo, installs it, pulls data/rph.json from Supabase Storage
 # (public object), and creates ~/.tgpc_env with secret placeholders.
 set -euo pipefail
@@ -20,6 +15,26 @@ TARGET_DIR="${TGPC_DIR:-$HOME/tgpc}"
 echo "==> apt packages"
 sudo apt-get update -qq
 sudo apt-get install -y -qq python3-venv git curl tesseract-ocr rclone lsb-release gnupg
+
+echo "==> cloudflare-warp"
+if ! command -v warp-cli >/dev/null 2>&1; then
+  curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg \
+    | sudo gpg --yes --dearmor -o /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
+  echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" \
+    | sudo tee /etc/apt/sources.list.d/cloudflare-client.list >/dev/null
+  sudo apt-get update -qq
+  sudo apt-get install -y -qq cloudflare-warp
+fi
+# Headless-box rule: the daemon runs but the tunnel NEVER autostarts. An
+# unattended connect reroutes the default gateway and blackholes inbound SSH.
+# vps_fetch.sh connects explicitly per run and disconnects on exit.
+sudo systemctl enable warp-svc 2>/dev/null || true
+sudo systemctl start warp-svc 2>/dev/null || sudo service warp-svc start 2>/dev/null || true
+sleep 5
+# 2026.x CLI: `registration new` (`register` is gone).
+warp-cli --accept-tos registration new 2>/dev/null || echo "(warp already registered)"
+warp-cli --accept-tos disconnect 2>/dev/null || true
+echo "(WARP installed + registered, tunnel DOWN by design — fetch script connects per run)"
 
 echo "==> repo"
 if [ ! -d "$TARGET_DIR/.git" ]; then
@@ -47,6 +62,9 @@ export CLOUDFLARE_ACCOUNT_ID=
 export TGPC_R2_DG_BUCKET=tgpc-dg-private
 # Optional (GDrive slice is skipped gracefully when absent):
 export RCLONE_GDRIVE_CONFIG=
+# Operator IPs that must bypass WARP (SSH survival). Space-separated CIDRs —
+# the fetch script excludes them right after connecting. Example: "49.37.155.244/32"
+export TGPC_SSH_EXCLUDE=
 EOF
   chmod 600 "$HOME/.tgpc_env"
   echo "created ~/.tgpc_env — fill it in before running anything"
@@ -75,5 +93,5 @@ echo
 echo "DONE. Next:"
 echo "  1. Fill in ~/.tgpc_env (chmod 600, already set)"
 echo "  2. From your Mac: scp data/dg_fetch_checkpoint.json ubuntu@<vm>:~/tgpc/data/  (keeps 8k+ terminal skips)"
-echo "  3. Smoke test:  ./scripts/vps_fetch.sh --smoke   (50 records, proves direct fetch works)"
+echo "  3. Smoke test:  ./scripts/vps_fetch.sh --smoke   (50 records, proves WARP egress works)"
 echo "  4. Long run:    sudo cp scripts/tgpc-dg-fetch.service /etc/systemd/system/ && sudo systemctl enable --now tgpc-dg-fetch"
