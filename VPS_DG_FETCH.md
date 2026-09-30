@@ -1,8 +1,13 @@
-# DG Fetch on Oracle Always Free VPS — runbook
+# DG Fetch on a cloud VPS — runbook
 
-Runs the `getdetailsdg` captcha fetch on an ARM VM instead of the Mac.
+Runs the `getdetailsdg` captcha fetch on a small VM instead of the Mac.
 Same pipeline, same destinations (Supabase `rph_dg_contacts` + R2 private
 bucket + GDrive + SB Storage). DG data never touches prod `last_sync`.
+
+DG fetch moves ~60 KB/record (captcha + details page + cloud upserts — no
+photos; those belong to enrich, which stays local). 1,000 records ≈ 60 MB
+egress, and raw snapshots are ~4 KB each (~350 MB for all 89k). Any micro
+VM comfortably fits this.
 
 ## 0. Prereqs (Mac side)
 
@@ -12,10 +17,35 @@ bucket + GDrive + SB Storage). DG data never touches prod `last_sync`.
 
 ## 1. Provision the VM (console, one-time, ~10 min)
 
-- Shape: `VM.Standard.A1.Flex`, **4 OCPU / 24 GB RAM**, Oracle Linux→ switch to
-  **Ubuntu 24.04** image. VNIC: public IP, ingress **22/tcp only**.
-- SSH in as `ubuntu`. The scripts assume user `ubuntu` + checkout at `~/tgpc`
-  (edit `User=`/`WorkingDirectory=` in `scripts/tgpc-dg-fetch.service` if yours differ).
+Pick ONE provider:
+
+**A. GCE `e2-micro` free tier (recommended — actually free)**
+1. `console.cloud.google.com` → new project → **Compute Engine → VM instances
+   → Create instance** (billing account with card required; e2-micro + 30 GB
+   disk + 1 GB egress/mo is $0 in `us-west1` / `us-central1` / `us-east1`)
+2. Name: `tgpc-dg-fetch` · Region: `us-west1` (any zone) · Machine type: **E2
+   → `e2-micro` (1 vCPU, 1 GB)** · Boot disk: **Ubuntu 24.04 LTS, 30 GB**
+3. Firewall: defaults (SSH allowed, nothing else needed — the fetch only
+   makes outbound connections). Leave preemptibility OFF.
+4. Note the username you SSH as (browser SSH uses your gmail prefix, or add
+   your key under Metadata → SSH Keys for `ssh <user>@<ip>`).
+5. Copy the external IP.
+6. Egress budget: ~16k records/month free. Watch it under Billing while the
+   first batch runs; if destinations push you over, the overage is cents.
+
+**B. Oracle Always Free `VM.Standard.A1.Flex` (4 OCPU / 24 GB)**
+Ubuntu 24.04 image, public IP, ingress 22/tcp only. Scripts assume user
+`ubuntu` + checkout at `~/tgpc`. Known pain: signup rejections and
+"Out of capacity" on A1 shapes — retry another AD or abandon for option A/C.
+
+**C. Hetzner CAX11 (~€4.15/mo, painless signup)**
+Ubuntu 24.04, Nuremberg/Falkenstein. You land as `root`, not `ubuntu`.
+
+**Path fixups when your user isn't `ubuntu`** (options A/C): the scripts and
+service file say `/home/ubuntu` — on the VM, before installing the unit:
+`sed -i 's|/home/ubuntu|/root|g; s/^User=.*/User=root/' ~/tgpc/scripts/tgpc-dg-fetch.service`
+(substitute your actual home dir). `vps_bootstrap.sh` uses `$HOME`/`~` and
+needs no changes.
 
 ## 2. Bootstrap (on the VM, one-time)
 
