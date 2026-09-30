@@ -207,6 +207,12 @@ def main():
         help="Fetch pool size (default: TGPC_DG_WORKERS or 4; max 16 — raise in steps, site filters aggressively)",
     )
     fetch_dg_parser.add_argument(
+        "--max-consecutive-blocks",
+        type=int,
+        default=25,
+        help="Circuit breaker: halt after N consecutive BlockedErrors (0 disables; terminal gaps/saves reset)",
+    )
+    fetch_dg_parser.add_argument(
         "--warp-rotate-every",
         type=int,
         default=0,
@@ -393,6 +399,7 @@ def main():
                 max_records=args.max_records,
                 warp_rotate_every=args.warp_rotate_every,
                 warp_max_cycles=args.warp_max_cycles,
+                max_consecutive_blocks=args.max_consecutive_blocks,
             )
         print(json.dumps(stats, indent=2))
     elif args.command == "validate-dg":

@@ -22,6 +22,7 @@ from tgpc.details_dg import (  # noqa: E402
     validate_parsed,
     DgDetailError,
 )
+from tgpc.utils import BlockedError
 
 DG_HTML = """
 <html><body>
@@ -509,6 +510,59 @@ class WorkerFixedTests(unittest.TestCase):
         from tgpc.details_dg import DG_WORKERS
 
         self.assertEqual(DG_WORKERS, 4)
+
+    def test_block_storm_halts(self):
+        from tgpc.details_dg import run_fetch
+
+        class AlwaysBlocked:
+            def fetch_one(self, reg, captcha_solver=None, max_captcha_attempts=3):
+                raise BlockedError("Blocked response from source")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cp, out, raw, stats = (Path(tmp) / n for n in ("c.json", "o.jsonl", "r", "s.json"))
+            regs = [f"TS9{i:02d}" for i in range(20)]
+            stats_d = run_fetch(
+                regs,
+                out,
+                raw,
+                cp,
+                stats,
+                resume=False,
+                fetcher_factory=AlwaysBlocked,
+                max_consecutive_blocks=5,
+            )
+            self.assertTrue(stats_d.get("stopped"))
+            self.assertEqual(stats_d.get("stop_reason"), "block_storm")
+            done = stats_d.get("done", 0) + stats_d.get("failed", 0)
+            self.assertEqual(done, 5)
+
+    def test_block_counter_resets_on_save_and_terminal(self):
+        from tgpc.details_dg import run_fetch
+
+        class Flaky:
+            def fetch_one(self, reg, captcha_solver=None, max_captcha_attempts=3):
+                # Outcome keyed by REG (not call order) — deterministic under threads.
+                if reg in ("TS700", "TS701", "TS702", "TS703"):
+                    raise BlockedError("Blocked response from source")
+                if reg == "TS704":
+                    raise DgDetailError("gap", terminal=True)
+                return DG_HTML.replace("TS003261", reg), {"captcha_text": "X", "attempts": 1, "ms": {}}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cp, out, raw, stats = (Path(tmp) / n for n in ("c.json", "o.jsonl", "r", "s.json"))
+            regs = [f"TS70{i}" for i in range(8)]
+            stats_d = run_fetch(
+                regs,
+                out,
+                raw,
+                cp,
+                stats,
+                resume=False,
+                fetcher_factory=Flaky,
+                max_consecutive_blocks=5,
+            )
+            self.assertFalse(stats_d.get("stopped"))
+            self.assertEqual(stats_d.get("done"), 3)
 
 
 class LiveWatchTests(unittest.TestCase):

@@ -901,6 +901,7 @@ def run_fetch(
     max_records: Optional[int] = None,
     warp_rotate_every: int = 0,
     warp_max_cycles: int = 3,
+    max_consecutive_blocks: int = 25,
 ) -> Dict:
     """Fetch + save L1 for a list of reg IDs. Returns stats dict.
 
@@ -913,6 +914,9 @@ def run_fetch(
     Cloud failures never block the L1 checkpoint (idempotent on resume).
     sync_cloud requires reference (fail-closed: no orphan-row inserts).
     max_records: stop after this many newly processed records (bounded runs).
+    max_consecutive_blocks: circuit breaker — halt with stopped:true after
+    this many CONSECUTIVE BlockedError outcomes (block-storm = filtering, not
+    gaps; terminal gaps and saves reset the counter). 0 disables.
 
     Live watch (same dir as checkpoint_path):
       dg_fetch.log  appended per record — `tail -f` it.
@@ -1020,7 +1024,19 @@ def run_fetch(
 
     start_all = time.monotonic()
     processed = 0
+    consecutive_blocks = 0
     tls = threading.local()
+
+    def note_block_trip() -> bool:
+        """Circuit breaker: True when consecutive BlockedErrors hit the limit."""
+        if max_consecutive_blocks and consecutive_blocks >= max_consecutive_blocks:
+            stats["stopped"] = True
+            stats["stop_reason"] = "block_storm"
+            logger.error(f"Block storm: {consecutive_blocks} consecutive BlockedErrors — halting, not grinding")
+            write_live(status="stopped", event="block storm — halted")
+            bar.update(0, detail="block-storm")
+            return True
+        return False
 
     def do_fetch(reg_no: str):
         """Run fetch_one on this thread's own session (never shared)."""
@@ -1148,11 +1164,17 @@ def run_fetch(
                 stats["failed"] += 1
                 reason = str(e)[:200] or type(e).__name__
                 _record_failure(state, stats, reg, reason, getattr(e, "terminal", False))
+                if getattr(e, "terminal", False):
+                    consecutive_blocks = 0
+                elif isinstance(e, BlockedError):
+                    consecutive_blocks += 1
                 bar.update(1, detail=f"{reg} {type(e).__name__}")
                 save_stats()
                 save_checkpoint_atomic(checkpoint_path, state)
                 processed += 1
                 live_snapshot(reg, type(e).__name__)
+                if note_block_trip():
+                    break
                 continue
             except Exception as e:
                 stats["failed"] += 1
@@ -1177,11 +1199,17 @@ def run_fetch(
                 stats["failed"] += 1
                 reason = str(e)[:200] or type(e).__name__
                 _record_failure(state, stats, reg, reason, getattr(e, "terminal", False))
+                if getattr(e, "terminal", False):
+                    consecutive_blocks = 0
+                elif isinstance(e, BlockedError):
+                    consecutive_blocks += 1
                 bar.update(1, detail=f"{reg} parse-fail")
                 save_stats()
                 save_checkpoint_atomic(checkpoint_path, state)
                 processed += 1
                 live_snapshot(reg, "parse-fail")
+                if note_block_trip():
+                    break
                 continue
 
             problems = validate_parsed(parsed)
@@ -1237,6 +1265,7 @@ def run_fetch(
             state.get("failed_terminal", {}).pop(reg, None)
             save_checkpoint_atomic(checkpoint_path, state)
             stats["done"] += 1
+            consecutive_blocks = 0
             elapsed = time.monotonic() - start_all
             rate = (stats["done"] + stats["failed"]) / elapsed if elapsed > 0 else 0
             bar.update(1, detail=f"{reg} ok {rate:.2f}/s")
