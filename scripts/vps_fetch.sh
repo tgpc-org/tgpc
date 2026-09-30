@@ -50,10 +50,10 @@ warp_up() {
   warp-cli --accept-tos connect
   sleep 5
   # Excluded routes keep operator SSH reachable through an active tunnel.
-  # Syntax varies by warp-cli generation — try known forms, warn on all-fail.
+  # 2026.x syntax: `tunnel ip add-range` (bare `add-excluded-route` is gone).
   for net in ${TGPC_SSH_EXCLUDE:-}; do
-    warp-cli add-excluded-route "$net" 2>/dev/null \
-      || warp-cli tunnel add-excluded-route "$net" 2>/dev/null \
+    warp-cli --accept-tos tunnel ip add-range "$net" 2>/dev/null \
+      || warp-cli --accept-tos tunnel ip add "${net%%/*}" 2>/dev/null \
       || echo "WARNING: could not exclude $net from WARP — SSH may drop while tunnel is up" >&2
   done
   warp-cli status | head -2
