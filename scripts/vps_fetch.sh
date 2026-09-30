@@ -18,7 +18,7 @@ BATCH="${TGPC_BATCH_SIZE:-1000}"
 while [ $# -gt 0 ]; do
   case "$1" in
     --smoke) SMOKE=1; BATCH=50; shift ;;
-    --batch) BATCH="$2"; shift 2 ;;
+    --batch) [ $# -ge 2 ] || { echo "--batch needs a value" >&2; exit 2; }; BATCH="$2"; shift 2 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
@@ -82,9 +82,11 @@ PYEOF
 fi
 
 backup_checkpoint() {
+  # Best-effort: a failed backup must NEVER kill the fetch loop (progress is
+  # already cloud-synced via --sync-cloud and the local checkpoint persists).
   # Checkpoint holds reg IDs + failure reasons (no PII) but lives in the
   # private DG bucket under ops/ anyway — never the public bucket.
-  python3 - "$TGPC_R2_DG_BUCKET" <<'PYEOF'
+  python3 - "$TGPC_R2_DG_BUCKET" <<'PYEOF' || echo "WARNING: R2 checkpoint backup failed — local checkpoint intact, will retry next batch" >&2
 import sys, boto3, os
 bucket = sys.argv[1]
 s3 = boto3.client(
@@ -131,14 +133,18 @@ if [ "$SMOKE" = "1" ]; then
   echo "=== SMOKE: 50 records, no WARP rotation ==="
   gen_ids 50
   [ -s data/dg_ids_vps.txt ] || { echo "nothing to fetch"; exit 0; }
+  before=$(python3 -c "import json;s=json.load(open('data/dg_stats.json'));print(str(s.get('done',0))+' '+str(s.get('failed',0)))" 2>/dev/null || echo "0 0")
   python3 -m tgpc fetch-dg --ids-file data/dg_ids_vps.txt \
     --sync-cloud --sync-every 50
   backup_checkpoint
   python3 -c "
 import json
 s = json.load(open('data/dg_stats.json'))
-print('smoke result:', {k: s.get(k) for k in ('done','failed')}, s.get('fail_by_reason'))"
-  echo "=== SMOKE DONE — inspect above: need saved>0 and no BlockedError streak ==="
+b_done, b_failed = map(int, '$before'.split())
+d_done = s.get('done', 0) - b_done
+d_failed = s.get('failed', 0) - b_failed
+print(f'smoke delta: +{d_done} saved, +{d_failed} failed | reasons:', s.get('fail_by_reason'))"
+  echo "=== SMOKE DONE — go only if saved delta > 0 with no BlockedError streak ==="
   exit 0
 fi
 

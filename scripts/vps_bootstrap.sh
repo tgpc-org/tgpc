@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Bootstrap an Oracle Always Free Ubuntu VM for TGPC DG fetching.
+# Bootstrap a cloud Ubuntu VM (GCE e2-micro / Oracle A1 / Hetzner) for TGPC DG fetching.
 # Run ONCE on the fresh VM as the normal user (uses sudo for apt only).
 #
 # Installs: python3-venv, git, curl, tesseract-ocr (captcha OCR),
@@ -38,7 +38,7 @@ if [ ! -d "$TARGET_DIR/.git" ]; then
   git clone "$REPO_URL" "$TARGET_DIR"
 fi
 cd "$TARGET_DIR"
-python3 -m venv .venv
+[ -d .venv ] || python3 -m venv .venv
 # shellcheck disable=SC1091
 . .venv/bin/activate
 pip install -q --upgrade pip
@@ -73,7 +73,8 @@ if [ ! -f "$TARGET_DIR/data/rph.json" ]; then
   if [ -n "${SUPABASE_URL:-}" ]; then
     mkdir -p "$TARGET_DIR/data"
     curl -fsSL "$SUPABASE_URL/storage/v1/object/tgpc/rph.json" -o "$TARGET_DIR/data/rph.json"
-    python3 -c "import json; print('rph.json ok:', len(json.load(open('$TARGET_DIR/data/rph.json'))), 'records')"
+    rph_path="$TARGET_DIR/data/rph.json"
+    python3 -c "import json; print('rph.json ok:', len(json.load(open('$rph_path'))), 'records')"
   else
     echo "SUPABASE_URL not set yet — download data/rph.json later with:"
     echo "  curl -fsSL \"\$SUPABASE_URL/storage/v1/object/tgpc/rph.json\" -o data/rph.json"
