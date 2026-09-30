@@ -97,6 +97,8 @@ sudo systemctl enable --now tgpc-dg-fetch
 
 Loops 1000-record batches until the ID pool is exhausted:
 `--sync-cloud --sync-every 50 --warp-rotate-every 500 --warp-max-cycles 3`.
+Workers: `TGPC_DG_WORKERS` in `~/.tgpc_env` (default 4, max 16 — raise in
+steps and watch for `BlockedError` streaks; back off at the first one).
 Checkpoint + stats are pushed to `tgpc-dg-private/ops/` after every batch.
 
 ## 6. Ops from the Mac
