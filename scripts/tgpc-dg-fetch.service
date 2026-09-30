@@ -1,0 +1,19 @@
+[Unit]
+Description=TGPC DG contact fetch (captcha flow, cloud-synced)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Runs as the user that owns the checkout (adjust User= to the VM login).
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/tgpc
+EnvironmentFile=/home/ubuntu/.tgpc_env
+ExecStart=/home/ubuntu/tgpc/scripts/vps_fetch.sh
+Restart=on-failure
+RestartSec=300
+# A batch loop iteration takes hours; don't let systemd kill a healthy run.
+TimeoutStopSec=300
+
+[Install]
+WantedBy=multi-user.target

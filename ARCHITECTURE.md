@@ -35,6 +35,7 @@ tgpc/
 ├── AGENTS.md                       # Agent working rules (brand palette, workflow, email format)
 ├── CODE_REVIEW.md
 ├── DG_PIPELINE.md                  # DG contact-pipeline deep dive (captcha capture, fetch-dg CLI, dashboard :8765)
+├── VPS_DG_FETCH.md                 # Runbook: DG fetch on Oracle Always Free VPS (bootstrap → smoke → systemd)
 ├── data/
 │   ├── rph.json                     # ~89K pharmacist records (JSON array) — gitignored but tracked historically
 │   ├── update_details.json         # Sync diff summary — gitignored
@@ -62,6 +63,9 @@ tgpc/
 │   ├── dg_dashboard.py             # Local DG fetch monitor: localhost HTTP server serving dg_dashboard.html
 │   ├── dg_dashboard.html           # DG monitor UI (dark mode, start/stop, live stats)
 │   ├── dg_captcha_bench.py         # Fetch N live DG captchas, OCR-guess, dump for human labeling
+│   ├── vps_bootstrap.sh            # One-time Oracle ARM VM setup (apt, WARP, clone, rph.json, ~/.tgpc_env)
+│   ├── vps_fetch.sh                # VPS DG fetch loop (batches, cloud sync, R2 checkpoint backup; --smoke for trial)
+│   ├── tgpc-dg-fetch.service       # systemd unit for the VPS fetch loop
 │   └── optimize_images.py          # Batch data/img/ → WebP q85, passport 413x531 resize
 ├── ui/                            # Production frontend (SvelteKit)
 │   ├── src/
