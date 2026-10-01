@@ -156,7 +156,7 @@ class CheckpointTests(unittest.TestCase):
             cp = Path(tmp) / "cp.json"
             self.assertEqual(
                 load_checkpoint(cp),
-                {"completed": [], "failed": {}, "failed_terminal": {}},
+                {"completed": [], "failed": {}, "failed_terminal": {}, "fail_counts": {}},
             )
             save_checkpoint_atomic(cp, {"completed": ["TS1"], "failed": {}})
             self.assertEqual(load_checkpoint(cp)["completed"], ["TS1"])
@@ -535,6 +535,72 @@ class WorkerFixedTests(unittest.TestCase):
             self.assertEqual(stats_d.get("stop_reason"), "block_storm")
             done = stats_d.get("done", 0) + stats_d.get("failed", 0)
             self.assertEqual(done, 5)
+
+    def test_retry_cap_promotes_to_terminal(self):
+        from tgpc.details_dg import load_checkpoint, run_fetch
+
+        class AlwaysTransient:
+            def fetch_one(self, reg, captcha_solver=None, max_captcha_attempts=3):
+                raise DgDetailError("boom")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cp, out, raw, stats = (Path(tmp) / n for n in ("c.json", "o.jsonl", "r", "s.json"))
+            regs = ["TS601", "TS602", "TS603"]
+            for _ in range(3):
+                run_fetch(
+                    regs,
+                    out,
+                    raw,
+                    cp,
+                    stats,
+                    resume=True,
+                    fetcher_factory=AlwaysTransient,
+                    max_transient_retries=3,
+                )
+            state = load_checkpoint(cp)
+            self.assertEqual(set(state.get("failed_terminal", {})), set(regs))
+            self.assertTrue(all(v.startswith("retry-exhausted(3)") for v in state["failed_terminal"].values()))
+            self.assertEqual(state.get("fail_counts", {}), {})
+
+    def test_retry_count_clears_on_save(self):
+        from tgpc.details_dg import load_checkpoint, run_fetch
+
+        mode = {"fail": True}
+
+        class Flaky:
+            def fetch_one(self, reg, captcha_solver=None, max_captcha_attempts=3):
+                if mode["fail"]:
+                    raise DgDetailError("boom")
+                return DG_HTML.replace("TS003261", reg), {"captcha_text": "X", "attempts": 1, "ms": {}}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cp, out, raw, stats = (Path(tmp) / n for n in ("c.json", "o.jsonl", "r", "s.json"))
+            regs = ["TS611", "TS612"]
+            run_fetch(regs, out, raw, cp, stats, resume=True, fetcher_factory=Flaky, max_transient_retries=3)
+            mode["fail"] = False
+            stats_d = run_fetch(regs, out, raw, cp, stats, resume=True, fetcher_factory=Flaky, max_transient_retries=3)
+            self.assertEqual(stats_d.get("done"), 2)
+            state = load_checkpoint(cp)
+            self.assertEqual(state.get("failed_terminal", {}), {})
+            self.assertEqual(state.get("fail_counts", {}), {})
+
+    def test_retry_cap_zero_disables(self):
+        from tgpc.details_dg import load_checkpoint, run_fetch
+
+        class AlwaysTransient:
+            def fetch_one(self, reg, captcha_solver=None, max_captcha_attempts=3):
+                raise DgDetailError("boom")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cp, out, raw, stats = (Path(tmp) / n for n in ("c.json", "o.jsonl", "r", "s.json"))
+            regs = ["TS621"]
+            for _ in range(3):
+                run_fetch(
+                    regs, out, raw, cp, stats, resume=True, fetcher_factory=AlwaysTransient, max_transient_retries=0
+                )
+            state = load_checkpoint(cp)
+            self.assertEqual(state.get("failed_terminal", {}), {})
+            self.assertIn("TS621", state.get("failed", {}))
 
     def test_block_counter_resets_on_save_and_terminal(self):
         from tgpc.details_dg import run_fetch

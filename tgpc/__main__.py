@@ -213,6 +213,12 @@ def main():
         help="Circuit breaker: halt after N consecutive BlockedErrors (0 disables; terminal gaps/saves reset)",
     )
     fetch_dg_parser.add_argument(
+        "--max-transient-retries",
+        type=int,
+        default=5,
+        help="Per-record transient retry cap across runs; excess marked terminal (retry-exhausted), 0 = unlimited",
+    )
+    fetch_dg_parser.add_argument(
         "--warp-rotate-every",
         type=int,
         default=0,
@@ -400,6 +406,7 @@ def main():
                 warp_rotate_every=args.warp_rotate_every,
                 warp_max_cycles=args.warp_max_cycles,
                 max_consecutive_blocks=args.max_consecutive_blocks,
+                max_transient_retries=args.max_transient_retries,
             )
         print(json.dumps(stats, indent=2))
     elif args.command == "validate-dg":

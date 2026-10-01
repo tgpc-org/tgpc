@@ -603,13 +603,36 @@ def ensure_rotated_ip(previous_ip: str, max_cycles: int = 3) -> Tuple[str, bool]
 
 
 def _fresh_state() -> Dict:
-    return {"completed": [], "failed": {}, "failed_terminal": {}}
+    return {"completed": [], "failed": {}, "failed_terminal": {}, "fail_counts": {}}
 
 
-def _record_failure(state: Dict, stats: Dict, reg: str, reason: str, terminal: bool) -> None:
+MAX_TRANSIENT_RETRIES = 5
+
+
+def _record_failure(
+    state: Dict, stats: Dict, reg: str, reason: str, terminal: bool, max_retries: int = MAX_TRANSIENT_RETRIES
+) -> None:
+    """Record a failure; promote persistently-transient records to terminal.
+
+    Transient failures are counted per record in state["fail_counts"]. After
+    max_retries (0 = unlimited) the record is marked terminal as
+    retry-exhausted — recoverable via --retry-terminal — so the ID pool
+    provably empties and long loops terminate instead of grinding a tail of
+    un-fetchables forever. Terminal outcomes and saves clear the counter.
+    Deliberately NOT applied to captcha_solver_missing (environmental: a
+    missing tesseract would mass-promote every record).
+    """
     state["failed"][reg] = reason[:200]
     if terminal:
         state["failed_terminal"][reg] = reason[:200]
+        state.get("fail_counts", {}).pop(reg, None)
+    else:
+        counts = state.setdefault("fail_counts", {})
+        counts[reg] = counts.get(reg, 0) + 1
+        if max_retries and counts[reg] >= max_retries:
+            state["failed_terminal"][reg] = f"retry-exhausted({counts[reg]}): {reason}"[:200]
+            counts.pop(reg, None)
+            stats["fail_by_reason"]["retry-exhausted"] = stats["fail_by_reason"].get("retry-exhausted", 0) + 1
     stats["fail_by_reason"][reason] = stats["fail_by_reason"].get(reason, 0) + 1
 
 
@@ -902,6 +925,7 @@ def run_fetch(
     warp_rotate_every: int = 0,
     warp_max_cycles: int = 3,
     max_consecutive_blocks: int = 25,
+    max_transient_retries: int = MAX_TRANSIENT_RETRIES,
 ) -> Dict:
     """Fetch + save L1 for a list of reg IDs. Returns stats dict.
 
@@ -917,6 +941,10 @@ def run_fetch(
     max_consecutive_blocks: circuit breaker — halt with stopped:true after
     this many CONSECUTIVE BlockedError outcomes (block-storm = filtering, not
     gaps; terminal gaps and saves reset the counter). 0 disables.
+    max_transient_retries: per-record retry cap across runs — a record failing
+    transiently this many times is marked terminal (retry-exhausted) so the
+    pool empties and loops terminate. Saves/terminal clear the count. 0 =
+    unlimited. captcha_solver_missing never counts (environmental).
 
     Live watch (same dir as checkpoint_path):
       dg_fetch.log  appended per record — `tail -f` it.
@@ -1163,7 +1191,14 @@ def run_fetch(
             except (BlockedError, DgDetailError) as e:
                 stats["failed"] += 1
                 reason = str(e)[:200] or type(e).__name__
-                _record_failure(state, stats, reg, reason, getattr(e, "terminal", False))
+                _record_failure(
+                    state,
+                    stats,
+                    reg,
+                    reason,
+                    getattr(e, "terminal", False),
+                    max_retries=max_transient_retries,
+                )
                 if getattr(e, "terminal", False):
                     consecutive_blocks = 0
                 elif isinstance(e, BlockedError):
@@ -1180,6 +1215,12 @@ def run_fetch(
                 stats["failed"] += 1
                 state["failed"][reg] = f"unexpected: {e}"[:200]
                 stats["fail_by_reason"]["unexpected"] = stats["fail_by_reason"].get("unexpected", 0) + 1
+                counts = state.setdefault("fail_counts", {})
+                counts[reg] = counts.get(reg, 0) + 1
+                if max_transient_retries and counts[reg] >= max_transient_retries:
+                    state["failed_terminal"][reg] = f"retry-exhausted({counts[reg]}): unexpected"[:200]
+                    counts.pop(reg, None)
+                    stats["fail_by_reason"]["retry-exhausted"] = stats["fail_by_reason"].get("retry-exhausted", 0) + 1
                 logger.error(f"{reg}: unexpected {e}")
                 bar.update(1, detail=f"{reg} unexpected")
                 save_stats()
@@ -1198,7 +1239,14 @@ def run_fetch(
             except (BlockedError, DgDetailError) as e:
                 stats["failed"] += 1
                 reason = str(e)[:200] or type(e).__name__
-                _record_failure(state, stats, reg, reason, getattr(e, "terminal", False))
+                _record_failure(
+                    state,
+                    stats,
+                    reg,
+                    reason,
+                    getattr(e, "terminal", False),
+                    max_retries=max_transient_retries,
+                )
                 if getattr(e, "terminal", False):
                     consecutive_blocks = 0
                 elif isinstance(e, BlockedError):
@@ -1263,6 +1311,7 @@ def run_fetch(
             state["completed"] = sorted(set(state.get("completed", [])) | {reg})
             state["failed"].pop(reg, None)
             state.get("failed_terminal", {}).pop(reg, None)
+            state.get("fail_counts", {}).pop(reg, None)
             save_checkpoint_atomic(checkpoint_path, state)
             stats["done"] += 1
             consecutive_blocks = 0

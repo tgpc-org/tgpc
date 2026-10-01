@@ -104,6 +104,12 @@ established: an unverifiable destination is not a private one.
 * WARP reconnect does NOT rotate egress IP here (verified: same IP across
   reconnect). `--warp-rotate-every N` requires a *verified different* IP every
   N records and halts (`ip_rotation_failed`) instead of proceeding unrotated.
+* `--max-consecutive-blocks N` (default 25) halts on N consecutive
+  `BlockedError`s (`block_storm`); saves/terminal gaps reset the counter.
+* Per-record transient failures are counted in checkpoint `fail_counts`;
+  after `--max-transient-retries` (default 5) the record is marked terminal
+  (`retry-exhausted`, recoverable via `--retry-terminal`) so the ID pool
+  provably empties. `captcha_solver_missing` never counts (environmental).
 * No commits without explicit ask (repo rule); `data/` never enters git.
 
 ## Yield reference (legacy serials)
