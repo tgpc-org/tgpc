@@ -63,9 +63,12 @@ tgpc/
 │   ├── dg_dashboard.py             # Local DG fetch monitor: localhost HTTP server serving dg_dashboard.html
 │   ├── dg_dashboard.html           # DG monitor UI (dark mode, start/stop, live stats)
 │   ├── dg_captcha_bench.py         # Fetch N live DG captchas, OCR-guess, dump for human labeling
-│   ├── vps_bootstrap.sh            # One-time Oracle ARM VM setup (apt, WARP, clone, rph.json, ~/.tgpc_env)
-│   ├── vps_fetch.sh                # VPS DG fetch loop (batches, cloud sync, R2 checkpoint backup; --smoke for trial)
+│   ├── vps_bootstrap.sh            # One-time cloud VM setup (apt, WARP, clone, rph.json, ~/.tgpc_env)
+│   ├── vps_fetch.sh                # VPS DG fetch loop (batches, cloud sync, R2 checkpoint backup + ctl polling; --smoke for trial)
+│   ├── vps_ctl.sh                  # No-SSH VPS ops over R2 (status/halt/resume/exclude via ops/ctl.json)
+│   ├── vm_view.sh                  # Re-open the Mac→VM dashboard tunnel (:8900; sleep kills it)
 │   ├── tgpc-dg-fetch.service       # systemd unit for the VPS fetch loop
+│   ├── tgpc-dg-dashboard.service   # systemd unit for the VPS dashboard (localhost-only)
 │   └── optimize_images.py          # Batch data/img/ → WebP q85, passport 413x531 resize
 ├── ui/                            # Production frontend (SvelteKit)
 │   ├── src/

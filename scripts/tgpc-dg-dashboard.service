@@ -1,0 +1,17 @@
+[Unit]
+Description=TGPC DG dashboard (localhost-only view, no auth surface)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Localhost-only by construction (dashboard binds 127.0.0.1 in code) — the
+# Mac reaches it via `scripts/vm_view.sh` SSH tunnel. Adjust User= to the VM login.
+Type=simple
+User=tgpc-mac
+WorkingDirectory=/home/tgpc-mac/tgpc
+ExecStart=/usr/bin/python3 scripts/dg_dashboard.py --port 8899
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
