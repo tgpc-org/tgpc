@@ -218,7 +218,7 @@ let flyFrom = $derived(
             </div>
           {/if}
 
-          {#if record.work_experience && (record.work_experience.Address || record.work_experience.State || record.work_experience.District || record.work_experience['Pin code'])}
+          {#if record.work_experience && [record.work_experience.Address, record.work_experience.State, record.work_experience.District, record.work_experience['Pin code']].some((v) => displayWork(v) !== '—')}
             <div class="border-t border-[var(--t-surface)] pt-2 space-y-2">
               <h3 class="text-xs font-semibold text-[var(--t-ink)] flex items-center gap-2"><svg class="w-4 h-4 text-[#00cc66]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg> Work Experience</h3>
               <dl class="grid grid-cols-1 gap-2 text-xs">

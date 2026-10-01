@@ -184,7 +184,7 @@
       </div>
     {/if}
 
-    {#if record.work_experience && (record.work_experience.Address || record.work_experience.State || record.work_experience.District || record.work_experience['Pin code'])}
+    {#if record.work_experience && [record.work_experience.Address, record.work_experience.State, record.work_experience.District, record.work_experience['Pin code']].some((v) => displayWork(v) !== '—')}
       <div class="border-t border-[var(--t-surface)] pt-2 space-y-2">
         <h2 class="text-sm font-semibold text-[var(--t-ink)] flex items-center gap-2">
           <svg class="w-5 h-5 text-[#00cc66]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
