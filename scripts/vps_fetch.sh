@@ -10,6 +10,7 @@
 #
 # Stop cleanly:  touch data/dg_halt   (halts after the current batch)
 # Stop now:      sudo systemctl stop tgpc-dg-fetch   (in-flight record retries next run)
+# Remote (no SSH): scripts/vps_ctl.sh halt|resume|status (R2 ops/ctl.json channel)
 # Dashboard:     ssh -L 8899:localhost:8899 <vm>  then open http://localhost:8899/
 set -euo pipefail
 
@@ -46,18 +47,56 @@ mkdir -p data
 # warp-svc autostart once blackholed our SSH. We connect here, exclude
 # operator IPs so SSH survives, and disconnect on exit (trap) so the box is
 # always reachable between runs.
-warp_up() {
-  warp-cli --accept-tos connect
-  sleep 5
-  # Excluded routes keep operator SSH reachable through an active tunnel.
+CTL_SSH_EXCLUDE=""
+apply_exclusions() {
+  # $1 = space-separated CIDRs kept reachable through an active tunnel.
   # 2026.x syntax: `tunnel ip add-range` (bare `add-excluded-route` is gone).
-  for net in ${TGPC_SSH_EXCLUDE:-}; do
+  for net in $1; do
     warp-cli --accept-tos tunnel ip add-range "$net" 2>/dev/null \
       || warp-cli --accept-tos tunnel ip add "${net%%/*}" 2>/dev/null \
       || echo "WARNING: could not exclude $net from WARP — SSH may drop while tunnel is up" >&2
   done
+}
+warp_up() {
+  warp-cli --accept-tos connect
+  sleep 5
+  apply_exclusions "${TGPC_SSH_EXCLUDE:-}"
+  CTL_SSH_EXCLUDE="${TGPC_SSH_EXCLUDE:-}"
   warp-cli --accept-tos status 2>/dev/null | head -2 || true
   echo "egress now: $(curl -s --max-time 10 https://icanhazip.com)"
+}
+poll_ctl() {
+  # R2 operator channel (ops/ctl.json): halt flag + live SSH exclusions.
+  # Returns 1 = pause this round (HALT set), 0 = fetch on. Any read failure
+  # fails OPEN (a broken control plane must never stop fetching).
+  # NOTE: heredoc writes a temp FILE (not heredoc-in-$(), which macOS bash
+  # 3.2 cannot parse) before capturing output.
+  cat > /tmp/vps_poll_ctl.py <<'PYEOF'
+import sys, json, boto3, os
+bucket = os.environ["TGPC_R2_DG_BUCKET"]
+try:
+    s3 = boto3.client("s3", endpoint_url=f"https://{os.environ['CLOUDFLARE_ACCOUNT_ID']}.r2.cloudflarestorage.com",
+                      aws_access_key_id=os.environ["R2_ACCESS_KEY_ID"],
+                      aws_secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"])
+    s3.download_file(bucket, "ops/ctl.json", "/tmp/vps_ctl.json")
+    ctl = json.load(open("/tmp/vps_ctl.json"))
+    print(f"HALT={str(bool(ctl.get('halt'))).upper()}")
+    print(f"EXCL={ctl.get('ssh_exclude', '')}")
+except Exception:
+    print("HALT=FALSE")
+    print("EXCL=")
+PYEOF
+  local out
+  out=$(python3 /tmp/vps_poll_ctl.py 2>/dev/null) || return 0
+  local halt excl
+  halt=$(echo "$out" | grep ^HALT= | cut -d= -f2)
+  excl=$(echo "$out" | grep ^EXCL= | cut -d= -f2-)
+  if [ -n "$excl" ] && [ "$excl" != "$CTL_SSH_EXCLUDE" ]; then
+    echo "ctl: updating SSH exclusions: $excl"
+    apply_exclusions "$excl"
+    CTL_SSH_EXCLUDE="$excl"
+  fi
+  [ "$halt" = "TRUE" ] && return 1 || return 0
 }
 warp_down() {
   warp-cli --accept-tos disconnect 2>/dev/null || true
@@ -171,6 +210,12 @@ while true; do
   if ! warp-cli --accept-tos status 2>/dev/null | grep -qi "connected"; then
     echo "tunnel down mid-run — reconnecting…"
     warp_up
+  fi
+  # R2 operator channel: remote halt/resume + live exclusion updates, no SSH.
+  if ! poll_ctl; then
+    echo "ctl: HALT set — pausing 5 min (clear with scripts/vps_ctl.sh resume)"
+    sleep 300
+    continue
   fi
   gen_ids "$BATCH"
   [ -s data/dg_ids_vps.txt ] || { echo "ID pool exhausted — all done"; break; }
