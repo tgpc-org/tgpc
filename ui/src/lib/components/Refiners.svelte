@@ -27,7 +27,7 @@
     <span class="flex items-center gap-1.5">
       <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 6h18M7 12h10M10 18h4"/></svg>
       Refine
-      {#if active}<span class="rounded px-1.5 py-0.5 text-[0.6rem] normal-case tracking-normal" style="background:rgba(0,204,102,0.14);color:var(--t-ink)">Active</span>{/if}
+      {#if active}<span class="rounded px-1.5 py-0.5 text-[0.65rem] normal-case tracking-normal" style="background:rgba(0,204,102,0.14);color:var(--t-ink)">Active</span>{/if}
     </span>
     <svg class="w-4 h-4 transition-transform {open ? 'rotate-180' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
   </button>

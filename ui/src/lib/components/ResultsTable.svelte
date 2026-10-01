@@ -24,7 +24,10 @@
 
   // Sortable column header button: the colour lives on the button so the
   // label stays AA without depending on inherited <th> styling.
-  const TH_BTN = 'inline-flex items-center gap-1 cursor-pointer border-none bg-transparent p-0 uppercase tracking-wider text-[0.7rem] font-semibold transition-colors';
+  // py-1 lifts the sort targets from 17px to 25px (the WCAG 2.5.8 minimum is
+  // 24px); the matching -my-1 keeps the header row exactly as tall as before,
+  // since the padding stays inside the <th>'s own py-2.
+  const TH_BTN = 'inline-flex items-center gap-1 py-1 -my-1 cursor-pointer border-none bg-transparent uppercase tracking-wider text-[0.7rem] font-semibold transition-colors';
   const TH_HEAD = 'font-inherit text-left py-2 border-b-2 border-[var(--t-border)] uppercase tracking-wider text-[0.7rem] font-semibold text-[var(--t-muted)]';
 
   function ariaSort(key: 'registration_number' | 'name' | 'category' | 'validity_date' | 'status'): 'ascending' | 'descending' | 'none' {
@@ -90,7 +93,9 @@
             <img src={photoUrl(r)} alt="" loading="lazy" decoding="async" width="36" height="44" class="w-9 h-11 rounded object-cover bg-[var(--t-surface)]" />
           </td>
           <td class="py-2.5 align-top text-[var(--t-link)]" style="font-weight:600">
-            <a href="/rph/{r.registration_number}" onclick={(e) => { e.preventDefault(); onopen(r.registration_number); }} class="hover:underline no-underline cursor-pointer tabular-nums" aria-label="View profile for {r.registration_number}">
+            <!-- min-h-6 mirrors MobileCards: the bare link was 17px tall, under
+                 the 24px WCAG 2.5.8 target minimum. -->
+            <a href="/rph/{r.registration_number}" onclick={(e) => { e.preventDefault(); onopen(r.registration_number); }} class="inline-flex items-center min-h-6 hover:underline no-underline cursor-pointer tabular-nums" aria-label="View profile for {r.registration_number}">
               {r.registration_number}
             </a>
           </td>

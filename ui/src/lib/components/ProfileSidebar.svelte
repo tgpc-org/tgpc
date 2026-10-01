@@ -203,7 +203,7 @@ let flyFrom = $derived(
                 {#each record.education as edu, ei (ei)}
                   <div class="rounded-lg border border-[var(--t-surface)] bg-[var(--t-surface-3)] p-2 space-y-1.5">
                     <div class="flex items-center justify-between gap-2">
-                      <span class="text-[0.6rem] font-semibold uppercase tracking-wider text-[var(--t-muted)]">Category</span>
+                      <span class="text-[0.65rem] font-semibold uppercase tracking-wider text-[var(--t-muted)]">Category</span>
                       <span class="text-xs font-semibold" style="color:var(--t-ink)">{edu.Category || '—'}</span>
                     </div>
                     <div class="grid grid-cols-1 gap-1.5 text-xs">

@@ -1,3 +1,4 @@
+import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 
 // Mobile layout gate — runs in the `mobile` project (iPhone SE viewport).
@@ -14,14 +15,33 @@ function resultsLocator(page: Page) {
 	return page.locator('[data-testid="mobile-results"] a[href^="/rph/"]').first().or(page.getByText('No results'));
 }
 
+// The two record pages below carry some of the longest names in the registry
+// (33 and 25 characters). They used to push the whole document ~60-108px wide
+// on phones: the record header is a column with `items-start`, so the name
+// column sized to max-content instead of wrapping. Keep at least one long name
+// in this list — short names hide the regression.
+const OVERFLOW_PATHS = ['/', '/notice', '/dispatch', '/rph/TG074218', '/rph/TG072355'];
+
 test('no horizontal overflow on key pages', async ({ page }) => {
-	for (const path of ['/', '/notice', '/dispatch']) {
+	for (const path of OVERFLOW_PATHS) {
 		await page.goto(path);
 		const overflow = await page.evaluate(() => {
 			const el = document.documentElement;
 			return el.scrollWidth - el.clientWidth;
 		});
 		expect(overflow, `horizontal overflow on ${path}: ${overflow}px`).toBeLessThanOrEqual(1);
+	}
+});
+
+test('axe: no serious/critical violations at phone width', async ({ page }) => {
+	// This project is the only one that exercises phone widths, and the record
+	// page is not in a11y.spec.ts — without this, mobile-only violations (e.g.
+	// the header stats strip being unscrollable by keyboard) ship unnoticed.
+	for (const path of OVERFLOW_PATHS) {
+		await page.goto(path);
+		const results = await new AxeBuilder({ page }).disableRules(['color-contrast']).analyze();
+		const blocking = results.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical');
+		expect(blocking, `${path}: ${JSON.stringify(blocking.map((v) => v.id))}`).toEqual([]);
 	}
 });
 

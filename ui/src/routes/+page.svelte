@@ -461,7 +461,10 @@
         </div>
       {/if}
       <p class="text-[0.75rem]">
-        <a href="/notice" class="underline underline-offset-2" style="color:var(--t-link)">Browse the latest council notices</a>
+        <!-- inline-block + py-1.5 lifts this 15px-tall link to a real tap target
+             (WCAG 2.5.8), and the underline makes it read as a link rather than
+             as body text. -->
+        <a href="/notice" class="inline-block py-1.5 underline underline-offset-2" style="color:var(--t-link)">Browse the latest council notices</a>
       </p>
     </div>
   {/if}

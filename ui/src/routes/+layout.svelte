@@ -226,9 +226,18 @@
         </div>
       </div>
 
-      <!-- Registry stats: one scrollable strip, readable at every width -->
+      <!-- Registry stats: one scrollable strip, readable at every width.
+           Below ~700px the strip really does scroll, so it must be reachable
+           by keyboard and announced as a landmark — otherwise the tail of the
+           stats (MPharm/QP/QC, active/inactive) is unreachable for keyboard and
+           screen-reader users (axe `scrollable-region-focusable`, serious).
+           Svelte's static tabindex rule can't see that requirement. -->
+      <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
       <div
-        class="-mx-3 sm:-mx-5 px-3 sm:px-5 border-t overflow-x-auto"
+        role="region"
+        aria-label="Registry statistics"
+        tabindex="0"
+        class="-mx-3 sm:-mx-5 px-3 sm:px-5 border-t overflow-x-auto focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[rgba(0,204,102,0.35)]"
         style="border-color:var(--t-border);scrollbar-width:thin;scrollbar-color:var(--t-border) transparent;-webkit-overflow-scrolling:touch"
       >
         <div class="w-full min-w-max flex items-stretch gap-1 py-1.5">

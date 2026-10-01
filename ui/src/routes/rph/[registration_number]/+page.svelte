@@ -116,8 +116,15 @@
         {/if}
       </div>
 
-      <div class="flex-1 min-w-0 space-y-2">
-        <h1 class="text-xl md:text-2xl font-bold text-[var(--t-ink)] truncate">{record.name}</h1>
+      <!-- `w-full` on the mobile column: the parent is items-start, so without
+           it this column sizes to max-content — a long name pushed the whole
+           page ~66px wide at 320px (truncate never kicked in because the box
+           was as wide as the text). md:w-auto restores row behaviour above sm,
+           where min-w-0 already lets the name clip/shrink inside the row. -->
+      <div class="w-full md:w-auto flex-1 min-w-0 space-y-2">
+        <!-- Wrap instead of truncate: a clipped personal name is the one thing
+             this page must never hide. -->
+        <h1 class="text-xl md:text-2xl font-bold text-[var(--t-ink)] break-words leading-tight">{record.name}</h1>
 
         <div class="flex flex-wrap items-center gap-2.5">
           <span class="px-3 py-1 rounded-full text-[0.75rem] font-semibold uppercase tracking-wider tabular-nums"
@@ -169,7 +176,7 @@
           {#each record.education as edu, ei (ei)}
             <div class="rounded-lg border border-[var(--t-surface)] bg-[var(--t-surface-3)] p-2.5 space-y-1.5">
               <div class="flex items-center justify-between gap-2">
-                <span class="text-[0.6rem] font-semibold uppercase tracking-wider text-[var(--t-muted)]">Category</span>
+                <span class="text-[0.65rem] font-semibold uppercase tracking-wider text-[var(--t-muted)]">Category</span>
                 <span class="text-sm font-semibold" style="color:var(--t-ink)">{edu.Category || '—'}</span>
               </div>
               <div class="grid grid-cols-1 gap-1.5 text-sm">
@@ -230,7 +237,7 @@
   </div>
 
   <footer class="text-center text-[0.7rem] text-[var(--t-muted)] py-4 border-t border-[var(--t-border)]">
-    Data sourced from Telangana State Pharmacy Council &middot; <a href="https://tgpc.pages.dev" class="text-[var(--t-link)] hover:underline">tgpc.pages.dev</a>
+    Data sourced from Telangana State Pharmacy Council &middot; <a href="https://tgpc.pages.dev" class="text-[var(--t-link)] underline underline-offset-2">tgpc.pages.dev</a>
   </footer>
 </div>
 
