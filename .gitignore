@@ -94,3 +94,4 @@ tgpc-creds.sh
 test-results/
 playwright-report/
 playwright/.cache/
+.freebuff/
