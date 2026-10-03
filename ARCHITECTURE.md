@@ -22,7 +22,6 @@ tgpc/
 ├── .github/workflows/rphsync.yml   # Manual CI: single job, scrapes + syncs to all destinations + email
 ├── .github/workflows/python.yml    # ruff + pytest + pip-audit dependency scan
 ├── .github/workflows/ui.yml        # eslint + svelte-check + brand-color gate + tests + npm audit
-├── .github/workflows/health.yml    # Scheduled 6-hourly /api/health poll → alerts on stale last_sync
 ├── .github/FUNDING.yml             # GitHub Sponsors + PayPal funding config
 ├── .husky/                         # Husky pre-commit hook → triggers pre-commit (ruff)
 ├── .pre-commit-config.yaml         # ruff lint + ruff-format only
@@ -59,7 +58,6 @@ tgpc/
 │   ├── details_dg.py               # DG getdetailsdg captcha flow → PII contacts; L1-L4 redundancy + --resume (~1260 lines)
 │   └── dg_migration.sql            # rph_dg_contacts table DDL (service-role only, no anon grants)
 ├── scripts/                        # Standalone helpers (run from repo root)
-│   ├── check_health.py             # Stdlib-only prod /api/health monitor (fresh/stale → exit codes; see test_check_health.py)
 │   ├── dg_dashboard.py             # Local DG fetch monitor: localhost HTTP server serving dg_dashboard.html
 │   ├── dg_dashboard.html           # DG monitor UI (dark mode, start/stop, live stats)
 │   ├── dg_captcha_bench.py         # Fetch N live DG captchas, OCR-guess, dump for human labeling
@@ -119,7 +117,7 @@ tgpc/
 │   │   ├── mobile.spec.ts         # iPhone-SE viewport: no overflow, usable search, footer layering
 │   │   ├── contrast-baseline.json # Tracked contrast debt baseline
 │   │   └── update-baseline.mjs    # Refresh the baseline after intentional palette changes
-├── tests/                          # 177 tests, 12 files (all mocked — no real HTTP/Supabase)
+├── tests/                          # 170 tests, 11 files (all mocked — no real HTTP/Supabase)
 │   ├── test_scraper.py             # 14: timeouts, WAF/blocked detection, table fallback, bad rows, detail parsing, legacy headers, missing tables, opt-in TLS pinning
 │   ├── test_manager_update.py      # 7: safety guard, dedup/sort/GITHUB_OUTPUT, deterministic ordering, source-unavailable, +3 sync return-value regressions
 │   ├── test_manager_enrichment.py  # 3: enrichment save, registration mismatch, null serial_number regression
@@ -129,7 +127,6 @@ tgpc/
 │   ├── test_inactive_sweep.py      # 6: JSONL parsing, checkpoint roundtrip, resume/partial runs
 │   ├── test_bugfix_regressions.py  # 18: restore/backup/release/force regressions
 │   ├── test_security_audit_regressions.py  # 27: audit remediations (DG PII RLS posture, R2 publicity gate, email escaping, rclone temp paths)
-│   ├── test_check_health.py        # 17: prod health monitor classification + exit codes
 │   ├── test_details_dg.py          # 37: DG caption/detail parsing, captcha handling, RLS/Storage posture
 │   └── test_dg_dashboard.py        # 12: DG monitor status merge, zombie-PID detection, IST formatting
 └── (credentials stored in macOS Keychain, not files)
@@ -594,8 +591,7 @@ Job permissions: `actions: write`, `contents: write` (release upload).
 
 **Quality gates:**
 - `.github/workflows/ui.yml` runs on push/PR touching `ui/` — ESLint + brand-color gate (`check:colors`) + svelte-check + the 24 unit tests + a build with placeholder PUBLIC env vars (real values live in the Cloudflare Pages dashboard) + `npm audit --audit-level=high`. A second job (`e2e`) typechecks the specs (`check:e2e`) and runs the 4 Playwright suites in `ui/e2e/` on chromium. Auto-deploys from `main` build `ui/`.
-- `.github/workflows/python.yml` runs on push/PR touching `tgpc/`, `tests/`, `scripts/`, or `pyproject.toml` — `ruff check`, `ruff format --check` (pinned 0.16.6, matching pre-commit), the full pytest suite, and a `pip-audit` dependency vulnerability scan.
-- `.github/workflows/health.yml` is **scheduled** (`17 */6 * * *`, plus manual dispatch), not push-triggered. It polls production `/api/health` and fails when `last_sync` is older than 48h (exit 1) or when the endpoint is unreachable, non-200, or reports a failing check (exit 2). `scripts/check_health.py` is stdlib-only, and `--max-hours` / `--url` (or the `PROD_URL` repository variable) adjust the threshold and target. Data freshness deliberately does **not** gate pushes: it is an operational condition, so it is alerted on its own schedule rather than reddening unrelated `ui/` changes — see `ui/e2e/smoke.spec.ts`, which asserts the health *contract* and leaves staleness here. (The former weekly k6 `load.yml` was removed 2026-09: agent-created, unread results.)
+- `.github/workflows/python.yml` runs on push/PR touching `tgpc/`, `tests/`, `scripts/`, or `pyproject.toml` — `ruff check`, `ruff format --check` (pinned 0.16.6, matching pre-commit), the full pytest suite, and a `pip-audit` dependency vulnerability scan. Data freshness deliberately does **not** gate pushes: it is an operational condition, so `ui/e2e/smoke.spec.ts` asserts only the health *contract* (shape, not age) — freshness is the operator's job via the daily manual `make scrape`. (The former weekly k6 `load.yml` was removed 2026-09: agent-created, unread results. The 6-hourly `health.yml` freshness poll was removed 2026-10 for the same reason: manual scrape cadence made it pure noise.)
 
 **Dependency updates:**
 Dependabot was removed (2026-09) in favour of manual bumps. CVE coverage comes from the two audit gates: `pip-audit` in `python.yml` and `npm audit --audit-level=high` in `ui.yml` — both fail the build on known-vulnerable dependencies.
@@ -608,7 +604,7 @@ Dependabot was removed (2026-09) in favour of manual bumps. CVE coverage comes f
 python3 -m pytest tests/ -v
 ```
 
-177 tests across 12 files:
+170 tests across 11 files:
 
 | File | Tests | What's tested |
 |---|---|---|
@@ -621,7 +617,6 @@ python3 -m pytest tests/ -v
 | `test_inactive_sweep.py` | 6 | JSONL parsing (good/bad lines), checkpoint save/load roundtrip, resume skipping completed batches, partial-run slicing |
 | `test_bugfix_regressions.py` | 18 | Restore-to-temp validation, backup rotation, release return codes, `--force` overrides, DetailError vs absence |
 | `test_security_audit_regressions.py` | 27 | Audit remediations: DG PII RLS posture, DG artifacts kept out of the public R2 bucket, report-email HTML escaping, rclone temp paths, photo redirect validation, backup restore validation, DG Storage bucket publicity gate |
-| `test_check_health.py` | 17 | Production health monitor: fresh/stale/boundary classification, missing, non-numeric or boolean `hours_ago` treated as down (never as fresh), Supabase failure distinguished from staleness, unreachable endpoint and HTTP 503 body handling, default URL points at the health endpoint, exit codes |
 | `test_details_dg.py` | 37 | DG caption/detail parsing, captcha handling, and the RLS/Storage posture of the DG pipeline |
 | `test_dg_dashboard.py` | 12 | Local DG monitor: status merging, checkpoint-derived counts, zombie-PID detection, log tailing, IST formatting |
 
