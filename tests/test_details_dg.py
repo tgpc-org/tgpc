@@ -264,6 +264,12 @@ class SyncPayloadTests(unittest.TestCase):
         self.assertEqual(payload["work_study_address"], "")
         self.assertEqual(payload["dg_fetched_at"], "2026-09-17T00:00:00Z")
 
+    def test_payload_serial_is_int(self):
+        parsed, _ = parse_dg_html(DG_HTML, "TS003261")
+        self.assertEqual(build_supabase_payload(parsed, "t", serial="49554")["serial_number"], 49554)
+        self.assertIsNone(build_supabase_payload(parsed, "t", serial=None)["serial_number"])
+        self.assertIsNone(build_supabase_payload(parsed, "t", serial="N/A")["serial_number"])
+
     def test_sync_cloud_batches_upsert(self):
         import tgpc.details_dg as dg
 

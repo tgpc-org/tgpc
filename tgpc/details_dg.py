@@ -717,7 +717,10 @@ DG_COLUMNS = (
 def build_supabase_payload(parsed: Dict[str, str], fetched_at: str, serial: object = None) -> Dict[str, object]:
     """Map a validated parsed DG row to rph_dg_contacts columns (+migration file)."""
     payload: Dict[str, object] = {"registration_number": parsed.get("registration_number", "")}
-    payload["serial_number"] = serial
+    try:
+        payload["serial_number"] = int(serial) if serial is not None else None
+    except (TypeError, ValueError):
+        payload["serial_number"] = None
     for col in DG_COLUMNS:
         payload[col] = parsed.get(col, "") or ""
     payload["dg_fetched_at"] = fetched_at

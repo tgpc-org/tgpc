@@ -360,7 +360,7 @@ CREATE TABLE rph (
   name TEXT,
   father_name TEXT,
   category TEXT,
-  serial_number TEXT,
+  serial_number INTEGER,
   -- enrichment columns (written by the enrichment pipeline):
   gender TEXT,
   validity_date TEXT,          -- 'DD-Mon-YYYY' as scraped
@@ -374,7 +374,7 @@ CREATE TABLE rph (
 -- so DG writes cannot touch base rows; migration: tgpc/dg_migration.sql):
 -- CREATE TABLE rph_dg_contacts (
 --   registration_number TEXT PRIMARY KEY,  -- 1:1 with rph, no FK (DG must not block rph deletes)
---   serial_number TEXT,                    -- tracker from rph (human-friendly ordering)
+--   serial_number INTEGER,                 -- tracker from rph (human-friendly ordering; migrated from TEXT 2026-10, see tgpc/dg_serial_int_migration.sql)
 --   dob TEXT, date_of_registration TEXT, renewal_validity TEXT,  -- verbatim DD-MM-YYYY
 --   home_address TEXT, home_state TEXT,
 --   work_study_address TEXT, work_study_state TEXT,
