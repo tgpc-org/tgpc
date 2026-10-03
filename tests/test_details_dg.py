@@ -14,6 +14,7 @@ from tgpc.details_dg import (  # noqa: E402
     identity_matches,
     load_checkpoint,
     normalize_gender,
+    normalize_token,
     parse_dg_html,
     run_fetch,
     save_checkpoint_atomic,
@@ -109,6 +110,21 @@ class ValidatorTests(unittest.TestCase):
         problems = validate_parsed(parsed)
         self.assertIn("bad_mobile", problems)
         self.assertIn("bad_email", problems)
+
+    def test_token_strips_all_whitespace(self):
+        self.assertEqual(normalize_token("95159 0229"), "951590229")
+        self.assertEqual(normalize_token("shravani.mbp@gmail .com"), "shravani.mbp@gmail.com")
+        self.assertEqual(normalize_token("  a\tb\nc "), "abc")
+        self.assertEqual(normalize_token(""), "")
+        # Not a validator: genuinely-bad values pass through unchanged (still flagged downstream)
+        self.assertEqual(normalize_token("kumarv620372gmail.com"), "kumarv620372gmail.com")
+
+    def test_spaced_contacts_validate_after_tokenize(self):
+        parsed, _ = parse_dg_html(DG_HTML, "TS003261")
+        parsed["mobile_no"] = normalize_token("99122 15335")
+        parsed["email_id"] = normalize_token("shravani.mbp@gmail .com")
+        self.assertNotIn("bad_mobile", validate_parsed(parsed))
+        self.assertNotIn("bad_email", validate_parsed(parsed))
 
     def test_gender_map(self):
         self.assertEqual(normalize_gender("m"), "Male")

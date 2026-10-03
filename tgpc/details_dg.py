@@ -129,6 +129,12 @@ def normalize_space(value: str) -> str:
     return re.sub(r"\s+", " ", value or "").strip()
 
 
+def normalize_token(value: str) -> str:
+    """Strip ALL whitespace. Mobiles/emails are single tokens — the source
+    sprinkles stray spaces inside them ("gmail .com", "95159 0229")."""
+    return re.sub(r"\s+", "", value or "")
+
+
 def normalize_header(value: str) -> str:
     return normalize_space(value).lower()
 
@@ -245,8 +251,8 @@ def parse_dg_html(html: str, expected_reg: str) -> Tuple[Dict[str, str], Dict[st
     parsed = {field: raw_cells.get(header, "") for header, field in HEADER_MAP.items()}
     parsed["registration_number"] = echoed
     parsed["gender"] = normalize_gender(parsed.get("gender", ""))
-    parsed["mobile_no"] = normalize_space(parsed.get("mobile_no", ""))
-    parsed["email_id"] = normalize_space(parsed.get("email_id", "")).lower()
+    parsed["mobile_no"] = normalize_token(parsed.get("mobile_no", ""))
+    parsed["email_id"] = normalize_token(parsed.get("email_id", "")).lower()
 
     for key in ("registration_number", "name", "category"):
         if not parsed.get(key):
