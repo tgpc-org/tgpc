@@ -318,6 +318,59 @@ class SyncPayloadTests(unittest.TestCase):
             self.assertEqual(stats_d["cloud_snapshot"], {})
             self.assertTrue(r2_calls)  # batch R2 seam exercised under mock (never real)
 
+    def test_sync_pushes_raws_incrementally(self):
+        import tgpc.details_dg as dg
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cp = Path(tmp) / "cp.json"
+            out = Path(tmp) / "out.jsonl"
+            raw = Path(tmp) / "raw"
+            stats = Path(tmp) / "stats.json"
+
+            class FakeFetcher:
+                def fetch_one(self, reg, captcha_solver=None, max_captcha_attempts=3):
+                    html = DG_HTML.replace("TS003261", reg)
+                    return html, {"captcha_text": "X", "attempts": 1, "ms": {}}
+
+            orig_upsert, orig_snap = dg.upsert_dg_batch, dg.sync_cloud_snapshot
+            orig_r2, orig_r2s = dg.push_file_to_r2, dg.push_dg_to_r2
+            raw_calls = []
+            dg.upsert_dg_batch = lambda payloads: (len(payloads), "")
+            dg.sync_cloud_snapshot = lambda *a: {}
+            dg.push_file_to_r2 = lambda *a: True  # hermetic
+            dg.push_dg_to_r2 = lambda paths, prefix="dg-raw": (
+                raw_calls.append([Path(p).name for p in paths]),
+                True,
+            )[1]
+            ref = {
+                r: {"name": "SALLA DINESH REDDY", "father_name": "SALLA BAL REDDY", "category": "BPharm"}
+                for r in ("TS31", "TS32", "TS33", "TS34", "TS35")
+            }
+            try:
+                stats_d = run_fetch(
+                    ["TS31", "TS32", "TS33", "TS34", "TS35"],
+                    out,
+                    raw,
+                    cp,
+                    stats,
+                    reference=ref,
+                    resume=False,
+                    sync_cloud=True,
+                    sync_every=2,
+                    fetcher_factory=FakeFetcher,
+                )
+            finally:
+                dg.upsert_dg_batch = orig_upsert
+                dg.sync_cloud_snapshot = orig_snap
+                dg.push_file_to_r2 = orig_r2
+                dg.push_dg_to_r2 = orig_r2s
+            self.assertEqual(stats_d["done"], 5)
+            # flushes at 2 and 4 records (final 1 rides the end-of-run snapshot)
+            self.assertEqual(len(raw_calls), 2)
+            self.assertEqual(raw_calls[0], ["TS31.json", "TS32.json"])
+            self.assertEqual(raw_calls[1], ["TS33.json", "TS34.json"])
+            self.assertEqual(stats_d["raws_pushed_incremental"], 4)
+
     def test_sync_cloud_requires_reference(self):
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaises(ValueError):

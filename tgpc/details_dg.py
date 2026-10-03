@@ -1013,11 +1013,13 @@ def run_fetch(
         "captcha_firstpass_ok": 0,
         "captcha_retries": 0,
         "sb_upserted": 0,
+        "raws_pushed_incremental": 0,
         "sb_batches_failed": 0,
         "cloud_snapshot": {},
         "started_at": utcnow(),
     }
     pending_payloads: List[Dict[str, object]] = []
+    pending_raw_regs: List[str] = []
     deferred_payloads: List[Dict[str, object]] = []
 
     def flush_supabase_batch() -> None:
@@ -1310,9 +1312,18 @@ def run_fetch(
 
             if sync_cloud:
                 pending_payloads.append(build_supabase_payload(parsed, record["fetched_at"], serial_of(reg)))
+                pending_raw_regs.append(reg)
                 if len(pending_payloads) >= sync_every:
                     flush_supabase_batch()
                     push_file_to_r2(out_jsonl, "dg-contacts/dg_contacts.jsonl")
+                    # Incremental raw backup: a SIGTERM-killed batch never
+                    # reaches the end-of-run snapshot, which stranded raws
+                    # before. Best-effort; the end-of-run full sync backstops.
+                    if push_dg_to_r2([raw_dir / f"{r}.json" for r in pending_raw_regs]):
+                        stats["raws_pushed_incremental"] = stats.get("raws_pushed_incremental", 0) + len(
+                            pending_raw_regs
+                        )
+                    pending_raw_regs.clear()
 
             state["completed"] = sorted(set(state.get("completed", [])) | {reg})
             state["failed"].pop(reg, None)
