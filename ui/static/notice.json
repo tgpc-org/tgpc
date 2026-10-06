@@ -134,6 +134,22 @@
     "title": "For change of Address, E-mail id and Mobile Number submit application with copy of registration certificate and updated Aadharcard to Registrar, TGPC in the office."
   },
   {
+    "id": 25,
+    "date": "2025-01-13",
+    "source": "Circular",
+    "title": "Revised list of Blocked Pharmacists on DIGI-PHARMed Portal – PCI",
+    "links": [
+      {
+        "label": "Circular",
+        "url": "https://pub-4591c8c5282040459ade2ed1e5e3d5be.r2.dev/notice/20250113PCIBlockedPharmacists.pdf"
+      },
+      {
+        "label": "Blocked list",
+        "url": "https://pub-4591c8c5282040459ade2ed1e5e3d5be.r2.dev/notice/20250113PCIBlockedPharmacistsList.pdf"
+      }
+    ]
+  },
+  {
     "id": 7,
     "date": "2025-01-05",
     "source": "News",
@@ -152,6 +168,30 @@
       {
         "label": "Proforma",
         "url": "https://pub-4591c8c5282040459ade2ed1e5e3d5be.r2.dev/notice/20250104TGPCDPharmProforma.jpeg"
+      }
+    ]
+  },
+  {
+    "id": 26,
+    "date": "2024-12-27",
+    "source": "Circular",
+    "title": "Duplicate Pharmacist profiles on DIGI-PHARMed Portal – PCI",
+    "links": [
+      {
+        "label": "Circular",
+        "url": "https://pub-4591c8c5282040459ade2ed1e5e3d5be.r2.dev/notice/20241227PCIDuplicatePharmacistProfiles.pdf"
+      }
+    ]
+  },
+  {
+    "id": 27,
+    "date": "2024-12-27",
+    "source": "Circular",
+    "title": "Duplicate, invalid or incomplete profile data on DIGI-PHARMed Portal – PCI",
+    "links": [
+      {
+        "label": "Blocked list",
+        "url": "https://pub-4591c8c5282040459ade2ed1e5e3d5be.r2.dev/notice/20241227PCIDuplicateProfileData.pdf"
       }
     ]
   },
