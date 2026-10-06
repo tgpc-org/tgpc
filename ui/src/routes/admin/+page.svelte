@@ -1,6 +1,6 @@
 <script lang="ts">
   import { invalidateAll } from '$app/navigation';
-  import type { UsageReport } from '$lib/types';
+  import type { ContactLookup, UsageReport } from '$lib/types';
   import type { PageData } from './$types';
 
   let { data }: { data: PageData } = $props();
@@ -15,10 +15,57 @@
   let show = $state(false);
   let error = $state('');
   let loading = $state(false);
-  let tab = $state<'usage' | 'links'>('usage');
+  let tab = $state<'usage' | 'links' | 'contacts'>('usage');
   let report = $state<UsageReport | null>(null);
   let usageLoading = $state(false);
   let usageError = $state('');
+
+  let lookupReg = $state('');
+  let lookup = $state<ContactLookup | null>(null);
+  let lookupLoading = $state(false);
+  let lookupError = $state('');
+
+  const CONTACT_LABELS: Record<string, string> = {
+    dob: 'Date of birth',
+    date_of_registration: 'Registered on',
+    renewal_validity: 'Renewal valid till',
+    home_address: 'Home address',
+    home_state: 'Home state',
+    work_study_address: 'Work/study address',
+    work_study_state: 'Work/study state',
+    mobile_no: 'Mobile',
+    email_id: 'Email'
+  };
+
+  function contactEmpty(c: Record<string, string | null> | null): boolean {
+    if (!c) return true;
+    return Object.values(c).every((v) => v === null || v === '');
+  }
+
+  async function lookupContact() {
+    const reg = lookupReg.trim();
+    if (!reg || lookupLoading) return;
+    lookupLoading = true;
+    lookupError = '';
+    lookup = null;
+    try {
+      const r = await fetch(`/api/admin/contacts?reg=${encodeURIComponent(reg)}`);
+      if (r.status === 400) {
+        lookupError = 'Enter a valid registration number (e.g. TG061874)';
+      } else if (r.status === 403) {
+        lookupError = 'Unauthorized';
+      } else if (r.status === 404) {
+        lookupError = 'No such record';
+      } else if (r.ok) {
+        lookup = (await r.json()) as ContactLookup;
+      } else {
+        lookupError = 'Server error';
+      }
+    } catch {
+      lookupError = 'Connection error';
+    }
+    lookupLoading = false;
+  }
 
   async function login() {
     if (!secret.trim()) return;
@@ -83,6 +130,9 @@
     tab = 'usage';
     report = null;
     usageError = '';
+    lookupReg = '';
+    lookup = null;
+    lookupError = '';
     try {
       await fetch('/api/admin', { method: 'DELETE' });
     } catch {}
@@ -174,6 +224,9 @@
         <span style="color:var(--t-border-soft);font-weight:300;padding:0;user-select:none">/</span>
         <button onclick={() => tab = 'links'}
           style="text-decoration:none;padding:2px 4px;font-weight:700;color:{tab === 'links' ? '#00cc66' : 'var(--t-muted)'};white-space:nowrap;cursor:pointer;border:none;background:transparent">INTERNAL LINKS</button>
+        <span style="color:var(--t-border-soft);font-weight:300;padding:0;user-select:none">/</span>
+        <button onclick={() => tab = 'contacts'}
+          style="text-decoration:none;padding:2px 4px;font-weight:700;color:{tab === 'contacts' ? '#00cc66' : 'var(--t-muted)'};white-space:nowrap;cursor:pointer;border:none;background:transparent">CONTACTS</button>
       </div>
       <button onclick={logout}
         class="shrink-0 text-xs font-semibold px-3 py-1.5 rounded border border-[var(--t-border)] text-[var(--t-muted)] hover:bg-[var(--t-surface-2)] hover:text-[#ef4444] transition-colors">
@@ -241,7 +294,7 @@
             <div class="px-3 py-3 text-xs text-[var(--t-muted)]">No usage data yet.</div>
           {/if}
         </div>
-      {:else}
+      {:else if tab === 'links'}
         <div class="border border-[var(--t-border)] rounded-lg overflow-hidden" style="flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column">
           <div class="divide-y divide-[var(--t-border)]" style="flex:1;display:flex;flex-direction:column">
             {#each groups as group (group.name)}
@@ -269,6 +322,69 @@
               </div>
             {/each}
           </div>
+        </div>
+      {:else}
+        <div style="flex:1;min-height:0;overflow-y:auto">
+          <form onsubmit={(e) => { e.preventDefault(); lookupContact(); }} class="flex items-center gap-2 mb-3">
+            <input
+              bind:value={lookupReg}
+              placeholder="Registration number (e.g. TG061874)"
+              disabled={lookupLoading}
+              autocomplete="off"
+              spellcheck={false}
+              class="flex-1 outline-none border border-[var(--t-border)] rounded px-3 py-1.5 text-sm bg-transparent focus-within:border-[#00cc66] min-w-0 font-mono"
+            >
+            <button
+              type="submit"
+              disabled={lookupLoading}
+              class="shrink-0 bg-[#00cc66] text-[var(--t-ink)] text-xs font-semibold px-3 py-1.5 rounded hover:opacity-90 disabled:opacity-50 transition-opacity">
+              {lookupLoading ? 'Looking up...' : 'Look up'}
+            </button>
+          </form>
+
+          {#if lookupError}
+            <div class="inline-block text-xs text-[var(--t-ink)] bg-[rgba(239,68,68,0.12)] rounded px-2 py-1 mb-4">{lookupError}</div>
+          {/if}
+
+          {#if lookup?.base}
+            <div class="mb-5 border border-[var(--t-border)] rounded-lg overflow-hidden">
+              <div class="bg-[var(--t-surface-2)] px-3 py-2 font-semibold text-sm border-b border-[var(--t-border)]">
+                {lookup.base.registration_number} — {lookup.base.name}
+              </div>
+              <table class="w-full text-xs">
+                <tbody>
+                  {#each [['Father', lookup.base.father_name], ['Category', lookup.base.category], ['Gender', lookup.base.gender], ['Status', lookup.base.status], ['Valid till', lookup.base.validity_date]] as [label, value] (label)}
+                    <tr class="border-b border-[var(--t-border)] last:border-b-0">
+                      <td class="px-3 py-1.5 text-[var(--t-muted)]">{label}</td>
+                      <td class="px-3 py-1.5 text-right font-mono">{value || '—'}</td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
+          {/if}
+
+          {#if lookup}
+            {#if contactEmpty(lookup.contact)}
+              <div class="px-3 py-3 text-xs text-[var(--t-muted)] border border-[var(--t-border)] rounded-lg">No DG contact record for this registration.</div>
+            {:else}
+              <div class="mb-5 border border-[var(--t-border)] rounded-lg overflow-hidden">
+                <div class="bg-[var(--t-surface-2)] px-3 py-2 font-semibold text-sm border-b border-[var(--t-border)]">
+                  Contact details
+                </div>
+                <table class="w-full text-xs">
+                  <tbody>
+                    {#each Object.entries(lookup.contact ?? {}) as [key, value] (key)}
+                      <tr class="border-b border-[var(--t-border)] last:border-b-0">
+                        <td class="px-3 py-1.5 text-[var(--t-muted)]">{CONTACT_LABELS[key] ?? key}</td>
+                        <td class="px-3 py-1.5 text-right font-mono break-all">{value || '—'}</td>
+                      </tr>
+                    {/each}
+                  </tbody>
+                </table>
+              </div>
+            {/if}
+          {/if}
         </div>
       {/if}
     </div>

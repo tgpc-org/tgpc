@@ -83,6 +83,7 @@ tgpc/
 │   │   │   ├── admin/+page.svelte (server load gates payload)
 │   │   │   └── api/
 │   │   │       ├── admin/+server.ts      # POST login / DELETE logout (session cookie)
+│   │   │       ├── admin/contacts/+server.ts # GET ?reg= session-gated DG contact lookup (service-side join, PII never public)
 │   │   │       ├── usage/+server.ts      # Service quota report (fail-closed)
 │   │   │       ├── dispatch/+server.ts   # R2 bucket listing proxy (stale fallback)
 │   │   │       ├── dispatch/[name]/+server.ts # PDF proxy w/ title rewrite
@@ -551,6 +552,7 @@ The 200-row ceiling is a **client-side** cap. It bounds what the browser receive
   - `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Strict-Transport-Security`, `Permissions-Policy`
   - `Cross-Origin-Opener-Policy: same-origin` + `Cross-Origin-Resource-Policy: same-origin` (cross-origin isolation)
 - **Admin auth** — HMAC-SHA256 signed, expiring session cookie (`HttpOnly`/`SameSite=Strict`); login uses constant-time comparison + a fixed 250ms delay on every attempt (timing side-channel + brute-force throttling); best-effort in-isolate rate limiter (defence-in-depth — pair with a Cloudflare Rate Limiting rule on `/api/admin`)
+- **Admin contacts lookup** — `/api/admin/contacts?reg=` returns base record + DG contact details only to a valid session (same cookie + rate limit); single SQL join via the management API (account PAT), reg allowlisted before interpolation, PII excluded from logs (reg-number audit line only); `/admin` CONTACTS tab renders it, never cached (`no-store`)
 - **Responsive** — single component, CSS toggles between table and cards at 768px
 - **Connection status** — status pill (Busy/Live/Offline) with live clock
 - **Design** — TGPC brand palette only, machine-enforced by `npm run check:colors`

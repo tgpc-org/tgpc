@@ -33,6 +33,8 @@ data/progress/
 data/update_details.json
 data/*.jsonl
 data/failed_terminal_regs.json
+data/dg_integrity_review.json
+data/dg_spotcheck.json
 # DG captcha-flow artifacts (per-record snapshots — redundant in R2/Supabase, never in git)
 data/dg_raw/
 data/dg_failed/

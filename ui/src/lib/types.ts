@@ -32,6 +32,12 @@ export interface WorkExperience {
 
 export type Category = 'BPharm' | 'DPharm' | 'MPharm' | 'PharmD' | 'QC' | 'QP';
 
+/** Admin-only contact lookup result (session-gated endpoint, never public). */
+export interface ContactLookup {
+  base: PharmacistRecord | null;
+  contact: Record<string, string | null> | null;
+}
+
 export interface Notice {
   date: string;
   title: string;
