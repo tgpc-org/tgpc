@@ -26,6 +26,7 @@ Every screen, component, export, and new code must use ONLY these in-house color
 | inkSoft    | `#374151` | Body text on white             |
 | borderSoft | `#d1d5db` | Subtle dividers                |
 | surfaceHi  | `#f9fafb` | Hover backgrounds              |
+| night      | `#2a2a2a` | Page background (dark mode)    |
 
 Soft tints of brand red/green are allowed as alpha variants:
 `rgba(239,68,68,α)` and `rgba(0,204,102,α)` (e.g. tinted button/badge
@@ -85,9 +86,10 @@ Therefore:
 The site ships a theme toggle (header, `$lib/theme.ts`). Implementation notes:
 
 - Semantic tokens live in `ui/src/app.css` (`:root` light, `.dark` night).
-  Dark values reuse the approved neutrals inverted — **no new hex was
-  added for night mode**, so the color gate covers both modes unchanged.
-- Night mapping: page `#111827`, surfaces/rows `#374151`, borders
+  The night page background is the registered `night` neutral (`#2a2a2a`,
+  2026-10-06) — the only value added for night mode — so the color gate
+  covers both modes unchanged.
+- Night mapping: page `#2a2a2a`, surfaces/rows `#374151`, borders
   `#6b7280`/`#374151`, text `#ffffff`/`#f9fafb`/`#d1d5db`, faint `#9ca3af`.
   Brand accents are identical day and night.
 - Components reference tokens as `var(--t-bg)` (inline styles) or

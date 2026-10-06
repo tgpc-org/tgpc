@@ -20,7 +20,9 @@ const ALLOWED_HEX = new Set([
   // neutrals
   '111827', '6b7280', 'e5e7eb', 'f4f4f5', 'ffffff', '00b359',
   // neutrals approved 2026-08-24 (standard Tailwind grays in consistent use)
-  'f3f4f6', 'f8f9fa', '374151', 'd1d5db', 'f9fafb'
+  'f3f4f6', 'f8f9fa', '374151', 'd1d5db', 'f9fafb',
+  // night page background approved 2026-10-06 (dark-mode --t-bg)
+  '2a2a2a'
 ]);
 
 // Allowed rgb() triplets: brand red and brand green, any alpha.
