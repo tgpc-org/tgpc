@@ -175,20 +175,12 @@
     "id": 26,
     "date": "2024-12-27",
     "source": "Circular",
-    "title": "Duplicate Pharmacist profiles on DIGI-PHARMed Portal – PCI",
+    "title": "Duplicate Pharmacist profiles and profile data on DIGI-PHARMed Portal – PCI",
     "links": [
       {
         "label": "Circular",
         "url": "https://pub-4591c8c5282040459ade2ed1e5e3d5be.r2.dev/notice/20241227PCIDuplicatePharmacistProfiles.pdf"
-      }
-    ]
-  },
-  {
-    "id": 27,
-    "date": "2024-12-27",
-    "source": "Circular",
-    "title": "Duplicate, invalid or incomplete profile data on DIGI-PHARMed Portal – PCI",
-    "links": [
+      },
       {
         "label": "Blocked list",
         "url": "https://pub-4591c8c5282040459ade2ed1e5e3d5be.r2.dev/notice/20241227PCIDuplicateProfileData.pdf"
