@@ -46,21 +46,11 @@ export const GET: RequestHandler = async (event) => {
     let lastSync = '';
     if (syncR.ok) {
       const rows = await syncR.json();
-      if (Array.isArray(rows) && rows[0]?.value) {
-        lastSync = new Date(rows[0].value)
-          .toLocaleString('en-IN', {
-            timeZone: 'Asia/Kolkata',
-            weekday: 'short',
-            day: '2-digit',
-            month: 'short',
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit',
-            hour12: false
-          })
-          .toUpperCase()
-          .replace(/,/g, '');
+      // Raw ISO only — locale formatting happens in the browser, whose ICU
+      // is complete. Workers runtimes may lack it (RangeError), which would
+      // 502 this whole endpoint and blank the stats strip.
+      if (Array.isArray(rows) && typeof rows[0]?.value === 'string') {
+        lastSync = rows[0].value;
       }
     }
     const stats = {

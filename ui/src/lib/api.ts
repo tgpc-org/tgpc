@@ -122,7 +122,21 @@ export async function getLastSync(): Promise<string> {
     const r = await fetch('/api/stats');
     if (!r.ok) return '';
     const d = await r.json();
-    return typeof d?.lastSync === 'string' ? d.lastSync : '';
+    if (typeof d?.lastSync !== 'string' || !d.lastSync) return '';
+    return new Date(d.lastSync)
+      .toLocaleString('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        weekday: 'short',
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      })
+      .toUpperCase()
+      .replace(/,/g, '');
   } catch {
     return '';
   }
