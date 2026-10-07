@@ -1,4 +1,19 @@
+import { dev } from '$app/environment';
+import { isAuthed } from '$lib/server/auth';
+import { gatePath } from '$lib/server/gate';
 import type { Handle } from '@sveltejs/kit';
+
+// Site-wide gate: every data-bearing route requires the admin session.
+// Only the login flow (/admin page + /api/admin) and the inert assets the
+// login page needs to render (JS/CSS chunks, icons, manifest) are reachable
+// without one. API routes answer 403; pages redirect to /admin. Path
+// classification lives in $lib/server/gate (unit-tested).
+//
+// NOTE: files under ui/static/ are served directly by Cloudflare Pages and
+// bypass SvelteKit + this hook. That is acceptable because static/ holds no
+// registry or PII data (notice titles link public council circulars; the
+// search data always flows through gated Functions). Local `vite dev` stays
+// open: there is no platform secret there, so the gate could never pass.
 
 // Security headers applied to every function response (CODE_REVIEW.md H6).
 // Mirrors `ui/static/_headers`, which covers static assets served directly by
@@ -11,6 +26,16 @@ import type { Handle } from '@sveltejs/kit';
 // scripts, which bricks hydration (all inline scripts blocked).
 
 export const handle: Handle = async ({ event, resolve }) => {
+	if (!dev) {
+		const decision = gatePath(event.url.pathname);
+		if (decision.kind !== 'open' && !(await isAuthed(event.cookies, event.platform))) {
+			if (decision.kind === 'api-deny') {
+				return new Response('Unauthorized', { status: 403 });
+			}
+			return Response.redirect(new URL('/admin', event.url), 302);
+		}
+	}
+
 	const response = await resolve(event);
 
 	// Static headers that apply to all responses

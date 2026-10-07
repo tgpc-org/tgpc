@@ -35,6 +35,8 @@ data/*.jsonl
 data/failed_terminal_regs.json
 data/dg_integrity_review.json
 data/dg_spotcheck.json
+# Local-only UI sandbox (live local datasets for layout experiments — never ships)
+ui/src/routes/sandbox/
 # DG captcha-flow artifacts (per-record snapshots — redundant in R2/Supabase, never in git)
 data/dg_raw/
 data/dg_failed/
