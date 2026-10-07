@@ -11,12 +11,13 @@
     [k: string]: string | null;
   }
 
+  // Note: no renewal_validity row — the base "Valid till" already holds
+  // the newer-wins merged value, so a second date would only duplicate it.
   const FIELDS: Array<[string, string]> = [
     ['mobile_no', 'Mobile'],
     ['email_id', 'Email'],
     ['dob', 'Date of birth'],
     ['date_of_registration', 'Registered on'],
-    ['renewal_validity', 'Renewal valid till'],
     ['home_address', 'Home address'],
     ['home_state', 'Home state'],
     ['work_study_address', 'Work/study address'],

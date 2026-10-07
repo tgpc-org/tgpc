@@ -28,7 +28,6 @@
   const CONTACT_LABELS: Record<string, string> = {
     dob: 'Date of birth',
     date_of_registration: 'Registered on',
-    renewal_validity: 'Renewal valid till',
     home_address: 'Home address',
     home_state: 'Home state',
     work_study_address: 'Work/study address',
@@ -375,10 +374,12 @@
                 <table class="w-full text-xs">
                   <tbody>
                     {#each Object.entries(lookup.contact ?? {}) as [key, value] (key)}
+                      {#if key !== 'renewal_validity'}
                       <tr class="border-b border-[var(--t-border)] last:border-b-0">
                         <td class="px-3 py-1.5 text-[var(--t-muted)]">{CONTACT_LABELS[key] ?? key}</td>
                         <td class="px-3 py-1.5 text-right font-mono break-all">{value || '—'}</td>
                       </tr>
+                      {/if}
                     {/each}
                   </tbody>
                 </table>
