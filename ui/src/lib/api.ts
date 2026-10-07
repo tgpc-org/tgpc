@@ -107,15 +107,13 @@ export async function searchWithRefiners(query: string, f: AdvancedFilters & { c
 export async function getRecord(regNo: string): Promise<PharmacistRecord | null> {
   const clean = regNo.trim().toUpperCase();
   if (!clean) return null;
-  const supabase = await getSupabase();
+  // Layer 2: single-record fetch goes through the session-gated server
+  // proxy — the browser holds no database key for this path either.
   try {
-    const { data, error } = await supabase
-      .from('rph')
-      .select('registration_number, name, father_name, category, gender, validity_date, status, photo_url, serial_number, education, work_experience')
-      .eq('registration_number', clean)
-      .single();
-    if (error || !data) return null;
-    return data as PharmacistRecord;
+    const r = await fetch(`/api/record?reg=${encodeURIComponent(clean)}`);
+    if (r.status === 404) return null;
+    if (!r.ok) return null;
+    return (await r.json()) as PharmacistRecord;
   } catch {
     return null;
   }
