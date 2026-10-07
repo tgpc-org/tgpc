@@ -93,6 +93,12 @@ DG = [
         "renewal_validity": "31-12-2027",
     },
     {
+        "registration_number": "OWN",
+        "date_of_registration": "03-08-2018",
+        "home_state": "",
+        "renewal_validity": "31-12-2020",
+    },
+    {
         "registration_number": "BADDATE",
         "date_of_registration": "03-08-2018",
         "home_state": "",
@@ -126,6 +132,13 @@ RPH = [
         "validity_date": "31-Dec-2027",
     },
     {
+        "registration_number": "OWN",
+        "date_of_registration": "03-08-2018",
+        "home_state": "",
+        "validity_date": "31-Dec-2022",
+        "renewal_validity": "31-12-2028",
+    },
+    {
         "registration_number": "NODG",
         "date_of_registration": "",
         "home_state": "",
@@ -156,7 +169,7 @@ class RefreshMergedColumnsTests(unittest.TestCase):
             self.assertEqual(stats["error"], "")
             self.assertEqual(stats["dor_filled"], 2)  # FILL + BADDATE
             self.assertEqual(stats["home_filled"], 1)  # FILL only (upper-cased)
-            self.assertEqual(stats["validity_updated"], 2)  # FILL blank + NEWER
+            self.assertEqual(stats["validity_updated"], 3)  # FILL blank + NEWER + OWN
             self.assertEqual(stats["review_skipped"], 1)  # BADDATE unparseable
             # Only changed rows upserted, carrying only changed columns + key
             sent = {}
@@ -164,7 +177,7 @@ class RefreshMergedColumnsTests(unittest.TestCase):
                 self.assertEqual(conflict, "registration_number")
                 for row in batch:
                     sent[row["registration_number"]] = row
-            self.assertEqual(set(sent), {"FILL", "NEWER", "BADDATE"})
+            self.assertEqual(set(sent), {"FILL", "NEWER", "BADDATE", "OWN"})
             self.assertEqual(
                 sent["FILL"],
                 {
@@ -179,6 +192,7 @@ class RefreshMergedColumnsTests(unittest.TestCase):
                 sent["BADDATE"],
                 {"registration_number": "BADDATE", "date_of_registration": "03-08-2018"},
             )
+            self.assertEqual(sent["OWN"], {"registration_number": "OWN", "validity_date": "31-Dec-2028"})
 
     def test_fails_closed_on_missing_credentials(self):
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -32,7 +32,7 @@ MIN_YEAR = 1900
 MAX_YEAR = 2032
 
 DG_COLS = "registration_number,date_of_registration,home_state,renewal_validity"
-RPH_COLS = "registration_number,date_of_registration,home_state,validity_date"
+RPH_COLS = "registration_number,date_of_registration,home_state,validity_date,renewal_validity"
 
 
 def _fetch_all(supabase, table, cols):
@@ -102,23 +102,34 @@ def refresh_merged_columns(manager):
         return stats
 
     dg = {r["registration_number"]: r for r in dg_rows}
+    # Renewal source of truth: rph-direct fetches (post-retarget) overlay the
+    # legacy DG table. rph.renewal_validity wins when present; the DG table
+    # covers the 36k pre-retarget rows until it is decommissioned.
+    renewals = {}
+    for reg, row in dg.items():
+        rv = (row.get("renewal_validity") or "").strip()
+        if rv:
+            renewals[reg] = rv
     updates = []
     for row in rph_rows:
         reg = row.get("registration_number", "")
         src = dg.get(reg)
-        if not src:
+        if not src and not (row.get("renewal_validity") or "").strip():
             continue
         patch = {"registration_number": reg}
         dor = (row.get("date_of_registration") or "").strip()
-        if not dor and (src.get("date_of_registration") or "").strip():
+        if not dor and src and (src.get("date_of_registration") or "").strip():
             patch["date_of_registration"] = src["date_of_registration"].strip()
             stats["dor_filled"] += 1
         hs = (row.get("home_state") or "").strip()
-        dhs = (src.get("home_state") or "").strip()
+        dhs = ((src or {}).get("home_state") or "").strip()
         if not hs and dhs:
             patch["home_state"] = dhs.upper()
             stats["home_filled"] += 1
-        rv = _parse_dmy((src.get("renewal_validity") or "").strip())
+        own_rv = (row.get("renewal_validity") or "").strip()
+        if own_rv:
+            renewals[reg] = own_rv
+        rv = _parse_dmy(renewals.get(reg, ""))
         if rv is not None and MIN_YEAR <= rv.year <= MAX_YEAR:
             cur_raw = (row.get("validity_date") or "").strip()
             if not cur_raw:

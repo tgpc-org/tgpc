@@ -78,6 +78,27 @@
     <span class="muted" id="startmsg"></span>
 </div>
   <div class="reasons" id="reasons"></div>
+  <h3>VPS remote fetch</h3>
+  <div class="row"><span class="muted" id="vps-vm">VM: —</span></div>
+  <div class="cards">
+    <div class="card"><div class="label">VPS saved</div><div class="value green" id="vps-done">—</div></div>
+    <div class="card"><div class="label">VPS failed</div><div class="value red" id="vps-failed">—</div></div>
+    <div class="card"><div class="label">Loop</div><div class="value" id="vps-loop">—</div></div>
+    <div class="card"><div class="label">Drift (DB − local)</div><div class="value" id="vps-drift">—</div></div>
+  </div>
+  <div class="row">
+    <button id="vps-start" onclick="startVps()" style="background:#00cc66">START VPS RUN</button>
+    <select id="vps-workers" style="padding:7px;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--ink)">
+      <option value="4">4 runners</option>
+      <option value="8" selected>8 runners</option>
+      <option value="12">12 runners</option>
+      <option value="16">16 runners (max)</option>
+    </select>
+    <button id="vps-stop" onclick="stopVps()">STOP VPS</button>
+    <span class="muted" id="vps-msg"></span>
+  </div>
+  <h3>Launcher log</h3>
+  <pre id="vps-log">no launch yet…</pre>
   <h3>Live log</h3>
   <pre id="log">waiting for run…</pre>
   <footer id="updated"></footer>
@@ -168,6 +189,60 @@ async function startRun() {
 }
 setInterval(refresh, 2000);
 refresh();
+async function refreshVps() {
+  try {
+    const s = await (await fetch('/api/vps/status')).json();
+    document.getElementById('vps-vm').textContent =
+      'VM: ' + (s.vm_configured ? s.vm : 'not set (export DG_VM=user@host)') +
+      (s.launch_running ? ' · launcher running' : '');
+    const v = s.vps || {};
+    if (v.error) {
+      document.getElementById('vps-done').textContent = '—';
+      document.getElementById('vps-failed').textContent = '—';
+      document.getElementById('vps-loop').textContent = 'unreachable';
+    } else {
+      document.getElementById('vps-done').textContent = v.done ?? 0;
+      document.getElementById('vps-failed').textContent = v.failed ?? 0;
+      const loop = document.getElementById('vps-loop');
+      if (v.alive) { loop.textContent = 'RUNNING'; loop.className = 'value green'; }
+      else if (v.halt) { loop.textContent = 'HALTED'; loop.className = 'value red'; }
+      else { loop.textContent = 'idle'; loop.className = 'value muted'; }
+    }
+    const d = s.drift || {};
+    const driftEl = document.getElementById('vps-drift');
+    if (d.error) { driftEl.textContent = 'unknown'; driftEl.className = 'value red'; }
+    else {
+      const n = (d.db_rows ?? 0) - (d.local_completed ?? 0);
+      driftEl.textContent = (n > 0 ? '+' : '') + n;
+      driftEl.className = 'value ' + (n !== 0 ? 'red' : 'green');
+    }
+    const busy = !!s.launch_running || !!v.alive;
+    document.getElementById('vps-start').disabled = busy || !s.vm_configured;
+    const lines = await (await fetch('/api/vps/launchlog')).json();
+    const pre = document.getElementById('vps-log');
+    if (lines.length) { pre.textContent = lines.join('\n'); pre.scrollTop = pre.scrollHeight; }
+  } catch (e) { /* retry next tick */ }
+}
+async function startVps() {
+  const w = document.getElementById('vps-workers').value;
+  if (!confirm('Start the VPS fetch with ' + w + ' runners? Preflight and smoke gate it; refusals explain themselves.')) return;
+  const msg = document.getElementById('vps-msg');
+  msg.textContent = 'starting…';
+  try {
+    const r = await (await fetch('/api/vps/start', {method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({workers: parseInt(w, 10)})})).json();
+    msg.textContent = r.ok ? ('launcher pid ' + r.pid + ' — ' + (r.checks || []).join(' ')) : ('not started: ' + (r.checks || [r.error || 'refused']).join(' '));
+  } catch (e) { msg.textContent = 'start failed'; }
+  refreshVps();
+}
+async function stopVps() {
+  if (!confirm('Halt the VPS loop after its current batch? It stays halted until resumed.')) return;
+  await fetch('/api/vps/stop', {method: 'POST'});
+  refreshVps();
+}
+setInterval(refreshVps, 5000);
+refreshVps();
 </script>
 </body>
 </html>

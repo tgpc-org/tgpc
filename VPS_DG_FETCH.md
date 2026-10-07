@@ -80,6 +80,11 @@ local file is missing.)
 
 ## 4. Smoke test (on the VM — DO NOT skip)
 
+Recurring runs skip the manual steps below: `./scripts/dg_run.sh` (set
+`DG_VM=user@host` once) does preflight, drift guards, input push, env,
+smoke-gated start and verification in one command. The manual sequence
+remains documented for first-time/debugging use.
+
 ```bash
 cd ~/tgpc && ./scripts/vps_fetch.sh --smoke
 ```

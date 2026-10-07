@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, ".")
 
-from scripts.dg_dashboard import build_status, tail_lines, to_ist_day  # noqa: E402
+from scripts.dg_dashboard import build_status, start_guards, tail_lines, to_ist_day  # noqa: E402
 
 
 class DashboardTests(unittest.TestCase):
@@ -201,6 +201,40 @@ class DashboardTests(unittest.TestCase):
             self.assertEqual(s["all_time"], {"completed": 3, "refused": 1})
             self.assertEqual(s["resolved"], 4)
             self.assertEqual(s["completed"], 3)
+
+
+class StartGuardsTests(unittest.TestCase):
+    def test_refuses_without_vm(self):
+        ok, checks = start_guards("", 8, 10, 10, False, False)
+        self.assertFalse(ok)
+        self.assertTrue(any("DG_VM" in c for c in checks))
+
+    def test_refuses_bad_workers(self):
+        for bad in (0, 17, "many", None):
+            ok, _ = start_guards("u@h", bad, 10, 10, False, False)
+            self.assertFalse(ok, bad)
+
+    def test_refuses_db_ahead_of_local(self):
+        ok, checks = start_guards("u@h", 8, 10, 12, False, False)
+        self.assertFalse(ok)
+        self.assertTrue(any("reconcile" in c for c in checks))
+
+    def test_refuses_unverifiable_drift(self):
+        ok, _ = start_guards("u@h", 8, 10, None, False, False)
+        self.assertFalse(ok)
+
+    def test_refuses_double_start(self):
+        ok, _ = start_guards("u@h", 8, 10, 10, False, True)
+        self.assertFalse(ok)
+        ok, _ = start_guards("u@h", 8, 10, 10, True, False)
+        self.assertFalse(ok)
+
+    def test_passes_clean_and_warns_high_workers(self):
+        ok, checks = start_guards("u@h", 8, 10, 10, False, False)
+        self.assertTrue(ok)
+        ok, checks = start_guards("u@h", 16, 10, 10, False, False)
+        self.assertTrue(ok)
+        self.assertTrue(any("block_storm" in c for c in checks))
 
 
 if __name__ == "__main__":

@@ -64,6 +64,7 @@ tgpc/
 │   ├── dg_captcha_bench.py         # Fetch N live DG captchas, OCR-guess, dump for human labeling
 │   ├── vps_bootstrap.sh            # One-time cloud VM setup (apt, WARP, clone, rph.json, ~/.tgpc_env)
 │   ├── vps_fetch.sh                # VPS DG fetch loop (batches, cloud sync, R2 checkpoint backup + ctl polling; --smoke for trial)
+│   ├── dg_run.sh                   # One-command recurring launcher (preflight → drift guards → push → smoke-gated start; set DG_VM)
 │   ├── vps_ctl.sh                  # No-SSH VPS ops over R2 (status/halt/resume/exclude via ops/ctl.json)
 │   ├── vm_view.sh                  # Re-open the Mac→VM dashboard tunnel (:8900; sleep kills it)
 │   ├── tgpc-dg-fetch.service       # systemd unit for the VPS fetch loop
