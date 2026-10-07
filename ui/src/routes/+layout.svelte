@@ -19,8 +19,7 @@
 <script lang="ts">
   import '../app.css';
   import type { ConnectionStatus, Stats } from '$lib/types';
-  import { getStats } from '$lib/api';
-  import { getSupabase, type RealtimeChannel } from '$lib/supabase';
+  import { getLastSync, getStats } from '$lib/api';
   import { page } from '$app/stores';
   import { CATEGORY_COLORS, CATEGORIES, CATEGORY_KEYS } from '$lib/colors';
   import { PUBLIC_SUPABASE_URL } from '$env/static/public';
@@ -54,16 +53,9 @@
 
   async function loadLastSync() {
     try {
-      const supabase = await getSupabase();
-      const { data, error } = await supabase
-        .from('metadata')
-        .select('value')
-        .eq('key', 'last_sync')
-        .single();
-      if (!error && data?.value) {
-        const d = new Date(data.value);
-        const s = d.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'short', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
-        lastSync = s.toUpperCase().replace(/,/g, '');
+      const s = await getLastSync();
+      if (s) {
+        lastSync = s;
         setCache('tgpc_last_sync', lastSync);
       }
     } catch {}
@@ -75,33 +67,18 @@
   });
 
   $effect(() => {
-    // SSR already supplied stats — don't refetch on mount; realtime channel
+    // SSR already supplied stats — don't refetch on mount; the 60s poll
     // below keeps them fresh.
     if (!ssrStats) loadStats();
     if (!ssrSync) loadLastSync();
-    // supabase-js loads lazily (lib/supabase.ts), so the realtime subscription
-    // resolves once the lazy chunk arrives. An async effect body cannot return
-    // cleanup directly, so unsubscription happens inside the promise with a
-    // disposed flag (no leak on navigation).
-    let disposed = false;
-    let channel: RealtimeChannel | undefined;
-    getSupabase().then((supabase) => {
-      if (disposed) return;
-      channel = supabase
-        .channel('metadata-changes')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'metadata', filter: `key=eq.last_sync` }, () => { loadStats(); loadLastSync(); })
-        .subscribe();
-    });
-    return () => {
-      disposed = true;
-      if (channel) supabaseRemoveChannel(channel);
-    };
+    // A 60s poll keeps stats fresh instead of the old realtime channel
+    // (which needed the anonymous database key the browser no longer holds).
+    const timer = setInterval(() => {
+      loadStats();
+      loadLastSync();
+    }, 60_000);
+    return () => clearInterval(timer);
   });
-
-  async function supabaseRemoveChannel(channel: RealtimeChannel) {
-    const supabase = await getSupabase();
-    supabase.removeChannel(channel);
-  }
 
   // Text stays on the ink/muted tokens (both AA on every surface); brand
   // red/green appear as dots/fills, where contrast rules do not apply.

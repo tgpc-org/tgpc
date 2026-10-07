@@ -1,48 +1,31 @@
 import type { LayoutLoad } from './$types';
 import type { Stats } from '$lib/types';
-import { getSupabase } from '$lib/supabase';
 
-export const load: LayoutLoad = async () => {
+export const load: LayoutLoad = async ({ fetch }) => {
   let stats: Stats | null = null;
   let lastSync = '';
 
-  // Parallel — both must resolve before first paint, so don't await sequentially.
-  // One lazy supabase client awaited once; both queries share it and run concurrently.
-  const supabase = await getSupabase();
-  const [statsRes, syncRes] = await Promise.all([
-    supabase.rpc('get_rph_stats').then(
-      (r) => r,
-      () => ({ data: null, error: true })
-    ),
-    supabase.from('metadata').select('value').eq('key', 'last_sync').single().then(
-      (r) => r,
-      () => ({ data: null, error: true })
-    )
-  ]);
-
+  // Layer 2: stats come from the session-gated server proxy (service key
+  // server-side). Relative fetch works in SSR and in the browser; the
+  // session cookie travels with it in both cases.
   try {
-    const { data, error } = statsRes as { data: unknown; error: unknown };
-    if (!error && data && typeof data === 'object') {
-      const d = data as { total: number; active: number; inactive: number; categories: Record<string, number> };
-      stats = {
-        total: d.total ?? 0,
-        active: d.active ?? 0,
-        inactive: d.inactive ?? 0,
-        BPharm: d.categories?.BPharm ?? 0,
-        DPharm: d.categories?.DPharm ?? 0,
-        MPharm: d.categories?.MPharm ?? 0,
-        PharmD: d.categories?.PharmD ?? 0,
-        QC: d.categories?.QC ?? 0,
-        QP: d.categories?.QP ?? 0
-      };
-    }
-  } catch {}
-
-  try {
-    const { data, error } = syncRes as { data: { value?: string } | null; error: unknown };
-    if (!error && data?.value) {
-      const d = new Date(data.value);
-      lastSync = d.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'short', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).toUpperCase().replace(/,/g, '');
+    const r = await fetch('/api/stats');
+    if (r.ok) {
+      const d = await r.json();
+      if (d?.stats && typeof d.stats === 'object') {
+        stats = {
+          total: d.stats.total ?? 0,
+          active: d.stats.active ?? 0,
+          inactive: d.stats.inactive ?? 0,
+          BPharm: d.stats.BPharm ?? 0,
+          DPharm: d.stats.DPharm ?? 0,
+          MPharm: d.stats.MPharm ?? 0,
+          PharmD: d.stats.PharmD ?? 0,
+          QC: d.stats.QC ?? 0,
+          QP: d.stats.QP ?? 0
+        };
+      }
+      if (typeof d?.lastSync === 'string') lastSync = d.lastSync;
     }
   } catch {}
 

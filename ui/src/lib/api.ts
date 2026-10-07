@@ -120,27 +120,26 @@ export async function getRecord(regNo: string): Promise<PharmacistRecord | null>
 }
 
 export async function getStats(): Promise<Stats | null> {
-  const supabase = await getSupabase();
+  // Layer 2: stats come from the session-gated server proxy (service key
+  // server-side). Same shape as before; polled, not realtime.
   try {
-    const { data, error } = await supabase.rpc('get_rph_stats');
-    if (error) throw error;
-    if (data && typeof data === 'object') {
-      const d = data as { total: number; active: number; inactive: number; categories: Record<string, number> };
-      return {
-        total: d.total ?? 0,
-        active: d.active ?? 0,
-        inactive: d.inactive ?? 0,
-        BPharm: d.categories?.BPharm ?? 0,
-        DPharm: d.categories?.DPharm ?? 0,
-        MPharm: d.categories?.MPharm ?? 0,
-        PharmD: d.categories?.PharmD ?? 0,
-        QC: d.categories?.QC ?? 0,
-        QP: d.categories?.QP ?? 0
-      };
-    }
-    return null;
+    const r = await fetch('/api/stats');
+    if (!r.ok) return null;
+    const d = await r.json();
+    return (d?.stats as Stats) ?? null;
   } catch {
     return null;
+  }
+}
+
+export async function getLastSync(): Promise<string> {
+  try {
+    const r = await fetch('/api/stats');
+    if (!r.ok) return '';
+    const d = await r.json();
+    return typeof d?.lastSync === 'string' ? d.lastSync : '';
+  } catch {
+    return '';
   }
 }
 
