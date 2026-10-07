@@ -1,13 +1,17 @@
 import { json } from '@sveltejs/kit';
-import { env } from '$env/dynamic/public';
+import { env as publicEnv } from '$env/dynamic/public';
+import { env as privateEnv } from '$env/dynamic/private';
 import { createClient } from '@supabase/supabase-js';
 
 export async function GET() {
   // NOTE: $env/dynamic/public, not import.meta.env — the latter is the Vite
   // build-time env and is empty for these keys in production, which made
   // health permanently report "Missing Supabase credentials" (503).
-  const supabaseUrl = env.PUBLIC_SUPABASE_URL;
-  const supabaseKey = env.PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+  // Layer 2: service key via $env/dynamic/private (server-only secret),
+  // never the anonymous key — health must keep working after anonymous
+  // database access is revoked.
+  const supabaseUrl = publicEnv.PUBLIC_SUPABASE_URL;
+  const supabaseKey = privateEnv.SUPABASE_SECRET_KEY;
 
   interface CheckResult {
     status: 'ok' | 'down' | 'stale';

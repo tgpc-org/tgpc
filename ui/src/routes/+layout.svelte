@@ -10,9 +10,7 @@
   <meta name="twitter:card" content="summary" />
   <meta name="twitter:title" content="TGPC RPh Index" />
   <meta name="twitter:description" content="Unofficial open-source index of the Telangana State Pharmacy Council pharmacist registry. Search pharmacists by name or RPC number, browse notices and dispatch lists." />
-  <link rel="preconnect" href={PUBLIC_SUPABASE_URL} />
   {#if R2_ORIGIN}<link rel="preconnect" href={R2_ORIGIN} />{/if}
-  <link rel="dns-prefetch" href={PUBLIC_SUPABASE_URL} />
   {#if R2_ORIGIN}<link rel="dns-prefetch" href={R2_ORIGIN} />{/if}
 </svelte:head>
 
@@ -22,7 +20,6 @@
   import { getLastSync, getStats } from '$lib/api';
   import { page } from '$app/stores';
   import { CATEGORY_COLORS, CATEGORIES, CATEGORY_KEYS } from '$lib/colors';
-  import { PUBLIC_SUPABASE_URL } from '$env/static/public';
   import { R2_ORIGIN } from '$lib/r2';
   import { setCache } from '$lib/cache';
   import { initTheme, themeName, toggleTheme } from '$lib/theme';

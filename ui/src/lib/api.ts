@@ -29,8 +29,6 @@ function validateQuery(raw: string): string {
   return out.replace(/\s+/g, ' ').trim();
 }
 
-// ilike values are escaped by supabase-js, but % and _ would still act as
-// wildcards — strip them so user input matches literally.
 
 export async function searchRecords(query: string): Promise<PharmacistRecord[]> {
   const q = validateQuery(query);
