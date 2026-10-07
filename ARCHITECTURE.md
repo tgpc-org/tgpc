@@ -56,6 +56,7 @@ tgpc/
 │   ├── inactive_sweep.py           # Detect inactive→active reactivations (2-phase, resumable)
 │   ├── enrich_actives.py           # Parallel enrichment + upsert of reactivated records
 │   ├── details_dg.py               # DG getdetailsdg captcha flow → PII contacts; L1-L4 redundancy + --resume (~1260 lines)
+│   ├── merge_refresh.py            # Post-scrape recompute of DG-merged rph columns (idempotent, warn-and-continue)
 │   └── dg_migration.sql            # rph_dg_contacts table DDL (service-role only, no anon grants)
 ├── scripts/                        # Standalone helpers (run from repo root)
 │   ├── dg_dashboard.py             # Local DG fetch monitor: localhost HTTP server serving dg_dashboard.html
@@ -118,7 +119,7 @@ tgpc/
 │   │   ├── mobile.spec.ts         # iPhone-SE viewport: no overflow, usable search, footer layering
 │   │   ├── contrast-baseline.json # Tracked contrast debt baseline
 │   │   └── update-baseline.mjs    # Refresh the baseline after intentional palette changes
-├── tests/                          # 170 tests, 11 files (all mocked — no real HTTP/Supabase)
+├── tests/                          # 173 tests, 12 files (all mocked — no real HTTP/Supabase)
 │   ├── test_scraper.py             # 14: timeouts, WAF/blocked detection, table fallback, bad rows, detail parsing, legacy headers, missing tables, opt-in TLS pinning
 │   ├── test_manager_update.py      # 7: safety guard, dedup/sort/GITHUB_OUTPUT, deterministic ordering, source-unavailable, +3 sync return-value regressions
 │   ├── test_manager_enrichment.py  # 3: enrichment save, registration mismatch, null serial_number regression
@@ -164,7 +165,7 @@ __main__.py ─── Manager ─── Config (utils.py)
 ### Entry Point: `tgpc/__main__.py`
 
 ```bash
-python3 -m tgpc update              # Restore-if-missing → health check → backup → scrape → dedup → safety guard → save → sync to all destinations + email → enrich new records
+python3 -m tgpc update              # Restore-if-missing → health check → backup → scrape → dedup → safety guard → save → sync to all destinations + email → enrich new records → refresh merged columns
 python3 -m tgpc update --no-sync    # Scrape only, skip cloud sync
 python3 -m tgpc update --force      # Override the 100-churn/1000-new safety caps
 python3 -m tgpc sync                # Sync to all destinations
@@ -606,7 +607,7 @@ Dependabot was removed (2026-09) in favour of manual bumps. CVE coverage comes f
 python3 -m pytest tests/ -v
 ```
 
-170 tests across 11 files:
+173 tests across 12 files:
 
 | File | Tests | What's tested |
 |---|---|---|
@@ -621,6 +622,7 @@ python3 -m pytest tests/ -v
 | `test_security_audit_regressions.py` | 27 | Audit remediations: DG PII RLS posture, DG artifacts kept out of the public R2 bucket, report-email HTML escaping, rclone temp paths, photo redirect validation, backup restore validation, DG Storage bucket publicity gate |
 | `test_details_dg.py` | 37 | DG caption/detail parsing, captcha handling, and the RLS/Storage posture of the DG pipeline |
 | `test_dg_dashboard.py` | 12 | Local DG monitor: status merging, checkpoint-derived counts, zombie-PID detection, log tailing, IST formatting |
+| `test_merge_refresh.py` | 3 | Post-scrape merged-column refresh: fill/newer-wins/skip rules, changed-columns-only upserts, fail-closed credentials |
 
 All tests use mocking (no real HTTP or Supabase calls). The `supabase` module is mocked globally before imports.
 

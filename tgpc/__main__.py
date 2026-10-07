@@ -313,6 +313,17 @@ def main():
                     with Phase("Enrich new records", 3, 4):
                         print(f"Enriching {len(new_regs)} new records...")
                         manager.enrich_new_records(force=args.force)
+                if not args.no_sync:
+                    with Phase("Refresh merged columns", 4, 4):
+                        stats = manager.refresh_merged_columns()
+                        if stats.get("error"):
+                            print(f"Merge refresh warning: {stats['error']} (retry next run)", file=sys.stderr)
+                        else:
+                            print(
+                                "Merge refresh: "
+                                f"dor={stats['dor_filled']} home={stats['home_filled']} "
+                                f"validity={stats['validity_updated']} review={stats['review_skipped']}"
+                            )
         return
     elif args.command == "sync":
         with Phase("Sync to cloud destinations", 1, 1):

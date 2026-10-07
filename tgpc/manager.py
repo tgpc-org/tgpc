@@ -36,6 +36,7 @@ from tgpc.storage import (  # noqa: F401
 # Extracted subsystems, re-exported so callers can import them from either place.
 from tgpc import sync as _sync  # noqa: F401
 from tgpc import enrichment as _enrichment  # noqa: F401
+from tgpc import merge_refresh as _merge_refresh  # noqa: F401
 
 
 logger = setup_logging("tgpc.manager")
@@ -512,6 +513,13 @@ class Manager:
     def delete_removed_from_supabase(self, removed_ids: set) -> bool:
         """Delete removed records from Supabase."""
         return _sync.delete_removed_from_supabase(self, removed_ids)
+
+    def refresh_merged_columns(self):
+        """Recompute DG-merged columns from the live tables (idempotent).
+
+        Returns a stats dict; see tgpc.merge_refresh for the contract.
+        """
+        return _merge_refresh.refresh_merged_columns(self)
 
     def sync_to_supabase_storage(self):
         """Upload rph.json to Supabase Storage (tgpc bucket)."""
