@@ -1,5 +1,6 @@
 <script lang="ts">
   import { CATEGORY_COLORS } from '$lib/colors';
+  import ContactDetails from '$lib/components/ContactDetails.svelte';
   import type { PharmacistRecord } from '$lib/types';
   import { fly, fade } from 'svelte/transition';
 import { prefersReducedMotion } from '$lib/motion';
@@ -230,6 +231,10 @@ let flyFrom = $derived(
                 <div><dt class="text-[var(--t-muted)] text-[0.65rem] font-semibold uppercase tracking-wider">Pin Code</dt><dd class="text-[var(--t-ink-soft)] mt-0.5">{displayWork(record.work_experience['Pin code'])}</dd></div>
               </dl>
             </div>
+          {/if}
+
+          {#if record}
+            <ContactDetails reg={record.registration_number} compact />
           {/if}
 
           <div class="border-t border-[var(--t-surface)] pt-3 flex justify-end">

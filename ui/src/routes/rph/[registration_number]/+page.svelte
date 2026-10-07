@@ -1,6 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { CATEGORY_COLORS } from '$lib/colors';
+  import ContactDetails from '$lib/components/ContactDetails.svelte';
   import type { PharmacistRecord } from '$lib/types';
 
   let { data } = $props();
@@ -220,6 +221,7 @@
         </dl>
       </div>
     {/if}
+    <ContactDetails reg={record.registration_number} />
     <div class="border-t border-[var(--t-surface)] pt-3 flex items-center justify-end">
       <button
         onclick={printPage}
