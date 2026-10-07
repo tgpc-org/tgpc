@@ -1,13 +1,8 @@
 import type { PharmacistRecord, Notice, DispatchFile, Stats, Category } from './types';
-import { getSupabase } from './supabase';
 import { MAX_SEARCH_RESULTS } from './searchLimits';
-import { formatDDMonYYYY } from './dates';
 
 // Strip PostgREST filter syntax (,()) and LIKE wildcards (%_*) so raw input can
 // never alter the fallback .or() expression (CODE_REVIEW.md H4).
-function sanitizeQuery(s: string): string {
-  return s.replace(/[,()%_*]/g, ' ').replace(/\s+/g, ' ').trim();
-}
 
 // Validate and sanitize raw search input (CODE_REVIEW.md H4).
 // Rejects overly long strings; strips characters that could break
@@ -36,9 +31,6 @@ function validateQuery(raw: string): string {
 
 // ilike values are escaped by supabase-js, but % and _ would still act as
 // wildcards — strip them so user input matches literally.
-function stripWildcards(s: string): string {
-  return s.replace(/[%_*]/g, ' ').replace(/\s+/g, ' ').trim();
-}
 
 export async function searchRecords(query: string): Promise<PharmacistRecord[]> {
   const q = validateQuery(query);
@@ -76,28 +68,23 @@ export async function searchWithRefiners(query: string, f: AdvancedFilters & { c
   if (!hasQ && !hasFilters) return [];
   // If only live query and no refiners, keep RPC path for ranked results
   if (hasQ && !hasFilters) return searchRecords(query);
-  // Otherwise build filtered query (server-side, capped like every other path)
-  const supabase = await getSupabase();
+  // Otherwise build filtered query (server-side, capped like every query path)
+  // Layer 2: refiners go through the session-gated /api/refine proxy, which
+  // re-validates every filter server-side and issues one capped query with
+  // the service key. The browser holds no database access on this path.
   try {
-    let qb = supabase.from('rph').select('registration_number, name, father_name, category, gender, validity_date, status, photo_url');
-    if (hasQ) {
-      const safe = sanitizeQuery(q);
-      qb = qb.or(`registration_number.ilike.%${safe}%,name.ilike.%${safe}%,father_name.ilike.%${safe}%`);
-    }
-    if (f.name && f.name.trim()) qb = qb.ilike('name', `%${stripWildcards(f.name)}%`);
-    if (f.father_name && f.father_name.trim()) qb = qb.ilike('father_name', `%${stripWildcards(f.father_name)}%`);
-    if (f.registration_number && f.registration_number.trim()) qb = qb.ilike('registration_number', `${stripWildcards(f.registration_number)}%`);
-    if (f.category && f.category.length > 0) qb = qb.in('category', f.category);
-    if (f.gender && f.gender !== 'Any' && f.gender.trim()) qb = qb.eq('gender', f.gender);
-    if (f.status && f.status !== 'Any' && f.status.trim()) qb = qb.eq('status', f.status);
-    if (f.valid_till && f.valid_till.trim()) {
-      const dbDate = formatDDMonYYYY(f.valid_till);
-      if (dbDate) qb = qb.eq('validity_date', dbDate);
-    }
-    qb = qb.limit(MAX_SEARCH_RESULTS);
-    const { data, error } = await qb;
-    if (error) throw error;
-    const rows = (data as PharmacistRecord[]) || [];
+    const sp = new URLSearchParams();
+    if (hasQ) sp.set('q', q);
+    if (f.name && f.name.trim()) sp.set('name', f.name.trim());
+    if (f.father_name && f.father_name.trim()) sp.set('father_name', f.father_name.trim());
+    if (f.registration_number && f.registration_number.trim()) sp.set('registration_number', f.registration_number.trim());
+    if (f.category && f.category.length > 0) sp.set('category', f.category.join(','));
+    if (f.gender && f.gender !== 'Any' && f.gender.trim()) sp.set('gender', f.gender.trim());
+    if (f.status && f.status !== 'Any' && f.status.trim()) sp.set('status', f.status.trim());
+    if (f.valid_till && f.valid_till.trim()) sp.set('valid_till', f.valid_till.trim());
+    const r = await fetch(`/api/refine?${sp.toString()}`);
+    if (!r.ok) throw new Error('Refined search failed');
+    const rows = ((await r.json()) as PharmacistRecord[]) || [];
     return hasQ ? rankRecords(rows, q) : sortRecords(rows);
   } catch {
     return [];

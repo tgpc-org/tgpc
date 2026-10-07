@@ -87,8 +87,9 @@ describe('api.ts row limits', () => {
       ...API_CODE.matchAll(/\blim[:=]\s*(?:\$\{)?([A-Za-z_$\w]+|\d+)\}?|\.limit\(([A-Za-z_$\w]+|\d+)\)/g)
     ].map((m) => m[1] ?? m[2]);
 
-    // Proxy fetch, refiners.
-    assert.ok(sites.length >= 2, `expected 2 capped call sites, found ${sites.length}`);
+    // Ranked-search proxy fetch (the refiners proxy carries a fixed
+    // server-side literal instead — asserted below).
+    assert.ok(sites.length >= 1, `expected 1 capped call site, found ${sites.length}`);
     for (const arg of sites) {
       if (/^\d+$/.test(arg)) {
         assert.ok(Number(arg) <= MAX_SEARCH_RESULTS, `requested ${arg} rows, cap is ${MAX_SEARCH_RESULTS}`);
@@ -96,6 +97,15 @@ describe('api.ts row limits', () => {
         assert.equal(arg, 'MAX_SEARCH_RESULTS', `call site should use the shared cap, got ${arg}`);
       }
     }
+  });
+
+  it('fixes the refiners ceiling server-side', () => {
+    const route = readFileSync(
+      new URL('../routes/api/refine/+server.ts', import.meta.url),
+      'utf8'
+    );
+    assert.match(route, /const HARD_LIMIT = 200;/);
+    assert.match(route, /params\.set\('limit', String\(HARD_LIMIT\)\)/);
   });
 
   it('clamps lim server-side in the search proxy', () => {
@@ -107,9 +117,9 @@ describe('api.ts row limits', () => {
     assert.match(route, /Math\.min\(Math\.max\(.*,\s*1\),\s*MAX_LIM\)/);
   });
 
-  it('limits every row-fetching rph query', () => {
+  it('holds no direct table reads (layer 2: server proxies own the database)', () => {
     const windows = rphQueryWindows();
-    assert.ok(windows.length > 0, 'expected rph queries to be found');
+    assert.equal(windows.length, 0, 'browser must not query rph directly');
     for (const window of windows) {
       // Single-row and count-only queries are bounded by construction.
       if (
