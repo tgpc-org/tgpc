@@ -43,25 +43,17 @@ function stripWildcards(s: string): string {
 export async function searchRecords(query: string): Promise<PharmacistRecord[]> {
   const q = validateQuery(query);
   if (q.length < 3) return [];
-  const supabase = await getSupabase();
+  // Layer 2: search goes through the session-gated server proxy, never
+  // directly to the database — the browser holds no database key for this
+  // path. Capped at MAX_SEARCH_RESULTS (CODE_REVIEW.md H5); the server
+  // clamps again so direct endpoint callers cannot exceed the cap either.
   try {
-    // Capped at MAX_SEARCH_RESULTS (CODE_REVIEW.md H5) — previously `lim: 100000`,
-    // which pulled essentially the whole registry into the browser on a broad query.
-    const { data, error } = await supabase.rpc('search_pharmacists', { q, lim: MAX_SEARCH_RESULTS });
-    if (error) throw error;
+    const r = await fetch(`/api/search?q=${encodeURIComponent(q)}&lim=${MAX_SEARCH_RESULTS}`);
+    if (!r.ok) throw new Error('Search failed');
+    const data = await r.json();
     return rankRecords((data as PharmacistRecord[]) || [], q);
   } catch {
-    try {
-      const safe = sanitizeQuery(q);
-      const { data } = await supabase
-        .from('rph')
-        .select('registration_number, name, father_name, category, gender, validity_date, status, photo_url')
-        .or(`registration_number.ilike.%${safe}%,name.ilike.%${safe}%`)
-        .limit(MAX_SEARCH_RESULTS);
-      return rankRecords((data as PharmacistRecord[]) || [], q);
-    } catch {
-      return [];
-    }
+    return [];
   }
 }
 

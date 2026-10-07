@@ -3,8 +3,11 @@
  *
  * The behavioural half pins `isTruncated`, which drives the "narrow your
  * search" hint. The source half is the real regression guard: it reads
- * `api.ts` and fails if any row-fetching query loses its limit, or asks for
- * more rows than the cap — the exact mistake H5 describes (`lim: 100000`).
+ * `api.ts` (and the search proxy route) and fails if any row-fetching query
+ * loses its limit, or asks for more rows than the cap — the exact mistake H5
+ * describes (`lim: 100000`). The ranked path goes through the session-gated
+ * `/api/search` proxy, which clamps server-side, so direct endpoint callers
+ * cannot exceed the cap either.
  *
  * Uses only `node:test`, so it needs no extra dependencies. Run with:
  *
@@ -71,21 +74,21 @@ describe('isTruncated', () => {
 });
 
 describe('api.ts row limits', () => {
-  it('passes the shared cap to search_pharmacists rather than a literal', () => {
+  it('passes the shared cap to the search proxy rather than a literal', () => {
     assert.match(
       API_CODE,
-      /rpc\('search_pharmacists',\s*\{\s*q,\s*lim:\s*MAX_SEARCH_RESULTS\s*\}\)/,
-      'the ranked RPC path must be capped via MAX_SEARCH_RESULTS'
+      /\/api\/search\?q=.*&lim=\$\{MAX_SEARCH_RESULTS\}/,
+      'the ranked search path must be capped via MAX_SEARCH_RESULTS'
     );
   });
 
-  it('caps every lim: / limit() call site', () => {
+  it('caps every lim: / lim= / limit() call site', () => {
     const sites = [
-      ...API_CODE.matchAll(/\blim:\s*([A-Za-z_$\w]+|\d+)|\.limit\(([A-Za-z_$\w]+|\d+)\)/g)
+      ...API_CODE.matchAll(/\blim[:=]\s*(?:\$\{)?([A-Za-z_$\w]+|\d+)\}?|\.limit\(([A-Za-z_$\w]+|\d+)\)/g)
     ].map((m) => m[1] ?? m[2]);
 
-    // Ranked RPC, its PostgREST fallback, refiners.
-    assert.ok(sites.length >= 3, `expected 3 capped call sites, found ${sites.length}`);
+    // Proxy fetch, refiners.
+    assert.ok(sites.length >= 2, `expected 2 capped call sites, found ${sites.length}`);
     for (const arg of sites) {
       if (/^\d+$/.test(arg)) {
         assert.ok(Number(arg) <= MAX_SEARCH_RESULTS, `requested ${arg} rows, cap is ${MAX_SEARCH_RESULTS}`);
@@ -93,6 +96,15 @@ describe('api.ts row limits', () => {
         assert.equal(arg, 'MAX_SEARCH_RESULTS', `call site should use the shared cap, got ${arg}`);
       }
     }
+  });
+
+  it('clamps lim server-side in the search proxy', () => {
+    const route = readFileSync(
+      new URL('../routes/api/search/+server.ts', import.meta.url),
+      'utf8'
+    );
+    assert.match(route, /const MAX_LIM = 200;/);
+    assert.match(route, /Math\.min\(Math\.max\(.*,\s*1\),\s*MAX_LIM\)/);
   });
 
   it('limits every row-fetching rph query', () => {
