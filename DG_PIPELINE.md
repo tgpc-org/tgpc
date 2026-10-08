@@ -28,9 +28,10 @@ python3 scripts/dg_dashboard.py --port 8765               # live monitor → htt
 python3 scripts/dg_captcha_bench.py --n 12                # OCR accuracy bench
 touch data/dg_stop                                        # halt after current record
 ```
-Dashboard START button (`POST /api/start`, count default 500) launches the
-next batch itself: retryable failures first, then fresh IDs in serial order,
-`--sync-cloud` on, one run at a time (second press refused while active).
+Local batches run from the terminal (`python3 -m tgpc fetch-dg --ids-file … --sync-cloud`):
+retryable failures first, then fresh IDs in serial order (ordering contract:
+`scripts/dg_dashboard.py::next_ids`, mirrored by `gen_ids` in
+`scripts/vps_fetch.sh`). Halt cleanly with `touch data/dg_stop`.
 
 ## Code map
 
@@ -42,7 +43,9 @@ next batch itself: retryable failures first, then fresh IDs in serial order,
   on purpose). Re-run the whole file safely — re-running also applies the PII
   lockdown to an already-deployed project.
 * `scripts/dg_dashboard.py` + `scripts/dg_dashboard.html` — stdlib localhost
-  monitor (status API, log tail, STOP button). TGPC palette only.
+  watch-only monitor (status/overview/VPS/drift read APIs, log tail; no
+  controls — Halt/Resume live in the admin OPS tab and the terminal).
+  TGPC palette only.
 * `tests/test_details_dg.py`, `tests/test_dg_dashboard.py`.
 
 ## State files (all gitignored, local crash buffer only)

@@ -222,10 +222,11 @@ while true; do
   python3 -m tgpc fetch-dg --ids-file data/dg_ids_vps.txt \
     --sync-cloud --sync-every 50
   backup_checkpoint
-  # Dashboard STOP writes data/dg_stop, which fetch-dg honors by halting the
-  # batch (recording stopped:true in stats). Without this break the loop would
-  # march straight into the next batch — STOP must stay stopped. Resume with:
-  #   sudo systemctl restart tgpc-dg-fetch   (VM) — or dashboard START (Mac).
+  # data/dg_stop (or the R2 halt flag via the OPS tab / vps_ctl.sh) makes
+  # fetch-dg halt the batch (recording stopped:true in stats). Without this
+  # break the loop would march straight into the next batch — a halt must stay
+  # halted. Resume with:
+  #   sudo systemctl restart tgpc-dg-fetch   (VM) — or OPS tab Resume / vps_ctl.sh resume.
   # NOTE: no --warp-rotate-every here. Consumer WARP egress is sticky per
   # account, so the rotation gate can never verify a *different* IP and halts
   # every 500 records instead. The tunnel itself (masked egress) is what

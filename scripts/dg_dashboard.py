@@ -1,17 +1,17 @@
-"""Tiny local dashboard for DG extraction runs (stdlib only, localhost).
+"""Local watch-only dashboard for DG extraction runs (stdlib only, localhost).
 
 Usage:
     python3 scripts/dg_dashboard.py [--port 8765]
-Then open http://127.0.0.1:8765 in a browser. Single page, auto-refreshes
-every 2s. The STOP button touches data/dg_stop (run halts after the current
-record, checkpoint-safe). Binds localhost only — never exposed to a network.
+Then open http://127.0.0.1:8765 in a browser. Single page, auto-refreshes.
+Read-only: it never launches or stops anything — control lives in the
+terminal (./scripts/dg_run.sh, ./scripts/vps_ctl.sh, touch data/dg_stop)
+and in the admin OPS tab. Binds localhost only — never exposed to a network.
 """
 
 import argparse
 import json
 import os
 import subprocess
-import sys
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -20,16 +20,10 @@ from typing import Optional
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
 PAGE = Path(__file__).resolve().parent / "dg_dashboard.html"
-PIDFILE = DATA / "dg_fetch.pid"
-RUNLOG = DATA / "dg_fetch_run.log"
 
-# VPS remote-fetch control: R2 control channel + dg_run.sh launcher.
-VPS_LAUNCH_LOG = DATA / "dg_run_launch.log"
-VPS_LAUNCH_PID = DATA / "dg_run.pid"
-ACTION_LOG = DATA / "dg_dashboard_actions.log"
+# VPS remote-fetch visibility: R2 control channel (read-only here).
 VM_FILE = DATA / "dg_vm.conf"  # plain "user@host", gitignored like all of data/
 R2_OPS_FRESH_MIN = 15  # R2 ops backup fresher than this counts as a live loop
-DG_RUN_SCRIPT = ROOT / "scripts" / "dg_run.sh"
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
@@ -65,6 +59,7 @@ def next_ids(data_dir: Path, count: int = 500, rph_path: Optional[Path] = None) 
 
     Retryable = in checkpoint `failed` but not terminal (a later run is their
     only path back — terminal IDs are skipped forever, completed are done).
+    Ordering contract mirrored by gen_ids() in scripts/vps_fetch.sh.
     """
     try:
         rows = json.loads((rph_path or ROOT / "data" / "rph.json").read_text(encoding="utf-8"))
@@ -81,41 +76,6 @@ def next_ids(data_dir: Path, count: int = 500, rph_path: Optional[Path] = None) 
     retryable.sort(key=lambda r: order.get(r, (True, 0)))
     fresh.sort(key=lambda r: order.get(r, (True, 0)))
     return (retryable + fresh)[: max(0, count)]
-
-
-def run_active(data_dir: Path = DATA) -> bool:
-    """True if a fetch run is currently alive (pidfile + process check).
-
-    Reaps finished children (zombies): a dead pid — even as zombie — means
-    not active, and the stale pidfile is removed so a later run can start.
-    """
-    try:
-        pid = int((data_dir / "dg_fetch.pid").read_text().strip())
-    except Exception:
-        return False
-    try:
-        finished, _ = os.waitpid(pid, os.WNOHANG)
-        if finished == pid:
-            try:
-                (data_dir / "dg_fetch.pid").unlink()
-            except OSError:
-                pass
-            return False
-    except ChildProcessError:
-        pass  # not our child — fall through to liveness probe
-    except Exception:
-        pass
-    try:
-        os.kill(pid, 0)
-        return True
-    except ProcessLookupError:
-        try:
-            (data_dir / "dg_fetch.pid").unlink()  # fully gone, not just zombie
-        except OSError:
-            pass
-        return False
-    except Exception:
-        return False
 
 
 def build_status(data_dir: Path = DATA) -> dict:
@@ -137,7 +97,6 @@ def build_status(data_dir: Path = DATA) -> dict:
     all_time = {"completed": len(completed), "refused": len(terminal)}
     return {
         "status": live.get("status", "idle"),
-        "run_active": run_active(data_dir),
         "current_reg": live.get("current_reg", ""),
         "serial_number": live.get("serial_number"),
         "event": live.get("event", ""),
@@ -179,16 +138,6 @@ def _load_env_file() -> None:
             key, value = key.strip(), value.strip().strip("'\"")
             if key and value and not os.environ.get(key):
                 os.environ[key] = value
-    except Exception:
-        pass
-
-
-def audit(action: str, detail: str = "") -> None:
-    """Append one line to the action log. Never raises (logging must not break control)."""
-    try:
-        stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        with open(ACTION_LOG, "a", encoding="utf-8") as f:
-            f.write(f"{stamp} {action} {detail}\n".rstrip() + "\n")
     except Exception:
         pass
 
@@ -301,82 +250,119 @@ def drift_state() -> dict:
         return {"local_completed": local, "error": str(e)[:160]}
 
 
-def launch_running(pidfile: Path = VPS_LAUNCH_PID) -> bool:
-    """True if a dashboard-launched dg_run.sh is still alive."""
+_OVERVIEW_CACHE: dict = {"at": 0.0, "data": None}
+OVERVIEW_TTL = 60.0
+
+
+def _sb_counts() -> dict:
+    """Fast exact counts via PostgREST Prefer: count=exact (no row transfer)."""
+    import urllib.request  # noqa: PLC0415
+
+    url = _cred("SUPABASE_URL")
+    key = _cred("SUPABASE_SECRET_KEY")
+    if not url or not key:
+        raise RuntimeError("Supabase credentials missing")
+    out = {}
+    for table in ("rph", "rph_dg_contacts"):
+        req = urllib.request.Request(
+            f"{url}/rest/v1/{table}?select=registration_number",
+            headers={
+                "apikey": key,
+                "Authorization": f"Bearer {key}",
+                "Prefer": "count=exact",
+                "Range": "0-0",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            total = resp.headers.get("Content-Range", "").split("/")[-1]
+            out[table] = int(total) if total.isdigit() else -1
+    req = urllib.request.Request(
+        f"{url}/rest/v1/metadata?key=eq.last_sync&select=value",
+        headers={"apikey": key, "Authorization": f"Bearer {key}"},
+    )
+    with urllib.request.urlopen(req, timeout=20) as resp:
+        rows = json.loads(resp.read() or b"[]")
+        out["last_sync"] = rows[0]["value"] if rows else ""
+    return out
+
+
+def _gh_runs() -> list:
+    """Latest CI runs via gh (best-effort, short timeout)."""
     try:
-        pid = int(pidfile.read_text(encoding="utf-8").strip())
+        proc = subprocess.run(
+            [
+                "gh",
+                "run",
+                "list",
+                "--repo",
+                "tgpc-org/tgpc",
+                "--limit",
+                "5",
+                "--json",
+                "name,conclusion,status,headBranch,createdAt",
+                "--jq",
+                '.[] | "\\(.createdAt[0:16]) \\(.name) \\(.headBranch) \\(.conclusion // .status)"',
+            ],
+            capture_output=True,
+            text=True,
+            timeout=25,
+            cwd=str(ROOT),
+        )
+        if proc.returncode != 0:
+            return []
+        return [ln for ln in proc.stdout.splitlines() if ln.strip()][:5]
     except Exception:
-        return False
+        return []
+
+
+def build_overview() -> dict:
+    """Whole-operation snapshot. Cached 60s. Every source best-effort with
+    per-key errors — one dead source never blanks the page."""
+    import time as _time
+
+    now = _time.time()
+    if _OVERVIEW_CACHE["data"] is not None and now - _OVERVIEW_CACHE["at"] < OVERVIEW_TTL:
+        return _OVERVIEW_CACHE["data"]
+    out: dict = {"generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
+
     try:
-        os.kill(pid, 0)
-        return True
-    except Exception:
-        try:
-            pidfile.unlink()
-        except OSError:
-            pass
-        return False
-
-
-def start_guards(
-    vm: str,
-    workers: object,
-    local_completed: object,
-    db_rows: object,
-    vps_alive: bool,
-    launch_is_running: bool,
-) -> tuple:
-    """Pure launch gate. Returns (ok, checks[]) — every refusal names its fix.
-
-    Never touches the network or disk: callers gather the inputs (vps_state,
-    drift_state, launch_running) so this stays unit-testable.
-    """
-    checks = []
-    try:
-        w = int(workers)  # type: ignore[arg-type]
-    except Exception:
-        w = 0
-    if not vm or not isinstance(vm, str) or "@" not in vm:
-        return False, ["VM not configured — set DG_VM=user@host (SSH key auth) and retry."]
-    if not 1 <= w <= 16:
-        return False, [f"workers must be 1..16 (got {workers})."]
-    if not isinstance(local_completed, int):
-        return False, ["local checkpoint unreadable — fix data/dg_fetch_checkpoint.json first."]
-    if not isinstance(db_rows, int):
-        checks.append("drift unverifiable (Supabase unreachable) — refusing: reconcile visibility first.")
-        return False, checks
-    if db_rows > local_completed:
-        return False, [
-            f"DB ({db_rows}) is ahead of local checkpoint ({local_completed}) — "
-            "reconcile cloud->local first, or the VM will re-probe finished records."
-        ]
-    if launch_is_running:
-        return False, ["a dashboard launch is already running — watch its log, do not double-start."]
-    if vps_alive:
-        return False, ["VPS loop looks alive (fresh R2 ops, not halted) — refusing a double start."]
-    checks.append(f"preflight ok: vm={vm} workers={w} local={local_completed} db={db_rows}.")
-    if w > 12:
-        checks.append("note: starting above 12 risks a block_storm halt; 8 is the safe start.")
-    return True, checks
-
-
-def set_halt(halt: bool, note: str) -> dict:
-    """Write ops/ctl.json halt flag. Returns the written doc (or {"error": ...})."""
-    try:
-        import datetime as _dt
-
-        s3, bucket = _r2()
-        try:
-            ctl = json.loads(s3.get_object(Bucket=bucket, Key="ops/ctl.json")["Body"].read())
-        except Exception:
-            ctl = {}
-        ctl["halt"] = halt
-        ctl["note"] = note
-        ctl["updated_at"] = _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        s3.put_object(Bucket=bucket, Key="ops/ctl.json", Body=json.dumps(ctl, indent=2).encode())
-        return ctl
+        rph_path = DATA / "rph.json"
+        rows = json.loads(rph_path.read_text(encoding="utf-8"))
+        regs = {r["registration_number"] for r in rows}
+        out["local"] = {
+            "rph_rows": len(rows),
+            "rph_mtime": datetime.fromtimestamp(rph_path.stat().st_mtime, tz=timezone.utc).strftime(
+                "%Y-%m-%dT%H:%M:%SZ"
+            ),
+        }
     except Exception as e:
-        return {"error": str(e)[:160]}
+        out["local"] = {"error": str(e)[:120]}
+        regs = set()
+
+    try:
+        out["cloud"] = _sb_counts()
+    except Exception as e:
+        out["cloud"] = {"error": str(e)[:120]}
+
+    try:
+        cp = load_json(DATA / "dg_fetch_checkpoint.json")
+        completed = set(cp.get("completed", []))
+        terminal = set(cp.get("failed_terminal", {}))
+        uncovered = sorted(regs - completed - terminal) if regs else []
+        out["dg"] = {
+            "completed": len(completed),
+            "terminal": len(terminal),
+            "uncovered": len(uncovered),
+            "uncovered_sample": uncovered[:6],
+        }
+    except Exception as e:
+        out["dg"] = {"error": str(e)[:120]}
+
+    out["vps"] = vps_state()
+    out["ci"] = _gh_runs()
+    _OVERVIEW_CACHE["at"] = now
+    _OVERVIEW_CACHE["data"] = out
+    return out
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -407,124 +393,12 @@ class Handler(BaseHTTPRequestHandler):
                         "vm_configured": bool(read_vm()),
                         "vps": vps,
                         "drift": drift,
-                        "launch_running": launch_running(),
                     }
                 ).encode(),
                 "application/json",
             )
-        elif self.path == "/api/vps/launchlog":
-            self._send(json.dumps(tail_lines(VPS_LAUNCH_LOG, 60)).encode(), "application/json")
-        else:
-            self.send_response(404)
-            self.end_headers()
-
-    def _read_json_body(self) -> dict:
-        try:
-            length = int(self.headers.get("Content-Length") or 0)
-            return json.loads(self.rfile.read(length) or b"{}")
-        except Exception:
-            return {}
-
-    def do_POST(self) -> None:  # noqa: N802
-        if self.path == "/api/vps/stop":
-            vm = read_vm()
-            ctl = set_halt(True, "dashboard STOP")
-            ok = "error" not in ctl
-            audit("vps-stop", f"vm={vm} ok={ok}")
-            self._send(json.dumps({"ok": ok, "ctl": ctl}).encode(), "application/json")
-        elif self.path == "/api/vps/start":
-            body = self._read_json_body()
-            try:
-                workers = max(1, min(int(body.get("workers", 8)), 16))
-            except Exception:
-                workers = 8
-            vm = read_vm()
-            vps = vps_state()
-            drift = drift_state()
-            local_n = drift.get("local_completed")
-            db_n = drift.get("db_rows")
-            ok, checks = start_guards(
-                vm,
-                workers,
-                local_n if isinstance(local_n, int) else None,
-                db_n if isinstance(db_n, int) else None,
-                bool(vps.get("alive", False)),
-                launch_running(),
-            )
-            if not ok:
-                audit("vps-start-refused", "; ".join(checks)[:200])
-                self._send(json.dumps({"ok": False, "checks": checks}).encode(), "application/json")
-                return
-            env = dict(os.environ, DG_VM=vm)
-            log = open(VPS_LAUNCH_LOG, "ab")
-            proc = subprocess.Popen(
-                [str(DG_RUN_SCRIPT), f"--workers={workers}"],
-                cwd=str(ROOT),
-                stdout=log,
-                stderr=subprocess.STDOUT,
-                env=env,
-            )
-            VPS_LAUNCH_PID.write_text(str(proc.pid), encoding="utf-8")
-            audit("vps-start", f"vm={vm} workers={workers} pid={proc.pid}")
-            self._send(
-                json.dumps({"ok": True, "pid": proc.pid, "checks": checks}).encode(),
-                "application/json",
-            )
-        elif self.path == "/api/stop":
-            (self.data_dir / "dg_stop").write_text("", encoding="utf-8")
-            self._send(b'{"ok": true}', "application/json")
-        elif self.path == "/api/start":
-            length = int(self.headers.get("Content-Length") or 0)
-            try:
-                body = json.loads(self.rfile.read(length) or b"{}")
-            except Exception:
-                body = {}
-            try:
-                count = max(1, min(int(body.get("count", 500)), 2000))
-            except Exception:
-                count = 500
-            if run_active(self.data_dir):
-                self._send(b'{"ok": false, "error": "run already active"}', "application/json")
-                return
-            ids = next_ids(self.data_dir, count)
-            if not ids:
-                self._send(b'{"ok": false, "error": "no IDs left"}', "application/json")
-                return
-            ids_file = self.data_dir / "dg_ids_dash.txt"
-            ids_file.write_text("\n".join(ids) + "\n", encoding="utf-8")
-            cmd = [
-                sys.executable,
-                "-m",
-                "tgpc",
-                "fetch-dg",
-                "--ids-file",
-                str(ids_file),
-                "--captcha",
-                "auto",
-                "--sync-cloud",
-                "--sync-every",
-                "50",
-            ]
-            if body.get("warp_every"):
-                try:
-                    cmd += ["--warp-rotate-every", str(max(1, int(body["warp_every"])))]
-                except Exception:
-                    pass
-            log = open(self.data_dir / "dg_fetch_run.log", "ab")
-            proc = subprocess.Popen(cmd, cwd=str(ROOT), stdout=log, stderr=subprocess.STDOUT)
-            (self.data_dir / "dg_fetch.pid").write_text(str(proc.pid), encoding="utf-8")
-            self._send(
-                json.dumps(
-                    {
-                        "ok": True,
-                        "pid": proc.pid,
-                        "count": len(ids),
-                        "first": ids[0],
-                        "last": ids[-1],
-                    }
-                ).encode(),
-                "application/json",
-            )
+        elif self.path == "/api/overview":
+            self._send(json.dumps(build_overview()).encode(), "application/json")
         else:
             self.send_response(404)
             self.end_headers()
