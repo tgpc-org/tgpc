@@ -1,5 +1,4 @@
 import json
-import os
 import sys
 import tempfile
 import unittest
@@ -83,18 +82,11 @@ class DashboardTests(unittest.TestCase):
         for needle in ('id="theme-toggle"', "toggleTheme()", "dg-theme", 'data-theme="dark"', "prefers-color-scheme"):
             self.assertIn(needle, html)
 
-    def test_start_button_present(self):
+    def test_vps_controls_present(self):
         from scripts.dg_dashboard import PAGE
 
         html = PAGE.read_text(encoding="utf-8")
         for needle in (
-            'id="start"',
-            "startRun()",
-            'id="count"',
-            "/api/start",
-            'id="retry-terminal"',
-            'id="stop"',
-            "stopRun()",
             'id="vps-start"',
             'id="vps-stop"',
             'id="vps-resume"',
@@ -109,11 +101,13 @@ class DashboardTests(unittest.TestCase):
             "/api/vps/launchlog",
         ):
             self.assertIn(needle, html)
+        for gone in ('id="start"', 'id="stop"', "startRun()", "stopRun()", "/api/start"):
+            self.assertNotIn(gone, html)
 
     def test_next_ids_skips_done_and_terminal_retries_failed(self):
         import tempfile
 
-        from scripts.dg_dashboard import next_ids, run_active
+        from scripts.dg_dashboard import next_ids
 
         with tempfile.TemporaryDirectory() as tmp:
             d = Path(tmp)
@@ -140,40 +134,6 @@ class DashboardTests(unittest.TestCase):
             # R2 retryable first, then fresh R4; R1 done, R3 terminal skipped
             self.assertEqual(next_ids(d, 10, rph_path=rph), ["R2", "R4"])
             self.assertEqual(next_ids(d, 1, rph_path=rph), ["R2"])
-            # retry_terminal re-probes terminal IDs in serial order
-            self.assertEqual(next_ids(d, 10, rph_path=rph, retry_terminal=True), ["R2", "R3", "R4"])
-            self.assertFalse(run_active(d))
-            (d / "dg_fetch.pid").write_text(str(os.getpid()))
-            self.assertTrue(run_active(d))
-
-    def test_zombie_pid_counts_as_inactive(self):
-        import subprocess as sp
-
-        from scripts.dg_dashboard import run_active
-
-        with tempfile.TemporaryDirectory() as tmp:
-            d = Path(tmp)
-            # Real finished child, deliberately unreaped: a true zombie, exactly
-            # the server's situation after a button-launched run exits.
-            proc = sp.Popen(["true"])
-            import time as _time
-
-            _time.sleep(0.5)  # `true` exits in ms; no poll()/wait() so it stays a zombie
-            (d / "dg_fetch.pid").write_text(str(proc.pid))
-            try:
-                self.assertFalse(run_active(d))
-                # ...and the stale pidfile is cleaned so a later run can start
-                self.assertFalse((d / "dg_fetch.pid").exists())
-            finally:
-                proc.wait()  # tidy up the zombie ourselves
-            # Live process still reads active
-            live = sp.Popen(["sleep", "30"])
-            try:
-                (d / "dg_fetch.pid").write_text(str(live.pid))
-                self.assertTrue(run_active(d))
-            finally:
-                live.kill()
-                live.wait()
 
     def test_tail(self):
         with tempfile.TemporaryDirectory() as tmp:

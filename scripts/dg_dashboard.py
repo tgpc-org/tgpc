@@ -12,7 +12,6 @@ import json
 import os
 import re
 import subprocess
-import sys
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -21,8 +20,6 @@ from typing import Optional
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
 PAGE = Path(__file__).resolve().parent / "dg_dashboard.html"
-PIDFILE = DATA / "dg_fetch.pid"
-RUNLOG = DATA / "dg_fetch_run.log"
 
 # VPS remote-fetch control: R2 control channel + dg_run.sh launcher.
 VPS_LAUNCH_LOG = DATA / "dg_run_launch.log"
@@ -89,41 +86,6 @@ def next_ids(data_dir: Path, count: int = 500, rph_path: Optional[Path] = None, 
     return (retryable + fresh)[: max(0, count)]
 
 
-def run_active(data_dir: Path = DATA) -> bool:
-    """True if a fetch run is currently alive (pidfile + process check).
-
-    Reaps finished children (zombies): a dead pid — even as zombie — means
-    not active, and the stale pidfile is removed so a later run can start.
-    """
-    try:
-        pid = int((data_dir / "dg_fetch.pid").read_text().strip())
-    except Exception:
-        return False
-    try:
-        finished, _ = os.waitpid(pid, os.WNOHANG)
-        if finished == pid:
-            try:
-                (data_dir / "dg_fetch.pid").unlink()
-            except OSError:
-                pass
-            return False
-    except ChildProcessError:
-        pass  # not our child — fall through to liveness probe
-    except Exception:
-        pass
-    try:
-        os.kill(pid, 0)
-        return True
-    except ProcessLookupError:
-        try:
-            (data_dir / "dg_fetch.pid").unlink()  # fully gone, not just zombie
-        except OSError:
-            pass
-        return False
-    except Exception:
-        return False
-
-
 def build_status(data_dir: Path = DATA) -> dict:
     """Merge live + stats + checkpoint into one payload.
 
@@ -143,7 +105,6 @@ def build_status(data_dir: Path = DATA) -> dict:
     all_time = {"completed": len(completed), "refused": len(terminal)}
     return {
         "status": live.get("status", "idle"),
-        "run_active": run_active(data_dir),
         "current_reg": live.get("current_reg", ""),
         "serial_number": live.get("serial_number"),
         "event": live.get("event", ""),
@@ -676,64 +637,6 @@ class Handler(BaseHTTPRequestHandler):
             audit("vps-start", f"vm={vm} workers={workers} pid={proc.pid}")
             self._send(
                 json.dumps({"ok": True, "pid": proc.pid, "checks": checks}).encode(),
-                "application/json",
-            )
-        elif self.path == "/api/stop":
-            (self.data_dir / "dg_stop").write_text("", encoding="utf-8")
-            self._send(b'{"ok": true}', "application/json")
-        elif self.path == "/api/start":
-            length = int(self.headers.get("Content-Length") or 0)
-            try:
-                body = json.loads(self.rfile.read(length) or b"{}")
-            except Exception:
-                body = {}
-            try:
-                count = max(1, min(int(body.get("count", 500)), 2000))
-            except Exception:
-                count = 500
-            retry_terminal = bool(body.get("retry_terminal"))
-            if run_active(self.data_dir):
-                self._send(b'{"ok": false, "error": "run already active"}', "application/json")
-                return
-            ids = next_ids(self.data_dir, count, retry_terminal=retry_terminal)
-            if not ids:
-                self._send(b'{"ok": false, "error": "no IDs left"}', "application/json")
-                return
-            ids_file = self.data_dir / "dg_ids_dash.txt"
-            ids_file.write_text("\n".join(ids) + "\n", encoding="utf-8")
-            cmd = [
-                sys.executable,
-                "-m",
-                "tgpc",
-                "fetch-dg",
-                "--ids-file",
-                str(ids_file),
-                "--captcha",
-                "auto",
-                "--sync-cloud",
-                "--sync-every",
-                "50",
-            ]
-            if retry_terminal:
-                cmd.append("--retry-terminal")
-            if body.get("warp_every"):
-                try:
-                    cmd += ["--warp-rotate-every", str(max(1, int(body["warp_every"])))]
-                except Exception:
-                    pass
-            log = open(self.data_dir / "dg_fetch_run.log", "ab")
-            proc = subprocess.Popen(cmd, cwd=str(ROOT), stdout=log, stderr=subprocess.STDOUT)
-            (self.data_dir / "dg_fetch.pid").write_text(str(proc.pid), encoding="utf-8")
-            self._send(
-                json.dumps(
-                    {
-                        "ok": True,
-                        "pid": proc.pid,
-                        "count": len(ids),
-                        "first": ids[0],
-                        "last": ids[-1],
-                    }
-                ).encode(),
                 "application/json",
             )
         else:
