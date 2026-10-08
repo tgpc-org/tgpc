@@ -568,7 +568,11 @@ def restart_loop_service(vm: str) -> dict:
 def vps_fetch_log(vm: str, n: int = 40) -> dict:
     """Tail the VM's fetch log over SSH. Never raises — errors become {"error": ...}."""
     n = max(1, min(n, 100))
-    res = ssh_run(vm, "tail", "-n", str(n), "tgpc/data/dg_fetch.log", timeout=30)
+    # The checkout belongs to tgpc-mac (service user); the SSH login reads it
+    # via passwordless sudo, same as dg_run.sh's gfetch().
+    res = ssh_run(
+        vm, "sudo", "-n", "-u", "tgpc-mac", "tail", "-n", str(n), "/home/tgpc-mac/tgpc/data/dg_fetch.log", timeout=30
+    )
     if not res["ok"]:
         return {"error": res["error"] or "log unavailable"}
     return {"lines": res["out"].splitlines()[-n:]}

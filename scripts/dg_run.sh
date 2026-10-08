@@ -20,7 +20,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-# Deterministic credentials: ~/.tgpc_env first (background-safe, chmod 600),
+# Deterministic credentials: $VM_HOME/.tgpc_env first (background-safe, chmod 600),
 # live env wins, Keychain remains the fallback inside the python heredocs.
 if [ -f "$HOME/.tgpc_env" ]; then
   set -a
@@ -68,6 +68,9 @@ SSH="ssh -o BatchMode=yes -o ConnectTimeout=15 $VM"
 # back to direct ssh/scp (other providers).
 GCE_INST=""
 GCE_ZONE=""
+# Fetch runs as this user (owns the checkout the systemd unit points at).
+VM_USER="tgpc-mac"
+VM_HOME="/home/tgpc-mac"
 if command -v gcloud >/dev/null 2>&1; then
   _HOST="${VM##*@}"
   _FOUND=$(gcloud compute instances list --filter="networkInterfaces.accessConfigs.natIP='${_HOST}'" --format='value(name,zone)' 2>/dev/null || true)
@@ -85,12 +88,19 @@ gssh() {
   fi
 }
 
-gscp_to() { # gscp_to <local> <remote-path>
+gscp_to() { # gscp_to <local> <remote-path-under-VM_HOME>
+  local dest="$VM_HOME/$2"
   if [ -n "$GCE_INST" ]; then
-    gcloud compute scp --zone="$GCE_ZONE" -q "$1" "$GCE_INST:$2"
+    gcloud compute scp --zone="$GCE_ZONE" -q "$1" "$GCE_INST:/tmp/dg_push_$(basename "$1")"
+    gssh "sudo install -o $VM_USER -g $VM_USER -m 644 /tmp/dg_push_$(basename "$1") '$dest'"
   else
-    scp -q "$1" "$VM:$2"
+    scp -q "$1" "$VM:$dest"
   fi
+}
+
+# Run a remote command as the fetch user (owns checkout + data dir).
+gfetch() {
+  gssh "sudo -n -u $VM_USER VM_HOME=$VM_HOME bash -lc '$*'"
 }
 
 fail() { echo "ABORT: $1" >&2; exit 1; }
@@ -119,7 +129,7 @@ while True:
 print(n)")
 echo "Supabase rph_dg_contacts: $DB_N rows"
 [ "$DB_N" -le "$CP_DONE" ] || fail "DB ($DB_N) is ahead of local checkpoint ($CP_DONE) — reconcile (cloud->local) before pushing, or the VM will re-probe finished records."
-REMOTE_DONE=$(gssh 'python3 -c "import json; print(len(json.load(open(\"tgpc/data/dg_fetch_checkpoint.json\")).get(\"completed\", [])))"' 2>/dev/null || echo 0)
+REMOTE_DONE=$(gfetch 'python3 -c "import json; print(len(json.load(open(\"tgpc/data/dg_fetch_checkpoint.json\")).get(\"completed\", [])))"' 2>/dev/null || echo 0)
 echo "VM checkpoint completed: $REMOTE_DONE"
 [ "$REMOTE_DONE" -le "$CP_DONE" ] || fail "VM checkpoint ($REMOTE_DONE) is ahead of local ($CP_DONE) — pull the VM state back before pushing, or its progress is lost."
 if gssh 'sudo -n systemctl is-active --quiet tgpc-dg-fetch' 2>/dev/null; then
@@ -128,20 +138,20 @@ if gssh 'sudo -n systemctl is-active --quiet tgpc-dg-fetch' 2>/dev/null; then
 fi
 
 echo "=== [3/7] pushing inputs (rph.json + checkpoint) ==="
-gscp_to data/rph.json ~/tgpc/data/rph.json
-gscp_to data/dg_fetch_checkpoint.json ~/tgpc/data/dg_fetch_checkpoint.json
+gscp_to data/rph.json tgpc/data/rph.json
+gscp_to data/dg_fetch_checkpoint.json tgpc/data/dg_fetch_checkpoint.json
 echo "pushed."
 
 echo "=== [4/7] remote env (workers=$WORKERS, retry-terminal=$RETRY_TERMINAL, warp, disk, OCR) ==="
-gssh "grep -q '^TGPC_DG_WORKERS=' ~/.tgpc_env 2>/dev/null && sed -i 's/^TGPC_DG_WORKERS=.*/TGPC_DG_WORKERS=$WORKERS/' ~/.tgpc_env || echo 'TGPC_DG_WORKERS=$WORKERS' >> ~/.tgpc_env"
-gssh "grep -q '^TGPC_DG_RETRY_TERMINAL=' ~/.tgpc_env 2>/dev/null && sed -i 's/^TGPC_DG_RETRY_TERMINAL=.*/TGPC_DG_RETRY_TERMINAL=$RETRY_TERMINAL/' ~/.tgpc_env || echo 'TGPC_DG_RETRY_TERMINAL=$RETRY_TERMINAL' >> ~/.tgpc_env"
+gfetch "grep -q '^TGPC_DG_WORKERS=' \$VM_HOME/.tgpc_env 2>/dev/null && sed -i 's/^TGPC_DG_WORKERS=.*/TGPC_DG_WORKERS=$WORKERS/' \$VM_HOME/.tgpc_env || echo 'TGPC_DG_WORKERS=$WORKERS' >> \$VM_HOME/.tgpc_env"
+gfetch "grep -q '^TGPC_DG_RETRY_TERMINAL=' \$VM_HOME/.tgpc_env 2>/dev/null && sed -i 's/^TGPC_DG_RETRY_TERMINAL=.*/TGPC_DG_RETRY_TERMINAL=$RETRY_TERMINAL/' \$VM_HOME/.tgpc_env || echo 'TGPC_DG_RETRY_TERMINAL=$RETRY_TERMINAL' >> \$VM_HOME/.tgpc_env"
 gssh 'command -v warp-cli >/dev/null || echo "WARN: warp-cli missing on VM (GCE IPs are source-blocked without it)."'
 gssh 'command -v tesseract >/dev/null || echo "WARN: tesseract missing on VM (captcha OCR unavailable)."'
-gssh '[ $(df --output=avail ~/tgpc/data | tail -1) -gt 2000000 ] || echo "WARN: <2GB free on VM disk."'
+gssh '[ $(df --output=avail $VM_HOME/tgpc/data | tail -1) -gt 2000000 ] || echo "WARN: <2GB free on VM disk."'
 echo "env ok."
 
 echo "=== [5/7] smoke trial (50 records, gates the loop) ==="
-SMOKE_OUT=$(gssh 'cd ~/tgpc && ./scripts/vps_fetch.sh --smoke' 2>&1 | tail -15)
+SMOKE_OUT=$(gfetch 'cd $VM_HOME/tgpc && ./scripts/vps_fetch.sh --smoke' 2>&1 | tail -15)
 echo "$SMOKE_OUT"
 echo "$SMOKE_OUT" | grep -qiE "blockederror|block_storm" && fail "smoke hit blocks — investigate (tunnel up? egress changed?) before looping."
 SAVED=$(echo "$SMOKE_OUT" | grep -oE '\+[0-9]+ saved' | grep -oE '[0-9]+' | head -1)
