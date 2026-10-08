@@ -93,6 +93,7 @@
       <option value="12">12 at once</option>
       <option value="16">16 at once (max)</option>
     </select>
+    <label class="muted" style="font-size:12px"><input type="checkbox" id="vps-retry"> include refused ones</label>
     <span class="muted" id="vps-msg"></span>
   </div>
   <div class="row">
@@ -252,13 +253,15 @@ async function saveVm() {
 }
 async function startVps() {
   const w = document.getElementById('vps-workers').value;
-  if (!confirm('Start fetching on the cloud computer with ' + w + ' at once? It checks everything first and explains any refusal.')) return;
+  const retry = document.getElementById('vps-retry').checked;
+  if (retry && !confirm('Re-fetch the refused records too, sweeping until a whole sweep saves nothing? This runs for days.')) return;
+  if (!retry && !confirm('Start fetching on the cloud computer with ' + w + ' at once? It checks everything first and explains any refusal.')) return;
   const msg = document.getElementById('vps-msg');
   msg.textContent = 'starting…';
   try {
     const r = await (await fetch('/api/vps/start', {method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({workers: parseInt(w, 10)})})).json();
+      body: JSON.stringify({workers: parseInt(w, 10), retry_terminal: retry})})).json();
     msg.textContent = r.ok ? ('fetching — ' + (r.checks || []).join(' ')) : ('not started: ' + (r.checks || [r.error || 'refused']).join(' '));
   } catch (e) { msg.textContent = 'start failed'; }
   refreshVps();

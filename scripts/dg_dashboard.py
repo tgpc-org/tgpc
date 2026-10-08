@@ -640,6 +640,7 @@ class Handler(BaseHTTPRequestHandler):
                 workers = max(1, min(int(body.get("workers", 8)), 16))
             except Exception:
                 workers = 8
+            retry_terminal = bool(body.get("retry_terminal"))
             vm = read_vm()
             vps = vps_state()
             drift = drift_state()
@@ -659,15 +660,18 @@ class Handler(BaseHTTPRequestHandler):
                 return
             env = dict(os.environ, DG_VM=vm)
             log = open(VPS_LAUNCH_LOG, "ab")
+            cmd = [str(DG_RUN_SCRIPT), f"--workers={workers}"]
+            if retry_terminal:
+                cmd.append("--retry-terminal")
             proc = subprocess.Popen(
-                [str(DG_RUN_SCRIPT), f"--workers={workers}"],
+                cmd,
                 cwd=str(ROOT),
                 stdout=log,
                 stderr=subprocess.STDOUT,
                 env=env,
             )
             VPS_LAUNCH_PID.write_text(str(proc.pid), encoding="utf-8")
-            audit("vps-start", f"vm={vm} workers={workers} pid={proc.pid}")
+            audit("vps-start", f"vm={vm} workers={workers} retry_terminal={retry_terminal} pid={proc.pid}")
             self._send(
                 json.dumps({"ok": True, "pid": proc.pid, "checks": checks}).encode(),
                 "application/json",

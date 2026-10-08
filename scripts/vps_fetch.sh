@@ -161,9 +161,12 @@ PYEOF
 gen_ids() {
   # Same ordering as the local dashboard (scripts/dg_dashboard.py::next_ids):
   # retryable failures first, then fresh — both in rph.json serial order.
+  # TGPC_DG_RETRY_TERMINAL=1 also re-queues terminal (refused) records first
+  # of all, for deliberate re-probes of the full non-saved set.
   python3 - "$1" <<'PYEOF'
-import json, sys
+import json, os, sys
 count = int(sys.argv[1])
+retry_terminal = os.environ.get("TGPC_DG_RETRY_TERMINAL", "0") == "1"
 rows = json.load(open("data/rph.json"))
 order = {r["registration_number"]: (r.get("serial_number") is None, r.get("serial_number") or 0)
          for r in rows if r.get("registration_number")}
@@ -171,17 +174,30 @@ try:
     cp = json.load(open("data/dg_fetch_checkpoint.json"))
 except FileNotFoundError:
     cp = {}
-done = set(cp.get("completed", [])) | set(cp.get("failed_terminal", {}))
+completed = set(cp.get("completed", []))
+terminal = set(cp.get("failed_terminal", {}))
+done = set(completed) if retry_terminal else (completed | terminal)
 retryable = sorted([r for r in cp.get("failed", {}) if r not in done],
                    key=lambda r: order.get(r, (True, 0)))
 seen = set(retryable)
+if retry_terminal:
+    term = sorted([r for r in terminal if r not in completed],
+                  key=lambda r: order.get(r, (True, 0)))
+    retryable = term + retryable
+    seen |= set(term)
 fresh = sorted([reg for reg in order if reg not in done and reg not in seen],
                key=lambda r: order.get(r, (True, 0)))
 ids = (retryable + fresh)[: max(0, count)]
 open("data/dg_ids_vps.txt", "w").write("\n".join(ids) + ("\n" if ids else ""))
-print(f"ids: {len(ids)} ({len([i for i in ids if i in set(retryable)])} retryable)")
+print(f"ids: {len(ids)} ({len([i for i in ids if i in set(retryable)])} retryable)"
+      + (" [retry-terminal]" if retry_terminal else ""))
 PYEOF
 }
+
+FETCH_EXTRA_ARGS=""
+if [ "${TGPC_DG_RETRY_TERMINAL:-0}" = "1" ]; then
+  FETCH_EXTRA_ARGS="--retry-terminal"
+fi
 
 # --- main loop ----------------------------------------------------------------
 if [ "$SMOKE" = "1" ]; then
@@ -190,7 +206,7 @@ if [ "$SMOKE" = "1" ]; then
   [ -s data/dg_ids_vps.txt ] || { echo "nothing to fetch"; exit 0; }
   before=$(python3 -c "import json;s=json.load(open('data/dg_stats.json'));print(str(s.get('done',0))+' '+str(s.get('failed',0)))" 2>/dev/null || echo "0 0")
   python3 -m tgpc fetch-dg --ids-file data/dg_ids_vps.txt \
-    --sync-cloud --sync-every 50
+    --sync-cloud --sync-every 50 $FETCH_EXTRA_ARGS
   backup_checkpoint
   python3 -c "
 import json
@@ -203,8 +219,23 @@ print(f'smoke delta: +{d_done} saved, +{d_failed} failed | reasons:', s.get('fai
   exit 0
 fi
 
+completed_count() {
+  python3 -c "import json; print(len(json.load(open('data/dg_fetch_checkpoint.json')).get('completed', [])))" 2>/dev/null || echo 0
+}
+
+# Sweep-until-done: each sweep walks the whole remaining set (53.6k when
+# retry-terminal is on). A sweep that saves nothing proves the source gaps
+# are unchanged, so the loop parks instead of grinding forever — rerun next
+# week for the next attempt. Any saves at all trigger another full sweep.
+SWEEP=0
 while true; do
-  if [ -f data/dg_halt ]; then echo "dg_halt present — stopping cleanly"; break; fi
+SWEEP=$((SWEEP + 1))
+SWEEP_BEFORE=$(completed_count)
+echo "=== SWEEP $SWEEP (completed so far: $SWEEP_BEFORE) ==="
+
+EXIT_REASON=""
+while true; do
+  if [ -f data/dg_halt ]; then echo "dg_halt present — stopping cleanly"; EXIT_REASON="halt"; break; fi
   # Multi-day runs: re-verify the tunnel every batch. If it dropped, fetches
   # would silently go direct (datacenter IP = blocks), so reconnect first.
   if ! warp-cli --accept-tos status 2>/dev/null | grep -qi "connected"; then
@@ -218,9 +249,9 @@ while true; do
     continue
   fi
   gen_ids "$BATCH"
-  [ -s data/dg_ids_vps.txt ] || { echo "ID pool exhausted — all done"; break; }
+  [ -s data/dg_ids_vps.txt ] || { echo "ID pool exhausted for sweep $SWEEP"; EXIT_REASON="exhausted"; break; }
   python3 -m tgpc fetch-dg --ids-file data/dg_ids_vps.txt \
-    --sync-cloud --sync-every 50
+    --sync-cloud --sync-every 50 $FETCH_EXTRA_ARGS
   backup_checkpoint
   # data/dg_stop (or the R2 halt flag via vps_ctl.sh) makes
   # fetch-dg halt the batch (recording stopped:true in stats). Without this
@@ -234,9 +265,26 @@ while true; do
   if python3 -c "import json,sys; sys.exit(0 if json.load(open('data/dg_stats.json')).get('stopped') else 1)" 2>/dev/null; then
     reason=$(python3 -c "import json; print(json.load(open('data/dg_stats.json')).get('stop_reason','stop file'))" 2>/dev/null)
     echo "halted ($reason) — loop stopped (restart service to resume)"
+    EXIT_REASON="halt"
     break
   fi
   # fetch-dg exit 0 covers batch-complete; loop on.
+done
+SWEEP_AFTER=$(completed_count)
+SWEEP_SAVED=$((SWEEP_AFTER - SWEEP_BEFORE))
+echo "=== SWEEP $SWEEP done: +$SWEEP_SAVED saved ($SWEEP_BEFORE -> $SWEEP_AFTER) ==="
+if [ "$EXIT_REASON" = "halt" ]; then
+  echo "halted — staying stopped (restart service to resume)"
+  break
+fi
+if [ "${TGPC_DG_RETRY_TERMINAL:-0}" = "1" ] && [ "$SWEEP_SAVED" -gt 0 ]; then
+  echo "progress this sweep — starting sweep $((SWEEP + 1)) over what remains"
+  continue
+fi
+if [ "${TGPC_DG_RETRY_TERMINAL:-0}" = "1" ]; then
+  echo "sweep saved nothing — source gaps unchanged, parking until next week"
+fi
+break
 done
 backup_checkpoint
 echo "vps_fetch.sh finished"

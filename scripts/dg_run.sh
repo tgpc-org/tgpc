@@ -33,6 +33,7 @@ VM="${DG_VM:-}"
 WORKERS="${DG_WORKERS:-8}"
 SMOKE_ONLY=0
 RESTART=0
+RETRY_TERMINAL=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --vm=*) VM="${1#--vm=}" ; shift ;;
@@ -41,6 +42,7 @@ while [ $# -gt 0 ]; do
     --workers) WORKERS="${2:?--workers needs 1..16}"; shift 2 ;;
     --smoke-only) SMOKE_ONLY=1 ; shift ;;
     --restart) RESTART=1 ; shift ;;
+    --retry-terminal) RETRY_TERMINAL=1 ; shift ;;
     -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
     *) echo "unknown flag: $1 (see --help)" >&2; exit 2 ;;
   esac
@@ -99,8 +101,9 @@ scp -q data/rph.json "$VM:~/tgpc/data/rph.json"
 scp -q data/dg_fetch_checkpoint.json "$VM:~/tgpc/data/dg_fetch_checkpoint.json"
 echo "pushed."
 
-echo "=== [4/7] remote env (workers=$WORKERS, warp, disk, OCR) ==="
+echo "=== [4/7] remote env (workers=$WORKERS, retry-terminal=$RETRY_TERMINAL, warp, disk, OCR) ==="
 $SSH "grep -q '^TGPC_DG_WORKERS=' ~/.tgpc_env 2>/dev/null && sed -i 's/^TGPC_DG_WORKERS=.*/TGPC_DG_WORKERS=$WORKERS/' ~/.tgpc_env || echo 'TGPC_DG_WORKERS=$WORKERS' >> ~/.tgpc_env"
+$SSH "grep -q '^TGPC_DG_RETRY_TERMINAL=' ~/.tgpc_env 2>/dev/null && sed -i 's/^TGPC_DG_RETRY_TERMINAL=.*/TGPC_DG_RETRY_TERMINAL=$RETRY_TERMINAL/' ~/.tgpc_env || echo 'TGPC_DG_RETRY_TERMINAL=$RETRY_TERMINAL' >> ~/.tgpc_env"
 $SSH 'command -v warp-cli >/dev/null || echo "WARN: warp-cli missing on VM (GCE IPs are source-blocked without it)."'
 $SSH 'command -v tesseract >/dev/null || echo "WARN: tesseract missing on VM (captcha OCR unavailable)."'
 $SSH '[ $(df --output=avail ~/tgpc/data | tail -1) -gt 2000000 ] || echo "WARN: <2GB free on VM disk."'
@@ -111,8 +114,14 @@ SMOKE_OUT=$($SSH 'cd ~/tgpc && ./scripts/vps_fetch.sh --smoke' 2>&1 | tail -15)
 echo "$SMOKE_OUT"
 echo "$SMOKE_OUT" | grep -qiE "blockederror|block_storm" && fail "smoke hit blocks — investigate (tunnel up? egress changed?) before looping."
 SAVED=$(echo "$SMOKE_OUT" | grep -oE '\+[0-9]+ saved' | grep -oE '[0-9]+' | head -1)
-[ -n "$SAVED" ] && [ "$SAVED" -gt 0 ] || fail "smoke saved nothing — refusing to start the loop."
-echo "smoke passed (+$SAVED saved, no blocks)."
+if [ -z "$SAVED" ] || [ "$SAVED" -le 0 ]; then
+  if [ "$RETRY_TERMINAL" = "1" ]; then
+    echo "WARN: smoke saved nothing — expected on refused ranges; blocks check still gates."
+  else
+    fail "smoke saved nothing — refusing to start the loop."
+  fi
+fi
+echo "smoke passed (+${SAVED:-0} saved, no blocks)."
 [ "$SMOKE_ONLY" = "1" ] && { echo "smoke-only: stopping here."; exit 0; }
 
 echo "=== [6/7] starting the loop ==="

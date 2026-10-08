@@ -44,9 +44,10 @@ retryable failures first, then fresh IDs in serial order (ordering contract:
   lockdown to an already-deployed project.
 * `scripts/dg_dashboard.py` + `scripts/dg_dashboard.html` — stdlib localhost
   dashboard, no login (`./scripts/dg_open.sh` starts it and opens the
-  browser): collection scoreboard plus VPS controls only (START/STOP/
-  RESUME/RESTART, VM address, SSH exclusions) — the VM does all fetching,
-  so there are no local run buttons. TGPC palette only.
+  browser): collection scoreboard plus VPS controls only (START with
+  include-refused option, STOP/RESUME/RESTART, VM address, SSH exclusions)
+  — the VM does all fetching, so there are no local run buttons.
+  TGPC palette only.
 * `tests/test_details_dg.py`, `tests/test_dg_dashboard.py`.
 
 ## State files (all gitignored, local crash buffer only)

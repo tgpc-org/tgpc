@@ -94,6 +94,7 @@ class DashboardTests(unittest.TestCase):
             'id="vps-excl"',
             'id="vps-vm-input"',
             'id="vps-vm-save"',
+            'id="vps-retry"',
             "/api/vm",
             "/api/vps/resume",
             "/api/vps/restart",
