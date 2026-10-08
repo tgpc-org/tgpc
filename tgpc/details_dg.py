@@ -46,16 +46,17 @@ VIEW_PATH = "/pharmacy/getdetailsviewdg.action"
 
 
 def _dg_workers() -> int:
-    """Fetch pool size: TGPC_DG_WORKERS override, default 4.
+    """Fetch pool size: TGPC_DG_WORKERS override, default 8.
 
-    The source filters aggressively, so raise in steps (6, then 8) and watch
-    the BlockedError rate — back off at the first streak. Clamped to 1..16.
+    Matches the operational default (dashboard, dg_run.sh). The source
+    filters aggressively, so raise in steps (12, then 16) and watch the
+    BlockedError rate — back off at the first streak. Clamped to 1..16.
     """
     try:
         n = int(os.environ.get("TGPC_DG_WORKERS", "") or 0)
     except ValueError:
         n = 0
-    return min(max(n or 4, 1), 16)
+    return min(max(n or 8, 1), 16)
 
 
 DG_WORKERS = _dg_workers()

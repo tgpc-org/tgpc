@@ -535,11 +535,11 @@ class SyncPayloadTests(unittest.TestCase):
 
 
 class WorkerFixedTests(unittest.TestCase):
-    def test_fetch_pool_is_fixed_at_four(self):
+    def test_fetch_pool_is_fixed_at_eight(self):
         import tgpc.details_dg as dg
         from tgpc.details_dg import DG_WORKERS
 
-        self.assertEqual(DG_WORKERS, 4)
+        self.assertEqual(DG_WORKERS, 8)
         created = []
         orig = dg.ThreadPoolExecutor
 
@@ -560,7 +560,7 @@ class WorkerFixedTests(unittest.TestCase):
                 stats_d = run_fetch(regs, out, raw, cp, stats, resume=False, fetcher_factory=FakeFetcher)
             finally:
                 dg.ThreadPoolExecutor = orig
-            self.assertEqual(created, [4])
+            self.assertEqual(created, [8])
             self.assertEqual(stats_d["done"], len(regs))
             rows = [json.loads(line) for line in out.read_text().splitlines()]
             self.assertEqual(sorted(r["registration_number"] for r in rows), sorted(regs))
@@ -572,7 +572,7 @@ class WorkerFixedTests(unittest.TestCase):
 
         old = os.environ.get("TGPC_DG_WORKERS")
         try:
-            for value, expected in (("6", 6), ("99", 16), ("0", 4), ("abc", 4), ("-3", 1)):
+            for value, expected in (("6", 6), ("99", 16), ("0", 8), ("abc", 8), ("-3", 1)):
                 os.environ["TGPC_DG_WORKERS"] = value
                 dg = importlib.reload(dg)
                 self.assertEqual(dg.DG_WORKERS, expected, f"TGPC_DG_WORKERS={value!r}")
@@ -584,7 +584,7 @@ class WorkerFixedTests(unittest.TestCase):
             importlib.reload(dg)
         from tgpc.details_dg import DG_WORKERS
 
-        self.assertEqual(DG_WORKERS, 4)
+        self.assertEqual(DG_WORKERS, 8)
 
     def test_block_storm_halts(self):
         from tgpc.details_dg import run_fetch

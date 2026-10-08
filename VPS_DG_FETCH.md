@@ -106,7 +106,7 @@ No `--warp-rotate-every`: consumer WARP egress is sticky per account, so the
 rotation gate can never see a *different* IP and halts every 500 records
 instead of protecting anything. The per-run tunnel (masked egress) is the
 actual protection; blocks are monitored via fail reasons.
-Workers: `TGPC_DG_WORKERS` in `~/.tgpc_env` (default 4, max 16 — raise in
+Workers: `TGPC_DG_WORKERS` in `~/.tgpc_env` (default 8, max 16 — raise in
 steps and watch for `BlockedError` streaks; back off at the first one).
 Checkpoint + stats are pushed to `tgpc-dg-private/ops/` after every batch.
 
