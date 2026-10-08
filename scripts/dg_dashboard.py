@@ -491,59 +491,87 @@ def set_halt(halt: bool, note: str) -> dict:
     return update_ctl({"halt": halt, "note": note})
 
 
-def restart_loop_service(vm: str) -> dict:
-    """Restart the systemd fetch loop on the VM over SSH. Never raises."""
+def _gce_target(vm: str) -> tuple:
+    """Resolve a VM address to (name, zone) via gcloud, matching the static IP.
+
+    Plain `ssh user@host` cannot work on this project (OS Login certs only),
+    so every SSH call goes through `gcloud compute ssh`, which mints certs
+    transparently. Returns ("", "") when unresolvable — callers fall back to
+    direct ssh.
+    """
+    host = (vm or "").split("@")[-1].strip()
+    if not host:
+        return "", ""
     try:
         proc = subprocess.run(
             [
-                "ssh",
-                "-o",
-                "BatchMode=yes",
-                "-o",
-                "ConnectTimeout=15",
-                vm,
-                "sudo",
-                "-n",
-                "systemctl",
-                "restart",
-                "tgpc-dg-fetch",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-        if proc.returncode != 0:
-            return {"ok": False, "error": (proc.stderr.strip() or proc.stdout.strip() or "ssh failed")[:160]}
-        return {"ok": True}
-    except Exception as e:
-        return {"ok": False, "error": str(e)[:160]}
-
-
-def vps_fetch_log(vm: str, n: int = 40) -> dict:
-    """Tail the VM's fetch log over SSH. Never raises — errors become {"error": ...}."""
-    try:
-        proc = subprocess.run(
-            [
-                "ssh",
-                "-o",
-                "BatchMode=yes",
-                "-o",
-                "ConnectTimeout=15",
-                vm,
-                "tail",
-                "-n",
-                str(max(1, min(n, 100))),
-                "tgpc/data/dg_fetch.log",
+                "gcloud",
+                "compute",
+                "instances",
+                "list",
+                f"--filter=networkInterfaces.accessConfigs.natIP='{host}'",
+                "--format=value(name,zone)",
             ],
             capture_output=True,
             text=True,
             timeout=30,
         )
+        parts = proc.stdout.strip().split()
+        if len(parts) >= 2:
+            return parts[0], parts[1].split("/")[-1]
+    except Exception:
+        pass
+    return "", ""
+
+
+_GCE_TARGET_CACHE: dict = {}
+
+
+def ssh_run(vm: str, *remote: str, timeout: int = 60) -> dict:
+    """Run a remote command: gcloud SSH when resolvable, else direct ssh.
+
+    Returns {"ok": bool, "out": str, "error": str}. Never raises.
+    """
+    if vm not in _GCE_TARGET_CACHE:
+        _GCE_TARGET_CACHE[vm] = _gce_target(vm)
+    name, zone = _GCE_TARGET_CACHE[vm]
+    try:
+        if name and zone:
+            cmd = [
+                "gcloud",
+                "compute",
+                "ssh",
+                name,
+                f"--zone={zone}",
+                "--ssh-flag=-o ConnectTimeout=15",
+                "--command",
+                " ".join(remote),
+            ]
+        else:
+            cmd = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15", vm, *remote]
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
         if proc.returncode != 0:
-            return {"error": (proc.stderr.strip() or "log unavailable")[:160]}
-        return {"lines": proc.stdout.splitlines()[-n:]}
+            return {"ok": False, "out": "", "error": (proc.stderr.strip() or proc.stdout.strip() or "ssh failed")[:160]}
+        return {"ok": True, "out": proc.stdout.strip(), "error": ""}
     except Exception as e:
-        return {"error": str(e)[:160]}
+        return {"ok": False, "out": "", "error": str(e)[:160]}
+
+
+def restart_loop_service(vm: str) -> dict:
+    """Restart the systemd fetch loop on the VM over SSH. Never raises."""
+    res = ssh_run(vm, "sudo", "-n", "systemctl", "restart", "tgpc-dg-fetch")
+    if not res["ok"]:
+        return {"ok": False, "error": res["error"]}
+    return {"ok": True}
+
+
+def vps_fetch_log(vm: str, n: int = 40) -> dict:
+    """Tail the VM's fetch log over SSH. Never raises — errors become {"error": ...}."""
+    n = max(1, min(n, 100))
+    res = ssh_run(vm, "tail", "-n", str(n), "tgpc/data/dg_fetch.log", timeout=30)
+    if not res["ok"]:
+        return {"error": res["error"] or "log unavailable"}
+    return {"lines": res["out"].splitlines()[-n:]}
 
 
 class Handler(BaseHTTPRequestHandler):

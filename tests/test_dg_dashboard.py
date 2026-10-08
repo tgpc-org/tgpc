@@ -176,6 +176,13 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(to_ist_day(""), "")
         self.assertEqual(to_ist_day("garbage"), "garbage")
 
+    def test_ssh_run_never_raises(self):
+        from scripts.dg_dashboard import ssh_run
+
+        res = ssh_run("nobody@invalid.invalid", "echo hi", timeout=20)
+        self.assertIsInstance(res, dict)
+        self.assertIn("ok", res)
+
     def test_next_up_passthrough(self):
         with tempfile.TemporaryDirectory() as tmp:
             d = Path(tmp)

@@ -67,6 +67,10 @@ secrets: `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `R2_ACCESS_KEY_ID`,
 `R2_SECRET_ACCESS_KEY`, `CLOUDFLARE_ACCOUNT_ID`,
 `TGPC_R2_DG_BUCKET=tgpc-dg-private`, optional `RCLONE_GDRIVE_CONFIG`.
 
+SSH here and everywhere in this repo goes through `gcloud compute ssh`
+(OS Login certs, minted transparently) whenever gcloud can resolve the VM
+by its static IP, falling back to direct `ssh user@host` otherwise.
+
 ## 3. Seed the checkpoint (Mac side, one-time)
 
 ```bash
