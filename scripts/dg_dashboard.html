@@ -78,6 +78,17 @@
     <div class="card"><div class="label">Saved</div><div class="value green" id="done">0</div></div>
     <div class="card"><div class="label">Couldn't fetch</div><div class="value red" id="failed">0</div></div>
   </div>
+  <div class="row">
+    <button id="stop" onclick="stopRun()">STOP after current record</button>
+    <span class="muted" id="stopmsg"></span>
+  </div>
+  <div class="row">
+    <button id="start" onclick="startRun()" style="background:#00cc66">START next</button>
+    <input id="count" type="number" value="500" min="1" max="2000"
+           style="width:80px;padding:7px;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--ink)">
+    <span class="muted">records</span>
+    <span class="muted" id="startmsg"></span>
+  </div>
   <div class="reasons" id="reasons"></div>
   <h3>VPS remote fetch</h3>
   <div class="row"><span class="muted" id="vps-vm">VM: —</span></div>
@@ -87,7 +98,19 @@
     <div class="card"><div class="label">Loop</div><div class="value" id="vps-loop">—</div></div>
     <div class="card"><div class="label">Drift (DB − local)</div><div class="value" id="vps-drift">—</div></div>
   </div>
-  <div class="row"><span class="muted">Control lives in the terminal (<span style="font-family:monospace">scripts/dg_run.sh</span>, <span style="font-family:monospace">scripts/vps_ctl.sh</span>) — this page only watches.</span></div>
+  <div class="row">
+    <button id="vps-start" onclick="startVps()" style="background:#00cc66">START VPS RUN</button>
+    <select id="vps-workers" style="padding:7px;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--ink)">
+      <option value="4">4 runners</option>
+      <option value="8" selected>8 runners</option>
+      <option value="12">12 runners</option>
+      <option value="16">16 runners (max)</option>
+    </select>
+    <button id="vps-stop" onclick="stopVps()">STOP VPS</button>
+    <span class="muted" id="vps-msg"></span>
+  </div>
+  <h3>Launcher log</h3>
+  <pre id="vps-log">no launch yet…</pre>
   <h3>Live log</h3>
   <pre id="log">waiting for run…</pre>
   <footer id="updated"></footer>
@@ -148,11 +171,33 @@ async function refresh() {
     document.getElementById('reasons').textContent = reasons ? 'Why some are missing — ' + reasons : '';
     document.getElementById('updated').textContent = 'Updated: ' + (s.updated_ist || s.updated_at || '—') +
       ' · Finished: ' + s.completed;
+    const stopBtn = document.getElementById('stop');
+    if (s.stop_armed) { stopBtn.disabled = true; document.getElementById('stopmsg').textContent = 'stop armed…'; }
+    else { stopBtn.disabled = s.status !== 'running'; document.getElementById('stopmsg').textContent = ''; }
+    const startBtn = document.getElementById('start');
+    startBtn.disabled = !!s.run_active;
     const lines = await (await fetch('/api/log')).json();
     const pre = document.getElementById('log');
     pre.textContent = lines.join('\n') || 'waiting for run…';
     pre.scrollTop = pre.scrollHeight;
   } catch (e) { /* server restarting? retry next tick */ }
+}
+async function stopRun() {
+  if (!confirm('Stop after the current record? Checkpoint stays safe.')) return;
+  await fetch('/api/stop', {method: 'POST'});
+  refresh();
+}
+async function startRun() {
+  const count = parseInt(document.getElementById('count').value, 10) || 500;
+  const msg = document.getElementById('startmsg');
+  msg.textContent = 'starting…';
+  try {
+    const r = await (await fetch('/api/start', {method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({count})})).json();
+    msg.textContent = r.ok ? ('running ' + r.count + ' records from ' + r.first) : ('not started: ' + r.error);
+  } catch (e) { msg.textContent = 'start failed'; }
+  refresh();
 }
 setInterval(refresh, 2000);
 refresh();
@@ -180,7 +225,8 @@ async function refreshVps() {
   try {
     const s = await (await fetch('/api/vps/status')).json();
     document.getElementById('vps-vm').textContent =
-      'VM: ' + (s.vm_configured ? s.vm : 'not set (export DG_VM=user@host)');
+      'VM: ' + (s.vm_configured ? s.vm : 'not set (export DG_VM=user@host)') +
+      (s.launch_running ? ' · launcher running' : '');
     const v = s.vps || {};
     if (v.error) {
       document.getElementById('vps-done').textContent = '—';
@@ -202,7 +248,30 @@ async function refreshVps() {
       driftEl.textContent = (n > 0 ? '+' : '') + n;
       driftEl.className = 'value ' + (n !== 0 ? 'red' : 'green');
     }
+    const busy = !!s.launch_running || !!v.alive;
+    document.getElementById('vps-start').disabled = busy || !s.vm_configured;
+    const lines = await (await fetch('/api/vps/launchlog')).json();
+    const pre = document.getElementById('vps-log');
+    if (lines.length) { pre.textContent = lines.join('\n'); pre.scrollTop = pre.scrollHeight; }
   } catch (e) { /* retry next tick */ }
+}
+async function startVps() {
+  const w = document.getElementById('vps-workers').value;
+  if (!confirm('Start the VPS fetch with ' + w + ' runners? Preflight and smoke gate it; refusals explain themselves.')) return;
+  const msg = document.getElementById('vps-msg');
+  msg.textContent = 'starting…';
+  try {
+    const r = await (await fetch('/api/vps/start', {method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({workers: parseInt(w, 10)})})).json();
+    msg.textContent = r.ok ? ('launcher pid ' + r.pid + ' — ' + (r.checks || []).join(' ')) : ('not started: ' + (r.checks || [r.error || 'refused']).join(' '));
+  } catch (e) { msg.textContent = 'start failed'; }
+  refreshVps();
+}
+async function stopVps() {
+  if (!confirm('Halt the VPS loop after its current batch? It stays halted until resumed.')) return;
+  await fetch('/api/vps/stop', {method: 'POST'});
+  refreshVps();
 }
 setInterval(refreshVps, 5000);
 refreshVps();

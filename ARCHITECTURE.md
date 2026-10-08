@@ -59,7 +59,7 @@ tgpc/
 │   ├── merge_refresh.py            # Post-scrape recompute of DG-merged rph columns (idempotent, warn-and-continue)
 │   └── dg_migration.sql            # rph_dg_contacts table DDL (service-role only, no anon grants)
 ├── scripts/                        # Standalone helpers (run from repo root)
-│   ├── dg_dashboard.py             # Local DG fetch monitor (watch-only localhost HTTP server serving dg_dashboard.html)
+│   ├── dg_dashboard.py             # Local DG fetch dashboard (localhost, no login: status + START/STOP + VPS controls)
 │   ├── dg_dashboard.html           # DG monitor UI (dark mode, start/stop, live stats)
 │   ├── dg_captcha_bench.py         # Fetch N live DG captchas, OCR-guess, dump for human labeling
 │   ├── vps_bootstrap.sh            # One-time cloud VM setup (apt, WARP, clone, rph.json, ~/.tgpc_env)

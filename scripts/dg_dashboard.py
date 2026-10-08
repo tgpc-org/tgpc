@@ -3,15 +3,16 @@
 Usage:
     python3 scripts/dg_dashboard.py [--port 8765]
 Then open http://127.0.0.1:8765 in a browser. Single page, auto-refreshes.
-Read-only: it never launches or stops anything — control lives in the
-terminal (./scripts/dg_run.sh, ./scripts/vps_ctl.sh, touch data/dg_stop).
-No login, no session. Binds localhost only — never exposed to a network.
+Local control, no login: START launches the next batch here, STOP halts
+after the current record; VPS START/STOP drive the remote loop over the
+R2 control channel. Binds localhost only — never exposed to a network.
 """
 
 import argparse
 import json
 import os
 import subprocess
+import sys
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -20,10 +21,16 @@ from typing import Optional
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
 PAGE = Path(__file__).resolve().parent / "dg_dashboard.html"
+PIDFILE = DATA / "dg_fetch.pid"
+RUNLOG = DATA / "dg_fetch_run.log"
 
-# VPS remote-fetch visibility: R2 control channel (read-only here).
+# VPS remote-fetch control: R2 control channel + dg_run.sh launcher.
+VPS_LAUNCH_LOG = DATA / "dg_run_launch.log"
+VPS_LAUNCH_PID = DATA / "dg_run.pid"
+ACTION_LOG = DATA / "dg_dashboard_actions.log"
 VM_FILE = DATA / "dg_vm.conf"  # plain "user@host", gitignored like all of data/
 R2_OPS_FRESH_MIN = 15  # R2 ops backup fresher than this counts as a live loop
+DG_RUN_SCRIPT = ROOT / "scripts" / "dg_run.sh"
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
@@ -78,6 +85,41 @@ def next_ids(data_dir: Path, count: int = 500, rph_path: Optional[Path] = None) 
     return (retryable + fresh)[: max(0, count)]
 
 
+def run_active(data_dir: Path = DATA) -> bool:
+    """True if a fetch run is currently alive (pidfile + process check).
+
+    Reaps finished children (zombies): a dead pid — even as zombie — means
+    not active, and the stale pidfile is removed so a later run can start.
+    """
+    try:
+        pid = int((data_dir / "dg_fetch.pid").read_text().strip())
+    except Exception:
+        return False
+    try:
+        finished, _ = os.waitpid(pid, os.WNOHANG)
+        if finished == pid:
+            try:
+                (data_dir / "dg_fetch.pid").unlink()
+            except OSError:
+                pass
+            return False
+    except ChildProcessError:
+        pass  # not our child — fall through to liveness probe
+    except Exception:
+        pass
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        try:
+            (data_dir / "dg_fetch.pid").unlink()  # fully gone, not just zombie
+        except OSError:
+            pass
+        return False
+    except Exception:
+        return False
+
+
 def build_status(data_dir: Path = DATA) -> dict:
     """Merge live + stats + checkpoint into one payload.
 
@@ -97,6 +139,7 @@ def build_status(data_dir: Path = DATA) -> dict:
     all_time = {"completed": len(completed), "refused": len(terminal)}
     return {
         "status": live.get("status", "idle"),
+        "run_active": run_active(data_dir),
         "current_reg": live.get("current_reg", ""),
         "serial_number": live.get("serial_number"),
         "event": live.get("event", ""),
@@ -138,6 +181,16 @@ def _load_env_file() -> None:
             key, value = key.strip(), value.strip().strip("'\"")
             if key and value and not os.environ.get(key):
                 os.environ[key] = value
+    except Exception:
+        pass
+
+
+def audit(action: str, detail: str = "") -> None:
+    """Append one line to the action log. Never raises (logging must not break control)."""
+    try:
+        stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        with open(ACTION_LOG, "a", encoding="utf-8") as f:
+            f.write(f"{stamp} {action} {detail}\n".rstrip() + "\n")
     except Exception:
         pass
 
@@ -365,6 +418,84 @@ def build_overview() -> dict:
     return out
 
 
+def launch_running(pidfile: Path = VPS_LAUNCH_PID) -> bool:
+    """True if a dashboard-launched dg_run.sh is still alive."""
+    try:
+        pid = int(pidfile.read_text(encoding="utf-8").strip())
+    except Exception:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except Exception:
+        try:
+            pidfile.unlink()
+        except OSError:
+            pass
+        return False
+
+
+def start_guards(
+    vm: str,
+    workers: object,
+    local_completed: object,
+    db_rows: object,
+    vps_alive: bool,
+    launch_is_running: bool,
+) -> tuple:
+    """Pure launch gate. Returns (ok, checks[]) — every refusal names its fix.
+
+    Never touches the network or disk: callers gather the inputs (vps_state,
+    drift_state, launch_running) so this stays unit-testable.
+    """
+    checks = []
+    try:
+        w = int(workers)  # type: ignore[arg-type]
+    except Exception:
+        w = 0
+    if not vm or not isinstance(vm, str) or "@" not in vm:
+        return False, ["VM not configured — set DG_VM=user@host (SSH key auth) and retry."]
+    if not 1 <= w <= 16:
+        return False, [f"workers must be 1..16 (got {workers})."]
+    if not isinstance(local_completed, int):
+        return False, ["local checkpoint unreadable — fix data/dg_fetch_checkpoint.json first."]
+    if not isinstance(db_rows, int):
+        checks.append("drift unverifiable (Supabase unreachable) — refusing: reconcile visibility first.")
+        return False, checks
+    if db_rows > local_completed:
+        return False, [
+            f"DB ({db_rows}) is ahead of local checkpoint ({local_completed}) — "
+            "reconcile cloud->local first, or the VM will re-probe finished records."
+        ]
+    if launch_is_running:
+        return False, ["a dashboard launch is already running — watch its log, do not double-start."]
+    if vps_alive:
+        return False, ["VPS loop looks alive (fresh R2 ops, not halted) — refusing a double start."]
+    checks.append(f"preflight ok: vm={vm} workers={w} local={local_completed} db={db_rows}.")
+    if w > 12:
+        checks.append("note: starting above 12 risks a block_storm halt; 8 is the safe start.")
+    return True, checks
+
+
+def set_halt(halt: bool, note: str) -> dict:
+    """Write ops/ctl.json halt flag. Returns the written doc (or {"error": ...})."""
+    try:
+        import datetime as _dt
+
+        s3, bucket = _r2()
+        try:
+            ctl = json.loads(s3.get_object(Bucket=bucket, Key="ops/ctl.json")["Body"].read())
+        except Exception:
+            ctl = {}
+        ctl["halt"] = halt
+        ctl["note"] = note
+        ctl["updated_at"] = _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        s3.put_object(Bucket=bucket, Key="ops/ctl.json", Body=json.dumps(ctl, indent=2).encode())
+        return ctl
+    except Exception as e:
+        return {"error": str(e)[:160]}
+
+
 class Handler(BaseHTTPRequestHandler):
     data_dir: Path = DATA
 
@@ -393,12 +524,126 @@ class Handler(BaseHTTPRequestHandler):
                         "vm_configured": bool(read_vm()),
                         "vps": vps,
                         "drift": drift,
+                        "launch_running": launch_running(),
                     }
                 ).encode(),
                 "application/json",
             )
+        elif self.path == "/api/vps/launchlog":
+            self._send(json.dumps(tail_lines(VPS_LAUNCH_LOG, 60)).encode(), "application/json")
         elif self.path == "/api/overview":
             self._send(json.dumps(build_overview()).encode(), "application/json")
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def _read_json_body(self) -> dict:
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+            return json.loads(self.rfile.read(length) or b"{}")
+        except Exception:
+            return {}
+
+    def do_POST(self) -> None:  # noqa: N802
+        if self.path == "/api/vps/stop":
+            vm = read_vm()
+            ctl = set_halt(True, "dashboard STOP")
+            ok = "error" not in ctl
+            audit("vps-stop", f"vm={vm} ok={ok}")
+            self._send(json.dumps({"ok": ok, "ctl": ctl}).encode(), "application/json")
+        elif self.path == "/api/vps/start":
+            body = self._read_json_body()
+            try:
+                workers = max(1, min(int(body.get("workers", 8)), 16))
+            except Exception:
+                workers = 8
+            vm = read_vm()
+            vps = vps_state()
+            drift = drift_state()
+            local_n = drift.get("local_completed")
+            db_n = drift.get("db_rows")
+            ok, checks = start_guards(
+                vm,
+                workers,
+                local_n if isinstance(local_n, int) else None,
+                db_n if isinstance(db_n, int) else None,
+                bool(vps.get("alive", False)),
+                launch_running(),
+            )
+            if not ok:
+                audit("vps-start-refused", "; ".join(checks)[:200])
+                self._send(json.dumps({"ok": False, "checks": checks}).encode(), "application/json")
+                return
+            env = dict(os.environ, DG_VM=vm)
+            log = open(VPS_LAUNCH_LOG, "ab")
+            proc = subprocess.Popen(
+                [str(DG_RUN_SCRIPT), f"--workers={workers}"],
+                cwd=str(ROOT),
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                env=env,
+            )
+            VPS_LAUNCH_PID.write_text(str(proc.pid), encoding="utf-8")
+            audit("vps-start", f"vm={vm} workers={workers} pid={proc.pid}")
+            self._send(
+                json.dumps({"ok": True, "pid": proc.pid, "checks": checks}).encode(),
+                "application/json",
+            )
+        elif self.path == "/api/stop":
+            (self.data_dir / "dg_stop").write_text("", encoding="utf-8")
+            self._send(b'{"ok": true}', "application/json")
+        elif self.path == "/api/start":
+            length = int(self.headers.get("Content-Length") or 0)
+            try:
+                body = json.loads(self.rfile.read(length) or b"{}")
+            except Exception:
+                body = {}
+            try:
+                count = max(1, min(int(body.get("count", 500)), 2000))
+            except Exception:
+                count = 500
+            if run_active(self.data_dir):
+                self._send(b'{"ok": false, "error": "run already active"}', "application/json")
+                return
+            ids = next_ids(self.data_dir, count)
+            if not ids:
+                self._send(b'{"ok": false, "error": "no IDs left"}', "application/json")
+                return
+            ids_file = self.data_dir / "dg_ids_dash.txt"
+            ids_file.write_text("\n".join(ids) + "\n", encoding="utf-8")
+            cmd = [
+                sys.executable,
+                "-m",
+                "tgpc",
+                "fetch-dg",
+                "--ids-file",
+                str(ids_file),
+                "--captcha",
+                "auto",
+                "--sync-cloud",
+                "--sync-every",
+                "50",
+            ]
+            if body.get("warp_every"):
+                try:
+                    cmd += ["--warp-rotate-every", str(max(1, int(body["warp_every"])))]
+                except Exception:
+                    pass
+            log = open(self.data_dir / "dg_fetch_run.log", "ab")
+            proc = subprocess.Popen(cmd, cwd=str(ROOT), stdout=log, stderr=subprocess.STDOUT)
+            (self.data_dir / "dg_fetch.pid").write_text(str(proc.pid), encoding="utf-8")
+            self._send(
+                json.dumps(
+                    {
+                        "ok": True,
+                        "pid": proc.pid,
+                        "count": len(ids),
+                        "first": ids[0],
+                        "last": ids[-1],
+                    }
+                ).encode(),
+                "application/json",
+            )
         else:
             self.send_response(404)
             self.end_headers()

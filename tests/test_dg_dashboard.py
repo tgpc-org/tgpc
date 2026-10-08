@@ -1,4 +1,5 @@
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -6,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, ".")
 
-from scripts.dg_dashboard import build_status, next_ids, tail_lines, to_ist_day  # noqa: E402
+from scripts.dg_dashboard import build_status, start_guards, tail_lines, to_ist_day  # noqa: E402
 
 
 class DashboardTests(unittest.TestCase):
@@ -82,27 +83,19 @@ class DashboardTests(unittest.TestCase):
         for needle in ('id="theme-toggle"', "toggleTheme()", "dg-theme", 'data-theme="dark"', "prefers-color-scheme"):
             self.assertIn(needle, html)
 
-    def test_watch_only_no_controls(self):
+    def test_start_button_present(self):
         from scripts.dg_dashboard import PAGE
 
         html = PAGE.read_text(encoding="utf-8")
-        for gone in (
-            'id="start"',
-            "startRun()",
-            'id="count"',
-            "/api/start",
-            'id="stop"',
-            "stopRun()",
-            'id="vps-start"',
-            "startVps()",
-            "/api/vps/start",
-            "/api/vps/launchlog",
-        ):
+        for needle in ('id="start"', "startRun()", 'id="count"', "/api/start"):
+            self.assertIn(needle, html)
+        for gone in ('id="workers"', '"workers"', "--workers"):
             self.assertNotIn(gone, html)
-        self.assertIn("this page only watches", html)
 
     def test_next_ids_skips_done_and_terminal_retries_failed(self):
         import tempfile
+
+        from scripts.dg_dashboard import next_ids, run_active
 
         with tempfile.TemporaryDirectory() as tmp:
             d = Path(tmp)
@@ -129,6 +122,38 @@ class DashboardTests(unittest.TestCase):
             # R2 retryable first, then fresh R4; R1 done, R3 terminal skipped
             self.assertEqual(next_ids(d, 10, rph_path=rph), ["R2", "R4"])
             self.assertEqual(next_ids(d, 1, rph_path=rph), ["R2"])
+            self.assertFalse(run_active(d))
+            (d / "dg_fetch.pid").write_text(str(os.getpid()))
+            self.assertTrue(run_active(d))
+
+    def test_zombie_pid_counts_as_inactive(self):
+        import subprocess as sp
+
+        from scripts.dg_dashboard import run_active
+
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp)
+            # Real finished child, deliberately unreaped: a true zombie, exactly
+            # the server's situation after a button-launched run exits.
+            proc = sp.Popen(["true"])
+            import time as _time
+
+            _time.sleep(0.5)  # `true` exits in ms; no poll()/wait() so it stays a zombie
+            (d / "dg_fetch.pid").write_text(str(proc.pid))
+            try:
+                self.assertFalse(run_active(d))
+                # ...and the stale pidfile is cleaned so a later run can start
+                self.assertFalse((d / "dg_fetch.pid").exists())
+            finally:
+                proc.wait()  # tidy up the zombie ourselves
+            # Live process still reads active
+            live = sp.Popen(["sleep", "30"])
+            try:
+                (d / "dg_fetch.pid").write_text(str(live.pid))
+                self.assertTrue(run_active(d))
+            finally:
+                live.kill()
+                live.wait()
 
     def test_tail(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -176,6 +201,40 @@ class DashboardTests(unittest.TestCase):
             self.assertEqual(s["all_time"], {"completed": 3, "refused": 1})
             self.assertEqual(s["resolved"], 4)
             self.assertEqual(s["completed"], 3)
+
+
+class StartGuardsTests(unittest.TestCase):
+    def test_refuses_without_vm(self):
+        ok, checks = start_guards("", 8, 10, 10, False, False)
+        self.assertFalse(ok)
+        self.assertTrue(any("DG_VM" in c for c in checks))
+
+    def test_refuses_bad_workers(self):
+        for bad in (0, 17, "many", None):
+            ok, _ = start_guards("u@h", bad, 10, 10, False, False)
+            self.assertFalse(ok, bad)
+
+    def test_refuses_db_ahead_of_local(self):
+        ok, checks = start_guards("u@h", 8, 10, 12, False, False)
+        self.assertFalse(ok)
+        self.assertTrue(any("reconcile" in c for c in checks))
+
+    def test_refuses_unverifiable_drift(self):
+        ok, _ = start_guards("u@h", 8, 10, None, False, False)
+        self.assertFalse(ok)
+
+    def test_refuses_double_start(self):
+        ok, _ = start_guards("u@h", 8, 10, 10, False, True)
+        self.assertFalse(ok)
+        ok, _ = start_guards("u@h", 8, 10, 10, True, False)
+        self.assertFalse(ok)
+
+    def test_passes_clean_and_warns_high_workers(self):
+        ok, checks = start_guards("u@h", 8, 10, 10, False, False)
+        self.assertTrue(ok)
+        ok, checks = start_guards("u@h", 16, 10, 10, False, False)
+        self.assertTrue(ok)
+        self.assertTrue(any("block_storm" in c for c in checks))
 
 
 if __name__ == "__main__":
