@@ -81,7 +81,9 @@ fi
 
 gssh() {
   if [ -n "$GCE_INST" ]; then
-    gcloud compute ssh "$GCE_INST" --zone="$GCE_ZONE" --ssh-flag="-o ConnectTimeout=15" --command "$*"
+    # --tunnel-through-iap: a live WARP tunnel blackholes direct inbound,
+    # IAP goes through Google's backbone and always reaches the VM.
+    gcloud compute ssh "$GCE_INST" --zone="$GCE_ZONE" --tunnel-through-iap --ssh-flag="-o ConnectTimeout=15" --command "$*"
   else
     # shellcheck disable=SC2086
     $SSH $*
@@ -91,7 +93,7 @@ gssh() {
 gscp_to() { # gscp_to <local> <remote-path-under-VM_HOME>
   local dest="$VM_HOME/$2"
   if [ -n "$GCE_INST" ]; then
-    gcloud compute scp --zone="$GCE_ZONE" -q "$1" "$GCE_INST:/tmp/dg_push_$(basename "$1")"
+    gcloud compute scp --zone="$GCE_ZONE" --tunnel-through-iap -q "$1" "$GCE_INST:/tmp/dg_push_$(basename "$1")"
     gssh "sudo install -o $VM_USER -g $VM_USER -m 644 /tmp/dg_push_$(basename "$1") '$dest'"
   else
     scp -q "$1" "$VM:$dest"

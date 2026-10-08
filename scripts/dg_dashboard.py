@@ -526,11 +526,28 @@ def _gce_target(vm: str) -> tuple:
 
 _GCE_TARGET_CACHE: dict = {}
 
+_GCLOUD_NOISE = (
+    "Existing host keys found",
+    "WARNING:",
+    "please see https://cloud.google.com",
+    "To increase the performance of the tunnel",
+    "for instructions,",
+    "NumPy",
+)
+
+
+def _clean(text: str) -> str:
+    """Drop gcloud's stderr preamble (IAP/known-hosts chatter), keep real errors."""
+    kept = [ln for ln in text.splitlines() if not ln.startswith(_GCLOUD_NOISE)]
+    return "\n".join(kept).strip()
+
 
 def ssh_run(vm: str, *remote: str, timeout: int = 60) -> dict:
     """Run a remote command: gcloud SSH when resolvable, else direct ssh.
 
-    Returns {"ok": bool, "out": str, "error": str}. Never raises.
+    gcloud always tunnels through IAP, so a live WARP tunnel on the VM
+    (which blackholes direct inbound) never breaks control. Returns
+    {"ok": bool, "out": str, "error": str}. Never raises.
     """
     if vm not in _GCE_TARGET_CACHE:
         _GCE_TARGET_CACHE[vm] = _gce_target(vm)
@@ -544,6 +561,7 @@ def ssh_run(vm: str, *remote: str, timeout: int = 60) -> dict:
                 name,
                 f"--zone={zone}",
                 "--ssh-flag=-o ConnectTimeout=15",
+                "--tunnel-through-iap",
                 "--command",
                 " ".join(remote),
             ]
@@ -551,7 +569,8 @@ def ssh_run(vm: str, *remote: str, timeout: int = 60) -> dict:
             cmd = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15", vm, *remote]
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
         if proc.returncode != 0:
-            return {"ok": False, "out": "", "error": (proc.stderr.strip() or proc.stdout.strip() or "ssh failed")[:160]}
+            err = _clean(proc.stderr) or _clean(proc.stdout) or "ssh failed"
+            return {"ok": False, "out": "", "error": err[:160]}
         return {"ok": True, "out": proc.stdout.strip(), "error": ""}
     except Exception as e:
         return {"ok": False, "out": "", "error": str(e)[:160]}
@@ -687,6 +706,8 @@ class Handler(BaseHTTPRequestHandler):
                 launch_running(),
             )
             if not ok:
+                if vps.get("halt"):
+                    checks = checks + ["The loop is only PAUSED (halt flag set) — press UNPAUSE VPS, not START."]
                 audit("vps-start-refused", "; ".join(checks)[:200])
                 self._send(json.dumps({"ok": False, "checks": checks}).encode(), "application/json")
                 return
