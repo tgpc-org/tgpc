@@ -1,11 +1,10 @@
-"""Local watch-only dashboard for DG extraction runs (stdlib only, localhost).
+"""Local dashboard for DG extraction runs (stdlib only, localhost).
 
 Usage:
     python3 scripts/dg_dashboard.py [--port 8765]
 Then open http://127.0.0.1:8765 in a browser. Single page, auto-refreshes.
-Local control, no login: START launches the next batch here, STOP halts
-after the current record; VPS START/STOP drive the remote loop over the
-R2 control channel. Binds localhost only — never exposed to a network.
+Full control, no login: local START/STOP, VPS START/STOP/RESUME/RESTART,
+SSH exclusions. Binds localhost only — never exposed to a network.
 """
 
 import argparse
@@ -61,11 +60,12 @@ def tail_lines(path: Path, n: int = 30) -> list:
     return lines[-n:]
 
 
-def next_ids(data_dir: Path, count: int = 500, rph_path: Optional[Path] = None) -> list:
+def next_ids(data_dir: Path, count: int = 500, rph_path: Optional[Path] = None, retry_terminal: bool = False) -> list:
     """Next `count` reg IDs in serial order: retryable failures first, then fresh.
 
     Retryable = in checkpoint `failed` but not terminal (a later run is their
-    only path back — terminal IDs are skipped forever, completed are done).
+    only path back — terminal IDs are skipped forever unless `retry_terminal`
+    re-probes them; completed are always done).
     Ordering contract mirrored by gen_ids() in scripts/vps_fetch.sh.
     """
     try:
@@ -77,7 +77,9 @@ def next_ids(data_dir: Path, count: int = 500, rph_path: Optional[Path] = None) 
         checkpoint = json.loads((data_dir / "dg_fetch_checkpoint.json").read_text(encoding="utf-8"))
     except Exception:
         checkpoint = {}
-    done = set(checkpoint.get("completed", [])) | set(checkpoint.get("failed_terminal", {}))
+    done = set(checkpoint.get("completed", []))
+    if not retry_terminal:
+        done |= set(checkpoint.get("failed_terminal", {}))
     retryable = [r for r in checkpoint.get("failed", {}) if r not in done]
     fresh = [reg for reg in order if reg not in done and reg not in set(retryable)]
     retryable.sort(key=lambda r: order.get(r, (True, 0)))
@@ -477,8 +479,13 @@ def start_guards(
     return True, checks
 
 
-def set_halt(halt: bool, note: str) -> dict:
-    """Write ops/ctl.json halt flag. Returns the written doc (or {"error": ...})."""
+def update_ctl(patch: dict) -> dict:
+    """Merge `patch` into ops/ctl.json (read-modify-write, stamps updated_at).
+
+    String values are capped at 140 chars. Returns the written doc
+    (or {"error": ...}). Never raises — a broken control plane must not 500
+    the dashboard.
+    """
     try:
         import datetime as _dt
 
@@ -487,13 +494,46 @@ def set_halt(halt: bool, note: str) -> dict:
             ctl = json.loads(s3.get_object(Bucket=bucket, Key="ops/ctl.json")["Body"].read())
         except Exception:
             ctl = {}
-        ctl["halt"] = halt
-        ctl["note"] = note
+        for key, value in patch.items():
+            ctl[key] = value[:140] if isinstance(value, str) else value
         ctl["updated_at"] = _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         s3.put_object(Bucket=bucket, Key="ops/ctl.json", Body=json.dumps(ctl, indent=2).encode())
         return ctl
     except Exception as e:
         return {"error": str(e)[:160]}
+
+
+def set_halt(halt: bool, note: str) -> dict:
+    """Write ops/ctl.json halt flag. Returns the written doc (or {"error": ...})."""
+    return update_ctl({"halt": halt, "note": note})
+
+
+def restart_loop_service(vm: str) -> dict:
+    """Restart the systemd fetch loop on the VM over SSH. Never raises."""
+    try:
+        proc = subprocess.run(
+            [
+                "ssh",
+                "-o",
+                "BatchMode=yes",
+                "-o",
+                "ConnectTimeout=15",
+                vm,
+                "sudo",
+                "-n",
+                "systemctl",
+                "restart",
+                "tgpc-dg-fetch",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if proc.returncode != 0:
+            return {"ok": False, "error": (proc.stderr.strip() or proc.stdout.strip() or "ssh failed")[:160]}
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:160]}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -551,6 +591,28 @@ class Handler(BaseHTTPRequestHandler):
             ok = "error" not in ctl
             audit("vps-stop", f"vm={vm} ok={ok}")
             self._send(json.dumps({"ok": ok, "ctl": ctl}).encode(), "application/json")
+        elif self.path == "/api/vps/resume":
+            vm = read_vm()
+            ctl = set_halt(False, "dashboard RESUME")
+            ok = "error" not in ctl
+            audit("vps-resume", f"vm={vm} ok={ok}")
+            self._send(json.dumps({"ok": ok, "ctl": ctl}).encode(), "application/json")
+        elif self.path == "/api/vps/restart":
+            vm = read_vm()
+            if not vm or "@" not in vm:
+                self._send(b'{"ok": false, "error": "VM not configured"}', "application/json")
+                return
+            res = restart_loop_service(vm)
+            audit("vps-restart", f"vm={vm} ok={res.get('ok')}")
+            self._send(json.dumps(res).encode(), "application/json")
+        elif self.path == "/api/vps/exclusions":
+            body = self._read_json_body()
+            raw = body.get("ssh_exclude", "")
+            excl = " ".join(str(raw).split())[:200]
+            ctl = update_ctl({"ssh_exclude": excl, "note": f"exclusions: {excl}"[:140]})
+            ok = "error" not in ctl
+            audit("vps-exclusions", f"ok={ok}")
+            self._send(json.dumps({"ok": ok, "ctl": ctl}).encode(), "application/json")
         elif self.path == "/api/vps/start":
             body = self._read_json_body()
             try:
@@ -602,10 +664,11 @@ class Handler(BaseHTTPRequestHandler):
                 count = max(1, min(int(body.get("count", 500)), 2000))
             except Exception:
                 count = 500
+            retry_terminal = bool(body.get("retry_terminal"))
             if run_active(self.data_dir):
                 self._send(b'{"ok": false, "error": "run already active"}', "application/json")
                 return
-            ids = next_ids(self.data_dir, count)
+            ids = next_ids(self.data_dir, count, retry_terminal=retry_terminal)
             if not ids:
                 self._send(b'{"ok": false, "error": "no IDs left"}', "application/json")
                 return
@@ -624,6 +687,8 @@ class Handler(BaseHTTPRequestHandler):
                 "--sync-every",
                 "50",
             ]
+            if retry_terminal:
+                cmd.append("--retry-terminal")
             if body.get("warp_every"):
                 try:
                     cmd += ["--warp-rotate-every", str(max(1, int(body["warp_every"])))]

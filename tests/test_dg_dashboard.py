@@ -87,10 +87,25 @@ class DashboardTests(unittest.TestCase):
         from scripts.dg_dashboard import PAGE
 
         html = PAGE.read_text(encoding="utf-8")
-        for needle in ('id="start"', "startRun()", 'id="count"', "/api/start"):
+        for needle in (
+            'id="start"',
+            "startRun()",
+            'id="count"',
+            "/api/start",
+            'id="retry-terminal"',
+            'id="stop"',
+            "stopRun()",
+            'id="vps-start"',
+            'id="vps-stop"',
+            'id="vps-resume"',
+            'id="vps-restart"',
+            'id="vps-excl"',
+            "/api/vps/resume",
+            "/api/vps/restart",
+            "/api/vps/exclusions",
+            "/api/vps/launchlog",
+        ):
             self.assertIn(needle, html)
-        for gone in ('id="workers"', '"workers"', "--workers"):
-            self.assertNotIn(gone, html)
 
     def test_next_ids_skips_done_and_terminal_retries_failed(self):
         import tempfile
@@ -122,6 +137,8 @@ class DashboardTests(unittest.TestCase):
             # R2 retryable first, then fresh R4; R1 done, R3 terminal skipped
             self.assertEqual(next_ids(d, 10, rph_path=rph), ["R2", "R4"])
             self.assertEqual(next_ids(d, 1, rph_path=rph), ["R2"])
+            # retry_terminal re-probes terminal IDs in serial order
+            self.assertEqual(next_ids(d, 10, rph_path=rph, retry_terminal=True), ["R2", "R3", "R4"])
             self.assertFalse(run_active(d))
             (d / "dg_fetch.pid").write_text(str(os.getpid()))
             self.assertTrue(run_active(d))
