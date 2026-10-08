@@ -25,7 +25,8 @@
   header .dot.stopped { background: #ef4444; }
   header h1 { font-size: 15px; margin: 0; font-weight: 600; }
   header h1 span { color: #9ca3af; font-weight: 400; font-size: 13px; }
-  main { flex: 1; min-height: 0; max-width: 960px; width: 100%; margin: 0 auto; padding: 10px 16px 8px; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden; }
+  #state { font-size: 12px; color: #9ca3af; }
+  main { flex: 1; min-height: 0; max-width: 960px; width: 100%; margin: 0 auto; padding: 10px 16px 8px; box-sizing: border-box; display: flex; flex-direction: column; overflow-y: auto; }
   .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-bottom: 8px; flex-shrink: 0; }
   .card { background: var(--card); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; }
   .card .label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
@@ -38,88 +39,101 @@
   .current b { color: #2563eb; }
   button { background: #ef4444; color: #ffffff; border: 0; border-radius: 6px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
   button:disabled { background: #9ca3af; cursor: default; }
-  pre { flex: 1; min-height: 80px; background: #111827; color: #e5e7eb; border: 1px solid var(--log-border); border-radius: 6px;
+  pre { min-height: 80px; max-height: 220px; background: #111827; color: #e5e7eb; border: 1px solid var(--log-border); border-radius: 6px;
         padding: 8px 10px; font-size: 11px; line-height: 1.4;
-        overflow-y: auto; white-space: pre-wrap; word-break: break-all; margin: 0; }
+        overflow-y: auto; white-space: pre-wrap; word-break: break-all; margin: 0 0 8px; }
   .reasons { font-size: 12px; color: var(--ink-soft); margin-bottom: 4px; flex-shrink: 0; }
-  h3 { color: var(--ink); margin: 4px 0 4px; font-size: 13px; flex-shrink: 0; }
+  h3 { color: var(--ink); margin: 10px 0 4px; font-size: 13px; flex-shrink: 0; }
+  h3 .hint { color: var(--muted); font-weight: 400; font-size: 12px; }
+  details { flex-shrink: 0; margin-bottom: 8px; font-size: 12px; color: var(--muted); }
+  details summary { cursor: pointer; }
   footer { font-size: 11px; color: var(--muted); margin-top: 4px; flex-shrink: 0; }
 </style>
 </head>
 <body>
 <header>
   <div class="dot" id="dot"></div>
-  <h1>DG Fetch <span>— live extraction monitor</span></h1>
+  <h1>DG Fetch <span>— pharmacist contact collection</span></h1>
   <div class="spacer"></div>
+  <span id="state">starting…</span>
   <button id="theme-toggle" onclick="toggleTheme()">Dark</button>
 </header>
 <main>
-  <h3>Overview</h3>
-  <div class="cards">
-    <div class="card"><div class="label">Registry (local file)</div><div class="value" id="ov-local">—</div></div>
-    <div class="card"><div class="label">Registry (cloud)</div><div class="value" id="ov-cloud">—</div></div>
-    <div class="card"><div class="label">DG contacts (cloud)</div><div class="value blue" id="ov-dg">—</div></div>
-    <div class="card"><div class="label">Last sync</div><div class="value" id="ov-sync" style="font-size:14px">—</div></div>
-  </div>
-  <div class="row"><span class="muted" id="ov-cover"></span></div>
+  <h3>How far along are we? <span class="hint">— out of every pharmacist in the master list</span></h3>
   <div class="bar-wrap"><div class="bar" id="ov-bar"></div></div>
+  <div class="row"><span class="muted" id="ov-cover">loading…</span></div>
+  <div class="cards">
+    <div class="card"><div class="label">Contact details saved</div><div class="value blue" id="ov-dg">—</div></div>
+    <div class="card"><div class="label">Site refuses to share</div><div class="value red" id="ov-refused">—</div></div>
+    <div class="card"><div class="label">Still to try</div><div class="value" id="ov-left-count">—</div></div>
+    <div class="card"><div class="label">Master list size</div><div class="value" id="ov-local">—</div></div>
+  </div>
   <div class="row"><span class="muted" id="ov-left"></span></div>
+  <div class="row"><span class="muted">Cloud copy: <span id="ov-cloud">—</span> · Last full sync: <span id="ov-sync">—</span></span></div>
   <div class="reasons" id="ov-ci"></div>
-  <h3>DG fetch runs</h3>
+
+  <h3>What is running right now? <span class="hint">— on this Mac</span></h3>
   <div class="row">
-    <div class="current">Current: <b id="current">—</b> <span class="muted" id="event"></span></div>
+    <div class="current">Working on: <b id="current">—</b> <span class="muted" id="event"></span></div>
   </div>
   <div class="row">
-    <div class="current">Next: <b id="next">—</b> <span class="muted" id="remaining"></span></div>
+    <div class="current">Up next: <b id="next">—</b> <span class="muted" id="remaining"></span></div>
   </div>
   <div class="bar-wrap"><div class="bar" id="bar"></div></div>
-  <div class="row"><span class="muted" id="alltime"></span></div>
   <div class="cards">
-    <div class="card"><div class="label">Saved</div><div class="value green" id="done">0</div></div>
-    <div class="card"><div class="label">Couldn't fetch</div><div class="value red" id="failed">0</div></div>
+    <div class="card"><div class="label">Saved this batch</div><div class="value green" id="done">0</div></div>
+    <div class="card"><div class="label">Refused this batch</div><div class="value red" id="failed">0</div></div>
+    <div class="card"><div class="label">Ever saved</div><div class="value" id="alltime-done">—</div></div>
   </div>
+  <div class="row"><span class="muted" id="alltime"></span></div>
+  <div class="reasons" id="reasons"></div>
   <div class="row">
-    <button id="stop" onclick="stopRun()">STOP after current record</button>
-    <span class="muted" id="stopmsg"></span>
-  </div>
-  <div class="row">
-    <button id="start" onclick="startRun()" style="background:#00cc66">START next</button>
+    <button id="start" onclick="startRun()" style="background:#00cc66">STARTFETCHING</button>
     <input id="count" type="number" value="500" min="1" max="2000"
            style="width:80px;padding:7px;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--ink)">
     <span class="muted">records</span>
-    <label class="muted" style="font-size:12px"><input type="checkbox" id="retry-terminal"> re-probe refused</label>
+    <label class="muted" style="font-size:12px"><input type="checkbox" id="retry-terminal"> include refused ones</label>
     <span class="muted" id="startmsg"></span>
   </div>
-  <div class="reasons" id="reasons"></div>
-  <h3>VPS remote fetch</h3>
+  <div class="row">
+    <button id="stop" onclick="stopRun()">STOP AFTER THIS ONE</button>
+    <span class="muted" id="stopmsg"></span>
+  </div>
+
+  <h3>Is the cloud computer working? <span class="hint">— the VPS loop</span></h3>
   <div class="row"><span class="muted" id="vps-vm">VM: —</span></div>
   <div class="cards">
-    <div class="card"><div class="label">VPS saved</div><div class="value green" id="vps-done">—</div></div>
-    <div class="card"><div class="label">VPS failed</div><div class="value red" id="vps-failed">—</div></div>
-    <div class="card"><div class="label">Loop</div><div class="value" id="vps-loop">—</div></div>
-    <div class="card"><div class="label">Drift (DB − local)</div><div class="value" id="vps-drift">—</div></div>
+    <div class="card"><div class="label">Loop state</div><div class="value" id="vps-loop">—</div></div>
+    <div class="card"><div class="label">Saved over there</div><div class="value green" id="vps-done">—</div></div>
+    <div class="card"><div class="label">Refused over there</div><div class="value red" id="vps-failed">—</div></div>
+    <div class="card"><div class="label">Cloud ahead by</div><div class="value" id="vps-drift">—</div></div>
   </div>
   <div class="row">
-    <button id="vps-start" onclick="startVps()" style="background:#00cc66">START VPS RUN</button>
+    <button id="vps-start" onclick="startVps()" style="background:#00cc66">START VPS FETCHING</button>
     <select id="vps-workers" style="padding:7px;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--ink)">
-      <option value="4">4 runners</option>
-      <option value="8" selected>8 runners</option>
-      <option value="12">12 runners</option>
-      <option value="16">16 runners (max)</option>
+      <option value="4">4 at once</option>
+      <option value="8" selected>8 at once</option>
+      <option value="12">12 at once</option>
+      <option value="16">16 at once (max)</option>
     </select>
-    <button id="vps-stop" onclick="stopVps()">STOP VPS</button>
-    <button id="vps-resume" onclick="resumeVps()" style="background:#00cc66">RESUME VPS</button>
-    <button id="vps-restart" onclick="restartVps()">RESTART LOOP</button>
     <span class="muted" id="vps-msg"></span>
   </div>
   <div class="row">
-    <input id="vps-excl" placeholder="SSH exclusions, e.g. 1.2.3.0/24" autocomplete="off" spellcheck="false"
-           style="flex:1;min-width:180px;padding:7px;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--ink)">
-    <button id="vps-excl-set" onclick="setExclusions()">SET EXCLUSIONS</button>
+    <button id="vps-stop" onclick="stopVps()">PAUSE VPS</button>
+    <button id="vps-resume" onclick="resumeVps()" style="background:#00cc66">UNPAUSE VPS</button>
+    <button id="vps-restart" onclick="restartVps()">RESTART VPS LOOP</button>
   </div>
-  <h3>Launcher log</h3>
-  <pre id="vps-log">no launch yet…</pre>
-  <h3>Live log</h3>
+  <details>
+    <summary>Rarely needed: SSH safety list, launcher output</summary>
+    <div class="row" style="margin-top:8px">
+      <input id="vps-excl" placeholder="Computers that must stay reachable, e.g. 1.2.3.0/24" autocomplete="off" spellcheck="false"
+             style="flex:1;min-width:180px;padding:7px;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--ink)">
+      <button id="vps-excl-set" onclick="setExclusions()">SAVE LIST</button>
+    </div>
+    <pre id="vps-log">no launch yet…</pre>
+  </details>
+
+  <h3>What just happened? <span class="hint">— newest at the bottom</span></h3>
   <pre id="log">waiting for run…</pre>
   <footer id="updated"></footer>
 </main>
@@ -138,6 +152,9 @@ function plainReason(key) {
   if (key.includes('unexpected')) return 'unexpected error';
   return key;
 }
+function fmt(n) {
+  return (n == null || !isFinite(n)) ? '—' : n.toLocaleString('en-IN');
+}
 function applyTheme(name) {
   document.documentElement.setAttribute('data-theme', name);
   try { localStorage.setItem('dg-theme', name); } catch (e) {}
@@ -155,32 +172,41 @@ function toggleTheme() {
   }
   applyTheme(saved);
 })();
+function setState(text, running) {
+  document.getElementById('state').textContent = text;
+  document.getElementById('dot').className = 'dot ' + (running || '');
+}
 async function refresh() {
   try {
     const s = await (await fetch('/api/status')).json();
-    const dot = document.getElementById('dot');
-    dot.className = 'dot ' + (s.status === 'running' ? 'running' : s.status === 'stopped' ? 'stopped' : '');
+    if (s.status === 'running') {
+      setState('Fetching ' + (s.current_reg || '…'), 'running');
+    } else if (s.status === 'stopped') {
+      setState('Halted', 'stopped');
+    } else {
+      setState(s.stop_armed ? 'Stopping…' : 'Idle', '');
+    }
     document.getElementById('current').textContent =
-      s.current_reg ? s.current_reg + (s.serial_number != null ? ' (#' + s.serial_number + ')' : '') : '—';
+      s.current_reg ? s.current_reg + (s.serial_number != null ? ' (#' + s.serial_number + ')' : '') : 'nothing running';
     document.getElementById('next').textContent =
       s.next_reg ? s.next_reg + (s.next_serial != null ? ' (#' + s.next_serial + ')' : '') : '—';
     document.getElementById('remaining').textContent =
-      (s.remaining_in_batch != null && s.status === 'running') ? s.remaining_in_batch + ' left in batch' : '';
+      (s.remaining_in_batch != null && s.status === 'running') ? s.remaining_in_batch + ' left in this batch' : '';
     document.getElementById('event').textContent = s.event || '';
     document.getElementById('done').textContent = s.done;
     document.getElementById('failed').textContent = s.failed;
     const pct = s.total ? Math.round(100 * s.processed / s.total) : 0;
     document.getElementById('bar').style.width = pct + '%';
     const at = s.all_time || {};
+    document.getElementById('alltime-done').textContent = fmt(at.completed);
     document.getElementById('alltime').textContent =
-      'All time: ' + (at.completed || 0) + ' completed · ' + (at.refused || 0) + ' refused at source (' +
-      (s.resolved || 0) + ' resolved)';
+      'Refused ever: ' + fmt(at.refused) + ' · Settled ever: ' + fmt(s.resolved);
     const reasons = Object.entries(s.fail_by_reason || {}).map(([k, v]) => plainReason(k) + ': ' + v).join(' · ');
     document.getElementById('reasons').textContent = reasons ? 'Why some are missing — ' + reasons : '';
     document.getElementById('updated').textContent = 'Updated: ' + (s.updated_ist || s.updated_at || '—') +
       ' · Finished: ' + s.completed;
     const stopBtn = document.getElementById('stop');
-    if (s.stop_armed) { stopBtn.disabled = true; document.getElementById('stopmsg').textContent = 'stop armed…'; }
+    if (s.stop_armed) { stopBtn.disabled = true; document.getElementById('stopmsg').textContent = 'stop armed — finishes this one, then stops'; }
     else { stopBtn.disabled = s.status !== 'running'; document.getElementById('stopmsg').textContent = ''; }
     const startBtn = document.getElementById('start');
     startBtn.disabled = !!s.run_active;
@@ -191,20 +217,21 @@ async function refresh() {
   } catch (e) { /* server restarting? retry next tick */ }
 }
 async function stopRun() {
-  if (!confirm('Stop after the current record? Checkpoint stays safe.')) return;
+  if (!confirm('Stop after the current record? Everything saved so far stays saved.')) return;
   await fetch('/api/stop', {method: 'POST'});
   refresh();
 }
 async function startRun() {
   const count = parseInt(document.getElementById('count').value, 10) || 500;
   const retry = document.getElementById('retry-terminal').checked;
+  if (retry && !confirm('Include records the site refused before? Most refuse again — expect a slow batch.')) return;
   const msg = document.getElementById('startmsg');
   msg.textContent = 'starting…';
   try {
     const r = await (await fetch('/api/start', {method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({count, retry_terminal: retry})})).json();
-    msg.textContent = r.ok ? ('running ' + r.count + ' records from ' + r.first) : ('not started: ' + r.error);
+    msg.textContent = r.ok ? ('fetching ' + r.count + ' records from ' + r.first) : ('not started: ' + r.error);
   } catch (e) { msg.textContent = 'start failed'; }
   refresh();
 }
@@ -214,17 +241,20 @@ async function refreshOverview() {
   try {
     const o = await (await fetch('/api/overview')).json();
     const loc = o.local || {}, clo = o.cloud || {}, dg = o.dg || {};
-    document.getElementById('ov-local').textContent = loc.rph_rows != null ? loc.rph_rows.toLocaleString('en-IN') : 'error';
-    document.getElementById('ov-cloud').textContent = clo.rph != null ? clo.rph.toLocaleString('en-IN') : 'error';
-    document.getElementById('ov-dg').textContent = clo.rph_dg_contacts != null ? clo.rph_dg_contacts.toLocaleString('en-IN') : 'error';
-    document.getElementById('ov-sync').textContent = (clo.last_sync || '').slice(0, 16).replace('T', ' ') || '—';
+    document.getElementById('ov-local').textContent = loc.rph_rows != null ? fmt(loc.rph_rows) : 'unreadable';
+    document.getElementById('ov-cloud').textContent = clo.rph != null ? fmt(clo.rph) : 'unreachable';
+    document.getElementById('ov-dg').textContent = clo.rph_dg_contacts != null ? fmt(clo.rph_dg_contacts) : 'unreachable';
+    document.getElementById('ov-sync').textContent = (clo.last_sync || '').slice(0, 16).replace('T', ' ') || 'unknown';
     const done = dg.completed || 0, term = dg.terminal || 0, left = dg.uncovered || 0;
     const tot = done + term + left;
-    document.getElementById('ov-cover').textContent =
-      'DG coverage: ' + done.toLocaleString('en-IN') + ' done · ' + term.toLocaleString('en-IN') + ' refused · ' + left.toLocaleString('en-IN') + ' to go';
+    document.getElementById('ov-cover').textContent = tot
+      ? Math.round(100 * (done + term) / tot) + '% settled (' + fmt(done + term) + ' of ' + fmt(tot) + ')'
+      : 'loading…';
+    document.getElementById('ov-refused').textContent = fmt(term);
+    document.getElementById('ov-left-count').textContent = fmt(left);
     document.getElementById('ov-bar').style.width = (tot ? Math.round(100 * (done + term) / tot) : 0) + '%';
     document.getElementById('ov-left').textContent =
-      (dg.uncovered_sample || []).length ? 'next up: ' + (dg.uncovered_sample || []).join(', ') + '…' : '';
+      (dg.uncovered_sample || []).length ? 'Up first: ' + (dg.uncovered_sample || []).join(', ') + '…' : '';
     document.getElementById('ov-ci').textContent = (o.ci || []).length ? 'CI: ' + o.ci.join(' · ') : '';
   } catch (e) { /* retry next tick */ }
 }
@@ -234,19 +264,20 @@ async function refreshVps() {
   try {
     const s = await (await fetch('/api/vps/status')).json();
     document.getElementById('vps-vm').textContent =
-      'VM: ' + (s.vm_configured ? s.vm : 'not set (export DG_VM=user@host)') +
+      'Computer: ' + (s.vm_configured ? s.vm : 'not set — run: export DG_VM=user@host, then restart this page') +
       (s.launch_running ? ' · launcher running' : '');
     const v = s.vps || {};
     if (v.error) {
       document.getElementById('vps-done').textContent = '—';
       document.getElementById('vps-failed').textContent = '—';
-      document.getElementById('vps-loop').textContent = 'unreachable';
+      document.getElementById('vps-loop').textContent = 'no contact';
+      document.getElementById('vps-loop').className = 'value muted';
     } else {
       document.getElementById('vps-done').textContent = v.done ?? 0;
       document.getElementById('vps-failed').textContent = v.failed ?? 0;
       const loop = document.getElementById('vps-loop');
-      if (v.alive) { loop.textContent = 'RUNNING'; loop.className = 'value green'; }
-      else if (v.halt) { loop.textContent = 'HALTED'; loop.className = 'value red'; }
+      if (v.alive) { loop.textContent = 'WORKING'; loop.className = 'value green'; }
+      else if (v.halt) { loop.textContent = 'PAUSED'; loop.className = 'value red'; }
       else { loop.textContent = 'idle'; loop.className = 'value muted'; }
     }
     const d = s.drift || {};
@@ -266,38 +297,38 @@ async function refreshVps() {
 }
 async function startVps() {
   const w = document.getElementById('vps-workers').value;
-  if (!confirm('Start the VPS fetch with ' + w + ' runners? Preflight and smoke gate it; refusals explain themselves.')) return;
+  if (!confirm('Start fetching on the cloud computer with ' + w + ' at once? It checks everything first and explains any refusal.')) return;
   const msg = document.getElementById('vps-msg');
   msg.textContent = 'starting…';
   try {
     const r = await (await fetch('/api/vps/start', {method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({workers: parseInt(w, 10)})})).json();
-    msg.textContent = r.ok ? ('launcher pid ' + r.pid + ' — ' + (r.checks || []).join(' ')) : ('not started: ' + (r.checks || [r.error || 'refused']).join(' '));
+    msg.textContent = r.ok ? ('fetching — ' + (r.checks || []).join(' ')) : ('not started: ' + (r.checks || [r.error || 'refused']).join(' '));
   } catch (e) { msg.textContent = 'start failed'; }
   refreshVps();
 }
 async function stopVps() {
-  if (!confirm('Halt the VPS loop after its current batch? It stays halted until resumed.')) return;
+  if (!confirm('Pause the cloud computer after its current batch? It stays paused until you unpause.')) return;
   await fetch('/api/vps/stop', {method: 'POST'});
   refreshVps();
 }
 async function resumeVps() {
   const msg = document.getElementById('vps-msg');
-  msg.textContent = 'resuming…';
+  msg.textContent = 'unpausing…';
   try {
     const r = await (await fetch('/api/vps/resume', {method: 'POST'})).json();
-    msg.textContent = r.ok ? 'halt cleared — loop resumes next poll' : ('resume failed: ' + (r.ctl && r.ctl.error ? r.ctl.error : 'refused'));
-  } catch (e) { msg.textContent = 'resume failed'; }
+    msg.textContent = r.ok ? 'unpaused — it carries on shortly' : ('unpause failed: ' + (r.ctl && r.ctl.error ? r.ctl.error : 'refused'));
+  } catch (e) { msg.textContent = 'unpause failed'; }
   refreshVps();
 }
 async function restartVps() {
-  if (!confirm('SSH into the VM and restart the fetch service? In-flight record retries next run.')) return;
+  if (!confirm('Restart the fetching program on the cloud computer? The record in flight will retry next run.')) return;
   const msg = document.getElementById('vps-msg');
   msg.textContent = 'restarting…';
   try {
     const r = await (await fetch('/api/vps/restart', {method: 'POST'})).json();
-    msg.textContent = r.ok ? 'service restarted' : ('restart failed: ' + (r.error || 'refused'));
+    msg.textContent = r.ok ? 'restarted' : ('restart failed: ' + (r.error || 'refused'));
   } catch (e) { msg.textContent = 'restart failed'; }
   refreshVps();
 }
@@ -309,7 +340,7 @@ async function setExclusions() {
     const r = await (await fetch('/api/vps/exclusions', {method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ssh_exclude: excl})})).json();
-    msg.textContent = r.ok ? 'exclusions saved — apply next batch' : 'save failed';
+    msg.textContent = r.ok ? 'saved — applies from the next batch' : 'save failed';
   } catch (e) { msg.textContent = 'save failed'; }
   refreshVps();
 }
