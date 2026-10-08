@@ -269,10 +269,13 @@ async function refreshVps() {
   try {
     const s = await (await fetch('/api/vps/status')).json();
     document.getElementById('vps-vm').textContent =
-      'Computer: ' + (s.vm_configured ? s.vm + ' — saved, survives restarts' : 'not told yet — type it below once, it is remembered') +
+      'Computer: ' + (s.vm_configured ? s.vm + ' — saved, survives restarts' : 'not told yet — the usual is filled in below, press SAVE (or type yours)') +
       (s.launch_running ? ' · launcher running' : '');
-    if (s.vm_configured && !document.getElementById('vps-vm-input').value) {
-      document.getElementById('vps-vm-input').value = s.vm;
+    const vmInput = document.getElementById('vps-vm-input');
+    if (s.vm_configured) {
+      if (!vmInput.dataset.touched) vmInput.value = s.vm;
+    } else if (!vmInput.dataset.touched && !vmInput.value) {
+      vmInput.value = 'ubuntu@35.200.132.91';
     }
     const v = s.vps || {};
     if (v.error) {
@@ -304,7 +307,9 @@ async function refreshVps() {
   } catch (e) { /* retry next tick */ }
 }
 async function saveVm() {
-  const vm = document.getElementById('vps-vm-input').value;
+  const input = document.getElementById('vps-vm-input');
+  input.dataset.touched = '1';
+  const vm = input.value;
   const msg = document.getElementById('vps-msg');
   msg.textContent = 'saving…';
   try {
