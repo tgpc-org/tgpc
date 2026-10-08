@@ -1,7 +1,6 @@
-import { json } from '@sveltejs/kit';
-import { getAdminSecret, isAuthed } from '$lib/server/auth';
-import { normalizeReg, shapeBase, shapeContact } from '$lib/server/contacts';
-import { rateLimited } from '$lib/server/rateLimit';
+import { getAdminSecret, isAuthed } from '#lib/server/auth.js';
+import { normalizeReg, shapeBase, shapeContact } from '#lib/server/contacts.js';
+import { rateLimited } from '#lib/server/rateLimit.js';
 import type { RequestHandler } from './$types';
 
 const CONTACT_COLS = [
@@ -95,7 +94,7 @@ export const GET: RequestHandler = async (event) => {
   console.log(`admin contacts lookup ${reg}`);
 
   const row = rows[0];
-  return json(
+  return Response.json(
     { base: shapeBase(row), contact: shapeContact(row) },
     { headers: { 'Cache-Control': 'no-store' } }
   );

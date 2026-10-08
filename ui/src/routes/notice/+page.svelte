@@ -1,11 +1,11 @@
 <script lang="ts">
-  import { cachedOrNull, setCache } from '$lib/cache';
-  import { R2_NOTICES } from '$lib/r2';
-  import type { Notice } from '$lib/types';
-  import { fetchNotices } from '$lib/api';
-  import { fitToViewport } from '$lib/fitToViewport';
-  import { browser } from '$app/environment';
-  import { MONTHS } from '$lib/dates';
+  import { cachedOrNull, setCache } from '#lib/cache.js';
+  import { R2_NOTICES } from '#lib/r2.js';
+  import type { Notice } from '#lib/types.js';
+  import { fetchNotices } from '#lib/api.js';
+  import { fitToViewport } from '#lib/fitToViewport.js';
+  import { browser } from '$app/env';
+  import { MONTHS } from '#lib/dates.js';
 
   let { data } = $props();
 
@@ -27,7 +27,7 @@
 
   /** PDFs are marked by a red-tinted chip plus a dot (see the style block). */
   function isPdf(url: string): boolean {
-    return /\.pdf(?:\?.*)?$/i.test(url);
+    return (/\.pdf(?:\?.*)?$/i).test(url);
   }
 
   function resolve(url: string) {
@@ -38,7 +38,7 @@
   // unique, and a keyed each with a duplicate key throws each_key_duplicate,
   // which would blank the whole page. Index keys are safe here because the
   // list is replaced wholesale whenever the data reloads.
-  let filtered = $derived.by(() => notices.filter(n => {
+  let filtered = $derived.by(() => notices.filter((n) => {
     // tab is null only before the first buildYears(); the loading gate keeps
     // that state off-screen.
     if (tab === null || getYr(n.date) !== tab) return false;
@@ -60,8 +60,13 @@
   } else if (browser) {
     // Nothing to show (SSR empty too) — this is the only case that fetches,
     // so good SSR data is never wiped by a failed client request.
-    fetchNotices().then(raw => {
-      if (!raw || raw.length === 0) { loading = false; return; }
+    fetchNotices().then((raw) => {
+      if (!raw || raw.length === 0) {
+        loading = false;
+
+        return;
+      }
+
       setCache('tgpc_notices', raw);
       notices = raw;
       buildYears();
@@ -72,7 +77,7 @@
   }
 
   function buildYears() {
-    years = [...new Set(notices.map(n => getYr(n.date)))].sort((a, b) => +b - +a);
+    years = [...new Set(notices.map((n) => getYr(n.date)))].sort((a, b) => +b - +a);
     // Preserve the user's tab across background refetches; auto/latest when
     // unset or gone (e.g. a refetch that lost the newest year's files).
     if (tab === null || !years.includes(tab)) tab = years[0] ?? null;
@@ -126,18 +131,37 @@
   <h1 class="sr-only">TGPC notices and circulars</h1>
   <div class="flex items-center gap-2">
     <div class="relative flex-1">
-      <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#9ca3af] pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-        <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+      <svg
+        class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#9ca3af] pointer-events-none"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        aria-hidden="true"
+      >
+        <circle cx="11" cy="11" r="8"></circle>
+        <path d="m21 21-4.35-4.35"></path>
       </svg>
       <label for="notice-search" class="sr-only">Search notices</label>
       <input id="notice-search" type="text" bind:value={query} placeholder="Search notices"
         aria-label="Search notices"
         class="w-full pl-9 pr-9 py-1.5 border-b-2 border-[var(--t-border)] text-[0.95rem] bg-transparent outline-none transition-colors focus:border-[#00cc66] max-sm:text-base" />
       {#if query}
-        <button type="button" onclick={() => (query = '')} aria-label="Clear search"
+        <button
+          type="button"
+          onclick={() => query = ''}
+          aria-label="Clear search"
           class="absolute right-2 top-1/2 -translate-y-1/2 flex h-5 w-5 items-center justify-center rounded-full border-none cursor-pointer transition-colors"
-          style="background:var(--t-surface);color:var(--t-muted)">
-          <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          style="background:var(--t-surface);color:var(--t-muted)"
+        >
+          <svg
+            class="w-3 h-3"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.5"
+            aria-hidden="true"
+          ><path d="M18 6 6 18M6 6l12 12"></path></svg>
         </button>
       {/if}
     </div>
@@ -147,9 +171,10 @@
     {#each years as y (y)}
       <button onclick={() => tab = y}
         class="px-2.5 py-1.5 rounded text-[0.75rem] font-semibold transition-colors cursor-pointer border-none whitespace-nowrap"
-        style={y === tab ? 'background:#00cc66;color:var(--t-ink)' : 'background:var(--t-surface);color:var(--t-ink-soft)'}>
-        {y} ({notices.filter(n => getYr(n.date) === y).length})
-      </button>
+        style={y === tab
+          ? 'background:#00cc66;color:var(--t-ink)'
+          : 'background:var(--t-surface);color:var(--t-ink-soft)'}
+      >{y} ({notices.filter((n) => getYr(n.date) === y).length})</button>
     {/each}
   </div>
 

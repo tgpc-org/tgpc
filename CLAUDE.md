@@ -3,7 +3,7 @@
 
 ## Project
 
-TGPC RPh Index — public search portal for the Telangana State Pharmacy Council pharmacist registry. SvelteKit 5 + Tailwind v4 + Supabase frontend (`ui/`), Python scraping/sync pipeline (`tgpc/`). Pushes to `main` auto-deploy to Cloudflare Pages (`tgpc.pages.dev`).
+TGPC RPh Index — public search portal for the Telangana State Pharmacy Council pharmacist registry. SvelteKit 3 + Tailwind v4 + Supabase frontend (`ui/`), Python scraping/sync pipeline (`tgpc/`). Pushes to `main` auto-deploy to Cloudflare Pages (`tgpc.pages.dev`).
 
 ## Key Commands
 

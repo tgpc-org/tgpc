@@ -1,7 +1,7 @@
 /**
  * Server-only admin auth helpers.
  *
- * This module lives under `$lib/server/` — SvelteKit fails the build if it is
+ * This module lives under `#lib/server/` — SvelteKit fails the build if it is
  * ever imported from client-reachable code, so the secret handling here cannot
  * leak into the browser bundle.
  *

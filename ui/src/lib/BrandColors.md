@@ -35,7 +35,7 @@ backgrounds and soft borders).
 ## Rules (MANDATORY)
 
 1. Never invent new hex values. All colors come from the tables above.
-2. Prefer the `TGPC` export in `colors.ts`: `import { TGPC } from '$lib/colors'`.
+2. Prefer the `TGPC` export in `colors.ts`: `import { TGPC } from '#lib/colors'`.
    - `TGPC.green`, `TGPC.red`, `TGPC.grey`, `TGPC.blue`
 3. Do NOT use off-brand reds like `#dc2626`, off-brand greens like `#16a34a`,
    ad-hoc greys, or third-party palettes (Bootstrap amber, Tailwind green/purple
@@ -83,7 +83,7 @@ Therefore:
 
 ## Day/Night Mode
 
-The site ships a theme toggle (header, `$lib/theme.ts`). Implementation notes:
+The site ships a theme toggle (header, `#lib/theme.ts`). Implementation notes:
 
 - Semantic tokens live in `ui/src/app.css` (`:root` light, `.dark` night).
   The night page background is the registered `night` neutral (`#2a2a2a`,

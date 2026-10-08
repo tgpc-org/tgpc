@@ -9,11 +9,11 @@ import { join } from 'node:path';
 const baseURL = process.env.PROD_URL ?? 'https://tgpc.pages.dev';
 const browser = await chromium.launch();
 const page = await (await browser.newContext()).newPage();
-const baseline = {};
+const baseline = /** @type {Record<string, string[]>} */ ({});
 for (const path of ['/', '/notice', '/dispatch']) {
 	await page.goto(baseURL + path);
 	const results = await new AxeBuilder({ page }).withRules(['color-contrast']).analyze();
-	const fps = new Set();
+	const fps = /** @type {Set<string>} */ (new Set());
 	for (const v of results.violations) {
 		for (const n of v.nodes) {
 			for (const t of n.target.flatMap(String)) fps.add(`${v.id}::${t}`);

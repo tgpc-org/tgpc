@@ -1,7 +1,7 @@
 import type { PageServerLoad } from './$types';
 import { error } from '@sveltejs/kit';
-import { getRecord } from '$lib/api';
-import { PUBLIC_R2_PHOTO_BASE } from '$env/static/public';
+import { getRecord } from '#lib/api.js';
+import { PUBLIC_R2_PHOTO_BASE } from '$app/env/public';
 
 export const load: PageServerLoad = async ({ params }: { params: { registration_number: string } }) => {
   const regNo = params.registration_number?.toUpperCase().trim();

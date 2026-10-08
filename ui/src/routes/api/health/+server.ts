@@ -1,6 +1,5 @@
-import { json } from '@sveltejs/kit';
-import { env as publicEnv } from '$env/dynamic/public';
-import { env as privateEnv } from '$env/dynamic/private';
+import { PUBLIC_SUPABASE_URL } from '$app/env/public';
+import { SUPABASE_SECRET_KEY } from '$app/env/private';
 import { createClient } from '@supabase/supabase-js';
 
 export async function GET() {
@@ -10,8 +9,9 @@ export async function GET() {
   // Layer 2: service key via $env/dynamic/private (server-only secret),
   // never the anonymous key — health must keep working after anonymous
   // database access is revoked.
-  const supabaseUrl = publicEnv.PUBLIC_SUPABASE_URL;
-  const supabaseKey = privateEnv.SUPABASE_SECRET_KEY;
+  const supabaseUrl = PUBLIC_SUPABASE_URL;
+
+  const supabaseKey = SUPABASE_SECRET_KEY;
 
   interface CheckResult {
     status: 'ok' | 'down' | 'stale';
@@ -77,7 +77,7 @@ export async function GET() {
 
   const httpStatus = status.status === 'down' ? 503 : 200;
 
-  return json(status, {
+  return Response.json(status, {
     status: httpStatus,
     headers: {
       'Cache-Control': 'no-cache, max-age=0',

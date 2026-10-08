@@ -14,7 +14,7 @@
  * ~/.config/tgpc/admin-links.txt
  */
 
-import type { LinkGroup } from '$lib/types';
+import type { LinkGroup } from '#lib/types.js';
 
 const base = 'https://www.pharmacycouncil.telangana.gov.in';
 

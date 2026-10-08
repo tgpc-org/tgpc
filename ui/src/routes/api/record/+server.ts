@@ -1,6 +1,6 @@
-import { isAuthed } from '$lib/server/auth';
-import { normalizeReg } from '$lib/server/contacts';
-import { rateLimitedSearch } from '$lib/server/rateLimit';
+import { isAuthed } from '#lib/server/auth.js';
+import { normalizeReg } from '#lib/server/contacts.js';
+import { rateLimitedSearch } from '#lib/server/rateLimit.js';
 import type { RequestHandler } from './$types';
 
 const COLS = [

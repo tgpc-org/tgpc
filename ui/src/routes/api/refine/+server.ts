@@ -1,6 +1,6 @@
-import { formatDDMonYYYY } from '$lib/dates';
-import { isAuthed } from '$lib/server/auth';
-import { rateLimitedSearch } from '$lib/server/rateLimit';
+import { formatDDMonYYYY } from '#lib/dates.js';
+import { isAuthed } from '#lib/server/auth.js';
+import { rateLimitedSearch } from '#lib/server/rateLimit.js';
 import type { RequestHandler } from './$types';
 
 const SELECT_COLS =

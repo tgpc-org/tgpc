@@ -1,8 +1,7 @@
-import { json } from '@sveltejs/kit';
-import { getAdminSecret, isAuthed } from '$lib/server/auth';
-import { setCtlHalt } from '$lib/server/ops';
-import { rateLimited } from '$lib/server/rateLimit';
-import { parseCtlBody } from '$lib/ops';
+import { getAdminSecret, isAuthed } from '#lib/server/auth.js';
+import { setCtlHalt } from '#lib/server/ops.js';
+import { rateLimited } from '#lib/server/rateLimit.js';
+import { parseCtlBody } from '#lib/ops.js';
 import type { RequestHandler } from './$types';
 
 export const POST: RequestHandler = async (event) => {
@@ -40,7 +39,7 @@ export const POST: RequestHandler = async (event) => {
     const doc = await setCtlHalt(platform, parsed.halt, parsed.note);
     // Audit: action + note only. No PII flows through this channel.
     console.log(`admin ops ctl halt=${parsed.halt} note=${parsed.note.slice(0, 80)}`);
-    return json({ ok: true, ctl: doc }, { headers: { 'Cache-Control': 'no-store' } });
+    return Response.json({ ok: true, ctl: doc }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (e) {
     return new Response(String(e instanceof Error ? e.message : e).slice(0, 160), {
       status: 502

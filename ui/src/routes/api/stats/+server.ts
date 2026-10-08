@@ -1,5 +1,5 @@
-import { isAuthed } from '$lib/server/auth';
-import { rateLimitedSearch } from '$lib/server/rateLimit';
+import { isAuthed } from '#lib/server/auth.js';
+import { rateLimitedSearch } from '#lib/server/rateLimit.js';
 import type { RequestHandler } from './$types';
 
 /**

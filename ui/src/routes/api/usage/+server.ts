@@ -1,6 +1,5 @@
-import { json } from '@sveltejs/kit';
-import { getAdminSecret, isAuthed, safeEqual } from '$lib/server/auth';
-import type { UsageReport, ServiceUsage } from '$lib/types';
+import { getAdminSecret, isAuthed, safeEqual } from '#lib/server/auth.js';
+import type { UsageReport, ServiceUsage } from '#lib/types.js';
 import type { RequestHandler } from './$types';
 
 function fmt(n: number | null): string {
@@ -142,7 +141,7 @@ export const GET: RequestHandler = async ({ request, platform, cookies }) => {
     missing_vars: missing,
   };
 
-  return json(report, {
+  return Response.json(report, {
     headers: { 'Cache-Control': 'no-cache, max-age=0' }
   });
 }

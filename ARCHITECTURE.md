@@ -510,13 +510,13 @@ captcha-gated at the source.
 
 ## Frontend (SvelteKit — Production)
 
-Built with SvelteKit 5 + Tailwind CSS v4 + TypeScript.
+Built with SvelteKit 3 + Tailwind CSS v4 + TypeScript.
 
 ### Stack
 
 | Layer | Technology |
 |---|---|
-| Framework | SvelteKit 5 (`@sveltejs/adapter-cloudflare`) |
+| Framework | SvelteKit 3 (`@sveltejs/adapter-cloudflare`) |
 | Styling | Tailwind CSS v4 |
 | Database | Supabase (anon key with RLS — `SELECT` only) |
 | Hosting | Cloudflare Pages (build: `ui/.svelte-kit/cloudflare`) |
@@ -551,7 +551,7 @@ Server-only modules under `ui/src/lib/server/` (`auth.ts`, `adminLinks.ts`, `rat
 
 The 200-row ceiling is a **client-side** cap. It bounds what the browser receives and renders, but it cannot stop a caller from invoking `search_pharmacists` directly with a larger `lim`. The server side needs its own ceiling: clamp inside the RPC (`lim := least(greatest(lim, 1), 200)`) and keep Supabase's API **Max Rows** setting at a sane value as the backstop. Both live in the Supabase dashboard, not in this repository.
 - **Export** — PDF via jsPDF + jspdf-autotable; CSV via Blob download with formula-injection guard
-- **Security headers** — applied globally in `hooks.server.ts` (+ `ui/static/_headers` for static assets):
+- **Security headers** — applied globally in `hooks.server.ts` (+ `ui/_headers` for static assets, project root as adapter-cloudflare v8 requires):
   - **CSP** with a per-request **nonce** for inline scripts on route HTML (`script-src 'self' 'nonce-<n>' 'strict-dynamic'`) plus `img-src`/`connect-src` allowlists for the R2 photo CDN and Supabase origin
   - `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Strict-Transport-Security`, `Permissions-Policy`
   - `Cross-Origin-Opener-Policy: same-origin` + `Cross-Origin-Resource-Policy: same-origin` (cross-origin isolation)

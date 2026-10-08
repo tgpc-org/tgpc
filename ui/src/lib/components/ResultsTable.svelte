@@ -1,8 +1,8 @@
 <script lang="ts">
-  import type { PharmacistRecord } from '$lib/types';
-  import { fitToViewport } from '$lib/fitToViewport';
-  import { CATEGORY_COLORS } from '$lib/colors';
-  import { PUBLIC_R2_PHOTO_BASE } from '$env/static/public';
+  import type { PharmacistRecord } from '#lib/types.js';
+  import { fitToViewport } from '#lib/fitToViewport.js';
+  import { CATEGORY_COLORS } from '#lib/colors.js';
+  import { PUBLIC_R2_PHOTO_BASE } from '$app/env/public';
 
   let {
     rows,

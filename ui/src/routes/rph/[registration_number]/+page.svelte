@@ -1,8 +1,8 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { CATEGORY_COLORS } from '$lib/colors';
-  import ContactDetails from '$lib/components/ContactDetails.svelte';
-  import type { PharmacistRecord } from '$lib/types';
+  import { CATEGORY_COLORS } from '#lib/colors.js';
+  import ContactDetails from '#lib/components/ContactDetails.svelte';
+  import type { PharmacistRecord } from '#lib/types.js';
 
   let { data } = $props();
   let record = $derived((data as { record: PharmacistRecord }).record);

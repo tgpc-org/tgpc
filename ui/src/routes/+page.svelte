@@ -1,23 +1,23 @@
 <script lang="ts">
-  import type { PharmacistRecord, CategoryFilter } from '$lib/types';
-  import { searchRecords, searchWithRefiners, getRecord, type AdvancedFilters } from '$lib/api';
-  import { parseDDMonYYYY, formatDDMonYYYY } from '$lib/dates';
-  import { PUBLIC_R2_PHOTO_BASE } from '$env/static/public';
-  import { CATEGORIES as CAT_NAMES, CATEGORY_COLORS } from '$lib/colors';
-  import { recentRecords, recordViewed } from '$lib/recent';
-  import { MAX_SEARCH_RESULTS, isTruncated } from '$lib/searchLimits';
+  import type { PharmacistRecord, CategoryFilter } from '#lib/types.js';
+  import { searchRecords, searchWithRefiners, getRecord, type AdvancedFilters } from '#lib/api.js';
+  import { parseDDMonYYYY, formatDDMonYYYY } from '#lib/dates.js';
+  import { PUBLIC_R2_PHOTO_BASE } from '$app/env/public';
+  import { CATEGORIES as CAT_NAMES, CATEGORY_COLORS } from '#lib/colors.js';
+  import { recentRecords, recordViewed } from '#lib/recent.js';
+  import { MAX_SEARCH_RESULTS, isTruncated } from '#lib/searchLimits.js';
   import { fly } from 'svelte/transition';
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import { afterNavigate } from '$app/navigation';
-  import { parseSearchUrl, buildSearchQuery, type SearchUrlState } from '$lib/searchUrl';
-  import { prefersReducedMotion } from '$lib/motion';
-  import { exportCSV, exportPDF, type ExportContext } from '$lib/exporters';
+  import { parseSearchUrl, buildSearchQuery, type SearchUrlState } from '#lib/searchUrl.js';
+  import { prefersReducedMotion } from '#lib/motion.js';
+  import { exportCSV, exportPDF, type ExportContext } from '#lib/exporters.js';
 
-  import ProfileSidebar from '$lib/components/ProfileSidebar.svelte';
-  import SearchForm from '$lib/components/SearchForm.svelte';
-  import Refiners from '$lib/components/Refiners.svelte';
-  import ResultsTable from '$lib/components/ResultsTable.svelte';
-  import MobileCards from '$lib/components/MobileCards.svelte';
+  import ProfileSidebar from '#lib/components/ProfileSidebar.svelte';
+  import SearchForm from '#lib/components/SearchForm.svelte';
+  import Refiners from '#lib/components/Refiners.svelte';
+  import ResultsTable from '#lib/components/ResultsTable.svelte';
+  import MobileCards from '#lib/components/MobileCards.svelte';
 
   const CATEGORY_FILTERS: CategoryFilter[] = ['all', ...CAT_NAMES];
   type SortKey = 'rank' | 'registration_number' | 'name' | 'category' | 'validity_date' | 'status';
@@ -83,15 +83,17 @@
   // never trigger a URL write, since nothing else changes afterwards.
   let navSynced = $state(false);
 
-  afterNavigate(() => {
-    const qs = $page.url.search.replace(/^\?/, '');
+  afterNavigate(({ shallow, type }) => {
+    if (shallow && type === 'goto') return;
+
+    const qs = page.url.search.replace(/^\?/, '');
     const echoed = qs === lastPushedQs;
     const isFirst = firstNav;
     firstNav = false;
     navSynced = true;
     if (echoed) return; // our own replaceState echoed back — nothing to sync
     if (isFirst && !qs) return; // initial load: pre-hydration typing already merged into state
-    syncFromUrl(new URLSearchParams($page.url.search));
+    syncFromUrl(new URLSearchParams(page.url.search));
   });
 
   // Keep the URL canonical: every state change rewrites ?q etc with
@@ -364,7 +366,10 @@
   let drawerRecord = $state<PharmacistRecord | null>(null);
   let drawerLoading = $state(false);
   let drawerError = $state<string | null>(null);
-  let drawerPhoto = $derived(drawerRecord ? (drawerRecord.photo_url || `${PUBLIC_R2_PHOTO_BASE}/${drawerRecord.registration_number}.webp`) : '');
+
+  let drawerPhoto = $derived(drawerRecord
+    ? drawerRecord.photo_url || `${PUBLIC_R2_PHOTO_BASE}/${drawerRecord.registration_number}.webp`
+    : '');
 
   let drawerSeq = 0;
 
@@ -417,7 +422,7 @@
   }
 </script>
 
-<svelte:window onkeydown={onWindowKeydown} />
+<svelte:window onkeydown={onWindowKeydown}></svelte:window>
 
 <div class="space-y-2">
   <h1 class="sr-only">Search Telangana State Pharmacy Council pharmacist records by name or RPC number</h1>
@@ -545,7 +550,9 @@
         {/if}
         {#if remainingRows > 0}
           <div class="flex justify-center py-3">
-            <button type="button" onclick={() => (visibleCount += RESULT_PAGE_SIZE)}
+            <button
+              type="button"
+              onclick={() => visibleCount += RESULT_PAGE_SIZE}
               class="px-4 py-2.5 rounded-full text-[0.75rem] font-semibold cursor-pointer border-none transition-colors hover:bg-[rgba(0,204,102,0.14)]"
               style="background:var(--t-surface-3);color:var(--t-ink-soft)">
               Load more · {remainingRows.toLocaleString()} remaining

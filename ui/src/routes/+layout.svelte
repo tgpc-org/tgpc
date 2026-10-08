@@ -1,30 +1,14 @@
-<svelte:head>
-  <title>TGPC RPh Index</title>
-  <meta name="description" content="Unofficial open-source index of the Telangana State Pharmacy Council pharmacist registry. Search pharmacists by name or RPC number, browse notices and dispatch lists." />
-  <link rel="canonical" href={$page.url.origin + $page.url.pathname} />
-  <meta property="og:type" content="website" />
-  <meta property="og:site_name" content="TGPC RPh Index" />
-  <meta property="og:title" content="TGPC RPh Index" />
-  <meta property="og:description" content="Unofficial open-source index of the Telangana State Pharmacy Council pharmacist registry. Search pharmacists by name or RPC number, browse notices and dispatch lists." />
-  <meta property="og:url" content={$page.url.origin + $page.url.pathname} />
-  <meta name="twitter:card" content="summary" />
-  <meta name="twitter:title" content="TGPC RPh Index" />
-  <meta name="twitter:description" content="Unofficial open-source index of the Telangana State Pharmacy Council pharmacist registry. Search pharmacists by name or RPC number, browse notices and dispatch lists." />
-  {#if R2_ORIGIN}<link rel="preconnect" href={R2_ORIGIN} />{/if}
-  {#if R2_ORIGIN}<link rel="dns-prefetch" href={R2_ORIGIN} />{/if}
-</svelte:head>
-
 <script lang="ts">
   import '../app.css';
-  import type { ConnectionStatus, Stats } from '$lib/types';
-  import { getLastSync, getStats } from '$lib/api';
-  import { page } from '$app/stores';
-  import { CATEGORY_COLORS, CATEGORIES, CATEGORY_KEYS } from '$lib/colors';
-  import { R2_ORIGIN } from '$lib/r2';
-  import { setCache } from '$lib/cache';
-  import { initTheme, themeName, toggleTheme } from '$lib/theme';
+  import type { ConnectionStatus, Stats } from '#lib/types.js';
+  import { getLastSync, getStats } from '#lib/api.js';
+  import { page } from '$app/state';
+  import { CATEGORY_COLORS, CATEGORIES, CATEGORY_KEYS } from '#lib/colors.js';
+  import { R2_ORIGIN } from '#lib/r2.js';
+  import { setCache } from '#lib/cache.js';
+  import { initTheme, themeName, toggleTheme } from '#lib/theme.js';
 
-  import Clock from '$lib/components/Clock.svelte';
+  import Clock from '#lib/components/Clock.svelte';
 
   let { children, data } = $props();
   // svelte-ignore state_referenced_locally
@@ -116,7 +100,11 @@
     return out;
   });
 
-  let activeTab = $derived($page.url.pathname === '/' ? 'search' : $page.url.pathname === '/notice' ? 'notice' : $page.url.pathname === '/dispatch' ? 'dispatch' : '');
+  let activeTab = $derived(page.url.pathname === '/'
+    ? 'search'
+    : page.url.pathname === '/notice'
+      ? 'notice'
+      : page.url.pathname === '/dispatch' ? 'dispatch' : '');
 
   let searchRef = $state<HTMLAnchorElement | undefined>(undefined);
   let noticeRef = $state<HTMLAnchorElement | undefined>(undefined);
@@ -149,10 +137,64 @@
   });
 </script>
 
-<div class="min-h-screen flex flex-col" style="background:var(--t-bg)">
-  <a href="#main-content" class="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[100] focus:rounded-lg focus:px-3 focus:py-2 focus:font-bold focus:no-underline" style="background:var(--t-surface-2);color:var(--t-ink)">Skip to main content</a>
+<svelte:head>
+  <title>TGPC RPh Index</title>
 
-  <header class="sticky top-0 z-50 border-b" style="background:var(--t-bg);border-color:var(--t-border)">
+  <meta
+    name="description"
+    content="Unofficial open-source index of the Telangana State Pharmacy Council pharmacist registry. Search pharmacists by name or RPC number, browse notices and dispatch lists."
+  />
+
+  <link
+    rel="canonical"
+    href={page.url.origin + page.url.pathname}
+  />
+
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="TGPC RPh Index" />
+  <meta property="og:title" content="TGPC RPh Index" />
+
+  <meta
+    property="og:description"
+    content="Unofficial open-source index of the Telangana State Pharmacy Council pharmacist registry. Search pharmacists by name or RPC number, browse notices and dispatch lists."
+  />
+
+  <meta
+    property="og:url"
+    content={page.url.origin + page.url.pathname}
+  />
+
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="TGPC RPh Index" />
+
+  <meta
+    name="twitter:description"
+    content="Unofficial open-source index of the Telangana State Pharmacy Council pharmacist registry. Search pharmacists by name or RPC number, browse notices and dispatch lists."
+  />
+
+  {#if R2_ORIGIN}
+    <link rel="preconnect" href={R2_ORIGIN} />
+  {/if}
+
+  {#if R2_ORIGIN}
+    <link rel="dns-prefetch" href={R2_ORIGIN} />
+  {/if}
+</svelte:head>
+
+<div
+  class="min-h-screen flex flex-col"
+  style="background:var(--t-bg)"
+>
+  <a
+    href="#main-content"
+    class="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[100] focus:rounded-lg focus:px-3 focus:py-2 focus:font-bold focus:no-underline"
+    style="background:var(--t-surface-2);color:var(--t-ink)"
+  >Skip to main content</a>
+
+  <header
+    class="sticky top-0 z-50 border-b"
+    style="background:var(--t-bg);border-color:var(--t-border)"
+  >
     <div class="w-full px-3 sm:px-5">
       <!-- Brand row -->
       <div class="flex items-center justify-between gap-3 py-2">
@@ -192,9 +234,35 @@
             style="border-color:var(--t-border);background:var(--t-surface-2);color:var(--t-muted)"
           >
             {#if $themeName === 'dark'}
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <circle cx="12" cy="12" r="4"></circle>
+
+                <path
+                  d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"
+                ></path>
+              </svg>
             {:else}
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              ><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path></svg>
             {/if}
           </button>
         </div>
@@ -281,7 +349,11 @@
         </span>
         — This is an unofficial, third-party tool not affiliated with TGPC or any government body. Data is for reference only — verify all information from official sources before use. Users assume all risk. No warranty as to accuracy, completeness, or timeliness. No liability for errors, omissions, or actions taken based on this content. Operated under fair dealing (Indian Copyright Act, 1957, Section 52).
       </span>
-      <span class="whitespace-nowrap font-semibold shrink-0" style="color:var(--t-ink)">TGPC RPh Index &copy; {new Date().getFullYear()}</span>
+
+      <span
+        class="whitespace-nowrap font-semibold shrink-0"
+        style="color:var(--t-ink)"
+      >TGPC RPh Index © {new Date().getFullYear()}</span>
     </div>
   </footer>
 </div>

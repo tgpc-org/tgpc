@@ -1,7 +1,6 @@
-import { json } from '@sveltejs/kit';
-import { getAdminSecret, isAuthed } from '$lib/server/auth';
-import { buildOpsSnapshot } from '$lib/server/ops';
-import { rateLimited } from '$lib/server/rateLimit';
+import { getAdminSecret, isAuthed } from '#lib/server/auth.js';
+import { buildOpsSnapshot } from '#lib/server/ops.js';
+import { rateLimited } from '#lib/server/rateLimit.js';
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async (event) => {
@@ -23,5 +22,5 @@ export const GET: RequestHandler = async (event) => {
   }
 
   const snapshot = await buildOpsSnapshot(platform);
-  return json(snapshot, { headers: { 'Cache-Control': 'no-store' } });
+  return Response.json(snapshot, { headers: { 'Cache-Control': 'no-store' } });
 };

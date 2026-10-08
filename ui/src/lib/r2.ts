@@ -1,4 +1,4 @@
-import { PUBLIC_R2_PHOTO_BASE } from '$env/static/public';
+import { PUBLIC_R2_PHOTO_BASE } from '$app/env/public';
 
 /**
  * Public R2 bucket URLs (CODE_REVIEW.md L2). Derived from the single

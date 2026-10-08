@@ -1,12 +1,12 @@
-import { dev } from '$app/environment';
+import { dev } from '$app/env';
 import {
   SESSION_COOKIE,
   SESSION_TTL_SECONDS,
   createSession,
   getAdminSecret,
   safeEqual
-} from '$lib/server/auth';
-import { rateLimited } from '$lib/server/rateLimit';
+} from '#lib/server/auth.js';
+import { rateLimited } from '#lib/server/rateLimit.js';
 import type { RequestHandler } from './$types';
 
 /** Log in: verify the shared secret, then issue an HttpOnly session cookie. */

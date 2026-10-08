@@ -1,6 +1,6 @@
 <script lang="ts">
-  import type { AdvancedFilters } from '$lib/api';
-  import DatePicker from '$lib/DatePicker.svelte';
+  import type { AdvancedFilters } from '#lib/api.js';
+  import DatePicker from '#lib/DatePicker.svelte';
 
   let {
     filters = $bindable({ valid_till: '' } as AdvancedFilters),

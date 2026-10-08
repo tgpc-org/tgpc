@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { invalidateAll } from '$app/navigation';
-  import type { ContactLookup, UsageReport } from '$lib/types';
-  import type { OpsSnapshot } from '$lib/ops';
-  import { fmtInt } from '$lib/ops';
+  import { refreshAll } from '$app/navigation';
+  import type { ContactLookup, UsageReport } from '#lib/types.js';
+  import type { OpsSnapshot } from '#lib/ops.js';
+  import { fmtInt } from '#lib/ops.js';
   import type { PageData } from './$types';
 
   let { data }: { data: PageData } = $props();
@@ -87,7 +87,7 @@
         // The secret is no longer needed client-side — the session cookie
         // carries authorization from here on.
         secret = '';
-        await invalidateAll();
+        await refreshAll();
         await loadUsage();
       } else {
         error = 'Server error';
@@ -206,7 +206,7 @@
     try {
       await fetch('/api/admin', { method: 'DELETE' });
     } catch {}
-    await invalidateAll();
+    await refreshAll();
   }
 
   let panel = $state<HTMLDivElement | undefined>();

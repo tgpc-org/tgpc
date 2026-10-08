@@ -1,6 +1,6 @@
-import { dev } from '$app/environment';
-import { adminLinkGroups } from '$lib/server/adminLinks';
-import { isAuthed } from '$lib/server/auth';
+import { dev } from '$app/env';
+import { adminLinkGroups } from '#lib/server/adminLinks.js';
+import { isAuthed } from '#lib/server/auth.js';
 import type { PageServerLoad } from './$types';
 
 /**
@@ -13,7 +13,7 @@ import type { PageServerLoad } from './$types';
 export const load: PageServerLoad = async ({ cookies, platform }) => {
   // Dev convenience only. `dev` is statically replaced at build time, so this
   // branch is eliminated from production output.
-  const authed = dev || (await isAuthed(cookies, platform));
+  const authed = dev || await isAuthed(cookies, platform);
 
   if (!authed) {
     return { authed: false as const, groups: [] };

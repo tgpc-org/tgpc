@@ -1,7 +1,7 @@
-import { dev } from '$app/environment';
-import { isAuthed } from '$lib/server/auth';
-import { gatePath } from '$lib/server/gate';
-import type { Handle } from '@sveltejs/kit';
+import type { Handle } from '@sveltejs/kit/hooks';
+import { dev } from '$app/env';
+import { isAuthed } from '#lib/server/auth.js';
+import { gatePath } from '#lib/server/gate.js';
 
 // Site-wide gate: every data-bearing route requires the admin session.
 // Only the login flow (/admin page + /api/admin) and the inert assets the
@@ -16,8 +16,9 @@ import type { Handle } from '@sveltejs/kit';
 // open: there is no platform secret there, so the gate could never pass.
 
 // Security headers applied to every function response (CODE_REVIEW.md H6).
-// Mirrors `ui/static/_headers`, which covers static assets served directly by
-// Cloudflare Pages (those bypass SvelteKit + this hook).
+// Mirrors `ui/_headers` (project root, as adapter-cloudflare requires), which
+// covers static assets served directly by Cloudflare Pages (those bypass
+// SvelteKit + this hook).
 //
 // NOTE: CSP lives ONLY in svelte.config.js (kit.csp.mode 'auto') — SvelteKit
 // injects per-request nonces into the scripts it renders and sends the
@@ -28,7 +29,7 @@ import type { Handle } from '@sveltejs/kit';
 export const handle: Handle = async ({ event, resolve }) => {
 	if (!dev) {
 		const decision = gatePath(event.url.pathname);
-		if (decision.kind !== 'open' && !(await isAuthed(event.cookies, event.platform))) {
+		if (decision.kind !== 'open' && !await isAuthed(event.cookies, event.platform)) {
 			if (decision.kind === 'api-deny') {
 				return new Response('Unauthorized', { status: 403 });
 			}

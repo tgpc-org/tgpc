@@ -1,9 +1,9 @@
 <script lang="ts">
-  import { CATEGORY_COLORS } from '$lib/colors';
-  import ContactDetails from '$lib/components/ContactDetails.svelte';
-  import type { PharmacistRecord } from '$lib/types';
+  import { CATEGORY_COLORS } from '#lib/colors.js';
+  import ContactDetails from '#lib/components/ContactDetails.svelte';
+  import type { PharmacistRecord } from '#lib/types.js';
   import { fly, fade } from 'svelte/transition';
-import { prefersReducedMotion } from '$lib/motion';
+import { prefersReducedMotion } from '#lib/motion.js';
 
 // Drawer mode follows the component's own CSS breakpoint (Tailwind sm,
 // 640px): side sheet on desktop, bottom sheet on phones — like a native

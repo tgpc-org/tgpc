@@ -13,7 +13,7 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
-import type { OpsSnapshot } from '$lib/ops';
+import type { OpsSnapshot } from '#lib/ops.js';
 
 const enc = new TextEncoder();
 

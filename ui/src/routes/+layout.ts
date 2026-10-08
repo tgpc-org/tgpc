@@ -1,5 +1,5 @@
 import type { LayoutLoad } from './$types';
-import type { Stats } from '$lib/types';
+import type { Stats } from '#lib/types.js';
 
 export const load: LayoutLoad = async ({ fetch }) => {
   let stats: Stats | null = null;
