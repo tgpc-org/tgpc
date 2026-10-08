@@ -29,6 +29,7 @@ VPS_LAUNCH_LOG = DATA / "dg_run_launch.log"
 VPS_LAUNCH_PID = DATA / "dg_run.pid"
 ACTION_LOG = DATA / "dg_dashboard_actions.log"
 VM_FILE = DATA / "dg_vm.conf"  # plain "user@host", gitignored like all of data/
+STATIC_VM_HOST = "35.200.132.91"  # our forever-IP (tgpc-dg-ip, asia-south1)
 R2_OPS_FRESH_MIN = 15  # R2 ops backup fresher than this counts as a live loop
 DG_RUN_SCRIPT = ROOT / "scripts" / "dg_run.sh"
 
@@ -212,12 +213,16 @@ def read_vm() -> str:
 def write_vm(vm: str) -> dict:
     """Persist the VM address to data/dg_vm.conf. Validates user@host shape.
 
-    Only letters, digits and `._-:` around a single `@` — no whitespace or
-    shell metacharacters, since the value is interpolated into ssh commands.
+    Bare usernames are completed with the static host, so the page only ever
+    asks for the login name. Only letters, digits and `._-:` around a single
+    `@` — no whitespace or shell metacharacters, since the value is
+    interpolated into ssh commands.
     """
     clean = (vm or "").strip()
+    if re.fullmatch(r"[A-Za-z0-9._-]+", clean):
+        clean = f"{clean}@{STATIC_VM_HOST}"
     if not re.fullmatch(r"[A-Za-z0-9._-]+@[A-Za-z0-9._:-]+", clean):
-        return {"ok": False, "error": "use the form user@host (no spaces)"}
+        return {"ok": False, "error": "use your SSH login name, or full user@host"}
     try:
         VM_FILE.write_text(clean + "\n", encoding="utf-8")
         return {"ok": True, "vm": clean}

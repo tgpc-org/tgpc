@@ -187,22 +187,26 @@ class DashboardTests(unittest.TestCase):
     def test_write_vm_validation(self):
         import tempfile
 
-        from scripts.dg_dashboard import VM_FILE, write_vm
+        from scripts.dg_dashboard import STATIC_VM_HOST, VM_FILE, write_vm
 
-        self.assertFalse(write_vm("not a host")["ok"])
+        self.assertFalse(write_vm("not a host!!")["ok"])
         self.assertFalse(write_vm("user@ho st")["ok"])
         self.assertFalse(write_vm("a;b@c")["ok"])
+        # bare login name completes with the static host
         with tempfile.TemporaryDirectory() as tmp:
-            real = VM_FILE
             try:
                 import scripts.dg_dashboard as dash
 
                 dash.VM_FILE = Path(tmp) / "vm.conf"
-                res = write_vm("tester@35.200.132.91")
+                res = write_vm("tester")
                 self.assertTrue(res["ok"])
-                self.assertEqual(Path(tmp, "vm.conf").read_text().strip(), "tester@35.200.132.91")
+                self.assertEqual(res["vm"], f"tester@{STATIC_VM_HOST}")
+                self.assertEqual(Path(tmp, "vm.conf").read_text().strip(), f"tester@{STATIC_VM_HOST}")
+                res = write_vm("other@1.2.3.4")
+                self.assertTrue(res["ok"])
+                self.assertEqual(res["vm"], "other@1.2.3.4")
             finally:
-                dash.VM_FILE = real
+                dash.VM_FILE = VM_FILE
 
     def test_ist_day_format(self):
         self.assertEqual(to_ist_day("2026-09-18T12:15:45Z"), "Fri-18-09-2026 17:45 IST")
