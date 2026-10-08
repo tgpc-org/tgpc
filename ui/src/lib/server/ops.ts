@@ -30,7 +30,7 @@ function cfg(env: Env) {
   const accessKey = env['R2_ACCESS_KEY_ID'] || '';
   const secretKey = env['R2_SECRET_ACCESS_KEY'] || '';
   const bucket = env['TGPC_R2_DG_BUCKET'] || '';
-  const githubToken = env['GITHUB_TOKEN'] || '';
+  const githubToken = env['GITHUB_TOKEN'] || env['GITHUB_PAT'] || '';
   return { supabaseUrl, serviceKey, accountId, accessKey, secretKey, bucket, githubToken };
 }
 
