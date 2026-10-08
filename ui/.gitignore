@@ -9,3 +9,6 @@ dist/
 
 # local wrangler dev secrets (preview only)
 .dev.vars*
+
+# playwright login state (written by e2e/auth.setup.ts, holds a session cookie)
+e2e/.auth.json

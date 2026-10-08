@@ -1,4 +1,9 @@
-import { expect, test } from '@playwright/test';
+import { expect, request, test } from '@playwright/test';
+import { isLocalTarget, skipIfGatedUnauthed, targetBaseURL } from './helpers.ts';
+
+test.beforeEach(() => {
+	skipIfGatedUnauthed();
+});
 
 test('homepage shell: title, landmarks, search box', async ({ page }) => {
 	await page.goto('/');
@@ -81,12 +86,23 @@ test('unknown RPC degrades to 404, not 500', async ({ request }) => {
 	expect(res.status()).toBe(404);
 });
 
-test('usage API stays locked', async ({ request }) => {
-	const res = await request.get('/api/usage');
-	expect(res.status()).toBe(403);
+test('usage API stays locked', async () => {
+	// Local dev has no platform secret, so the handler answers 500 there
+	// instead of 403 — the locked posture is a prod assertion.
+	test.skip(isLocalTarget(), 'needs a configured admin secret (prod)');
+	// Fresh context: the shared `request` fixture carries the admin session
+	// when E2E_ADMIN_SECRET is set, which would legitimately return 200.
+	const fresh = await request.newContext({ baseURL: targetBaseURL() });
+	try {
+		const res = await fresh.get('/api/usage');
+		expect(res.status()).toBe(403);
+	} finally {
+		await fresh.dispose();
+	}
 });
 
 test('health API contract', async ({ request }) => {
+	test.skip(isLocalTarget(), 'needs Supabase credentials (prod)');
 	const res = await request.get('/api/health');
 	expect(res.ok()).toBeTruthy();
 	const body = await res.json();

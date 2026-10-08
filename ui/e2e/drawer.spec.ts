@@ -1,4 +1,9 @@
 import { expect, test, type Page } from '@playwright/test';
+import { skipIfGatedUnauthed } from './helpers.ts';
+
+test.beforeEach(() => {
+	skipIfGatedUnauthed();
+});
 
 // Profile drawer — desktop side sheet. (The mobile bottom-sheet variant
 // lives in mobile.spec.ts, which is the only spec the `mobile` project

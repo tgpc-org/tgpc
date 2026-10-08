@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
+import { skipIfGatedUnauthed } from './helpers.ts';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -17,6 +18,10 @@ const BASELINE: Record<string, string[]> = JSON.parse(
 );
 
 const PATHS = ['/', '/notice', '/dispatch'];
+
+test.beforeEach(() => {
+	skipIfGatedUnauthed();
+});
 
 for (const path of PATHS) {
 	test(`contrast: ${path} introduces no new violations`, async ({ page }) => {

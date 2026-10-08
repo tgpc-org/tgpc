@@ -1,5 +1,10 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
+import { skipIfGatedUnauthed } from './helpers.ts';
+
+test.beforeEach(() => {
+	skipIfGatedUnauthed();
+});
 
 // Zero tolerance for serious/critical impacts, EXCEPT color-contrast.
 //

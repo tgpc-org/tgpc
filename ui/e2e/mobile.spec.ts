@@ -1,5 +1,10 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
+import { skipIfGatedUnauthed } from './helpers.ts';
+
+test.beforeEach(() => {
+	skipIfGatedUnauthed();
+});
 
 // Mobile layout gate — runs in the `mobile` project (iPhone SE viewport).
 // Guards the responsive behaviour: no horizontal page overflow, search stays

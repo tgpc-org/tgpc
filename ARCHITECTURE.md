@@ -635,6 +635,8 @@ All tests use mocking (no real HTTP or Supabase calls). The `supabase` module is
 
 **E2E tests:** `ui/test:e2e` runs the Playwright specs in `ui/e2e/` (chromium): smoke (shell + search flow + API locking), axe a11y (zero serious/critical violations, color-contrast excluded), a contrast-regression gate against `contrast-baseline.json`, and mobile layout fingerprints at the iPhone-SE viewport. `ui/test:e2e:update-baseline` refreshes the contrast baseline after intentional palette changes; `check:e2e` typechecks the specs. CI runs these in the `ui.yml` `e2e` job.
 
+The site is login-first, so the suite is too: `e2e/auth.setup.ts` logs in once via `E2E_ADMIN_SECRET` (CI repo secret, same value as Pages `ADMIN_SECRET`) into `e2e/.auth.json` (gitignored), and every flow spec runs on that session. Without the secret, flow specs skip on gated targets while `e2e/gate.spec.ts` still asserts the unauthenticated contract (302 → /admin, 403 APIs) with a fresh context. Local `vite dev` stays open, so everything runs there except the gate specs and the credential-dependent API tests.
+
 ---
 
 ## Pre-commit

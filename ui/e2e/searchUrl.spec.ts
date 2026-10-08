@@ -1,4 +1,9 @@
 import { expect, test, type Page } from '@playwright/test';
+import { skipIfGatedUnauthed } from './helpers.ts';
+
+test.beforeEach(() => {
+	skipIfGatedUnauthed();
+});
 
 // Guards the URL-backed search state (lib/searchUrl.ts): typed searches land
 // in the URL, shared links rehydrate without typing, reload keeps state,

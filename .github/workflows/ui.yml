@@ -55,5 +55,10 @@ jobs:
       - run: npm ci
       - run: npm run check:e2e
       - run: npx playwright install --with-deps chromium
-      # Read-only suite against the live site (no secrets needed).
+      # Login-first site: flow specs authenticate with the admin secret
+      # (repo secret E2E_ADMIN_SECRET — same value as Pages ADMIN_SECRET).
+      # Without it, flow specs skip on the gated target and only the
+      # gate-contract specs run.
       - run: npm run test:e2e
+        env:
+          E2E_ADMIN_SECRET: ${{ secrets.E2E_ADMIN_SECRET }}
