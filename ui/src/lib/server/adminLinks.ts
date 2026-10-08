@@ -15,18 +15,17 @@
  */
 
 import type { LinkGroup } from '#lib/types.js';
+import { envVal } from './appEnv.js';
 
 const base = 'https://www.pharmacycouncil.telangana.gov.in';
 
 export function adminLinkGroups(platform: App.Platform | undefined): LinkGroup[] {
-  const env = platform?.env;
-
   const pharmacistUrl =
-    env?.['ADMIN_LINK_PHARMACIST_URL'] ||
+    envVal(platform, 'ADMIN_LINK_PHARMACIST_URL') ||
     `${base}/pharmacy/viewpharmacist?referenceid=REFERENCEID-HERE&random_no1=RANDOMNO1-HERE`;
 
   const emailVerifyUrl =
-    env?.['ADMIN_LINK_EMAIL_VERIFY_URL'] ||
+    envVal(platform, 'ADMIN_LINK_EMAIL_VERIFY_URL') ||
     `${base}/pharmacy/getemailverify?rid1=RID1-HERE&rid2=RID2-HERE&rid3=RID3-UUID-HERE`;
 
   const all: LinkGroup[] = [

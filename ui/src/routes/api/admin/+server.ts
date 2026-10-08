@@ -3,9 +3,9 @@ import {
   SESSION_COOKIE,
   SESSION_TTL_SECONDS,
   createSession,
-  getAdminSecret,
   safeEqual
 } from '#lib/server/auth.js';
+import { envVal } from '#lib/server/appEnv.js';
 import { rateLimited } from '#lib/server/rateLimit.js';
 import type { RequestHandler } from './$types';
 
@@ -20,7 +20,7 @@ export const POST: RequestHandler = async (event) => {
     });
   }
 
-  const adminSecret = getAdminSecret(platform);
+  const adminSecret = envVal(platform, 'ADMIN_SECRET', 'QUOTA_SECRET');
   if (!adminSecret) {
     return new Response('Not configured', { status: 500 });
   }

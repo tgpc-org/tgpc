@@ -14,23 +14,18 @@
 
 import { createClient } from '@supabase/supabase-js';
 import type { OpsSnapshot } from '#lib/ops.js';
+import { envVal } from './appEnv.js';
 
 const enc = new TextEncoder();
 
-type Env = Record<string, string | undefined>;
-
-export function readEnv(platform: App.Platform | undefined): Env {
-  return ((platform?.env || {}) as Env) || {};
-}
-
-function cfg(env: Env) {
-  const supabaseUrl = env['SUPABASE_URL'] || env['PUBLIC_SUPABASE_URL'] || '';
-  const serviceKey = env['SUPABASE_SECRET_KEY'] || '';
-  const accountId = env['CLOUDFLARE_ACCOUNT_ID'] || '';
-  const accessKey = env['R2_ACCESS_KEY_ID'] || '';
-  const secretKey = env['R2_SECRET_ACCESS_KEY'] || '';
-  const bucket = env['TGPC_R2_DG_BUCKET'] || '';
-  const githubToken = env['GITHUB_TOKEN'] || env['GITHUB_PAT'] || '';
+function cfg(platform: App.Platform | undefined) {
+  const supabaseUrl = envVal(platform, 'SUPABASE_URL', 'PUBLIC_SUPABASE_URL') || '';
+  const serviceKey = envVal(platform, 'SUPABASE_SECRET_KEY') || '';
+  const accountId = envVal(platform, 'CLOUDFLARE_ACCOUNT_ID') || '';
+  const accessKey = envVal(platform, 'R2_ACCESS_KEY_ID') || '';
+  const secretKey = envVal(platform, 'R2_SECRET_ACCESS_KEY') || '';
+  const bucket = envVal(platform, 'TGPC_R2_DG_BUCKET') || '';
+  const githubToken = envVal(platform, 'GITHUB_TOKEN', 'GITHUB_PAT') || '';
   return { supabaseUrl, serviceKey, accountId, accessKey, secretKey, bucket, githubToken };
 }
 
@@ -67,12 +62,12 @@ function toHex(bytes: Uint8Array): string {
 
 /** Signed fetch against R2's S3 endpoint (GET or PUT). Throws on non-2xx. */
 export async function r2Fetch(
-  env: Env,
+  platform: App.Platform | undefined,
   key: string,
   method: 'GET' | 'PUT',
   body?: string
 ): Promise<string> {
-  const { accountId, accessKey, secretKey, bucket } = cfg(env);
+  const { accountId, accessKey, secretKey, bucket } = cfg(platform);
   if (!accountId || !accessKey || !secretKey || !bucket) {
     throw new Error('R2 credentials missing (CLOUDFLARE_ACCOUNT_ID / R2 keys / TGPC_R2_DG_BUCKET)');
   }
@@ -107,8 +102,8 @@ export async function r2Fetch(
   return resp.text();
 }
 
-async function r2Json(env: Env, key: string): Promise<Record<string, unknown>> {
-  const text = await r2Fetch(env, key, 'GET');
+async function r2Json(platform: App.Platform | undefined, key: string): Promise<Record<string, unknown>> {
+  const text = await r2Fetch(platform, key, 'GET');
   const parsed: unknown = JSON.parse(text || '{}');
   if (!parsed || typeof parsed !== 'object') throw new Error('Bad JSON');
   return parsed as Record<string, unknown>;
@@ -116,8 +111,8 @@ async function r2Json(env: Env, key: string): Promise<Record<string, unknown>> {
 
 // --- Section builders (each fail-soft) ---
 
-async function supabaseSection(env: Env): Promise<OpsSnapshot['supabase']> {
-  const { supabaseUrl, serviceKey } = cfg(env);
+async function supabaseSection(platform: App.Platform | undefined): Promise<OpsSnapshot['supabase']> {
+  const { supabaseUrl, serviceKey } = cfg(platform);
   if (!supabaseUrl || !serviceKey) return { error: 'Supabase credentials missing' };
   try {
     const sb = createClient(supabaseUrl, serviceKey);
@@ -138,9 +133,9 @@ async function supabaseSection(env: Env): Promise<OpsSnapshot['supabase']> {
   }
 }
 
-async function vpsSection(env: Env): Promise<OpsSnapshot['vps']> {
+async function vpsSection(platform: App.Platform | undefined): Promise<OpsSnapshot['vps']> {
   try {
-    const stats = await r2Json(env, 'ops/dg_stats.json');
+    const stats = await r2Json(platform, 'ops/dg_stats.json');
     const updated = typeof stats['updated_at'] === 'string' ? (stats['updated_at'] as string) : '';
     let age: number | null = null;
     try {
@@ -150,7 +145,7 @@ async function vpsSection(env: Env): Promise<OpsSnapshot['vps']> {
     }
     let halt = false;
     try {
-      const ctl = await r2Json(env, 'ops/ctl.json');
+      const ctl = await r2Json(platform, 'ops/ctl.json');
       halt = (ctl as Record<string, unknown>)['halt'] === true;
     } catch {
       halt = false;
@@ -171,9 +166,9 @@ async function vpsSection(env: Env): Promise<OpsSnapshot['vps']> {
   }
 }
 
-async function ctlSection(env: Env): Promise<OpsSnapshot['ctl']> {
+async function ctlSection(platform: App.Platform | undefined): Promise<OpsSnapshot['ctl']> {
   try {
-    const ctl = await r2Json(env, 'ops/ctl.json');
+    const ctl = await r2Json(platform, 'ops/ctl.json');
     return {
       halt: ctl['halt'] === true,
       note: typeof ctl['note'] === 'string' ? (ctl['note'] as string).slice(0, 140) : '',
@@ -184,9 +179,9 @@ async function ctlSection(env: Env): Promise<OpsSnapshot['ctl']> {
   }
 }
 
-async function ciSection(env: Env): Promise<OpsSnapshot['ci']> {
+async function ciSection(platform: App.Platform | undefined): Promise<OpsSnapshot['ci']> {
   try {
-    const { githubToken } = cfg(env);
+    const { githubToken } = cfg(platform);
     const headers: Record<string, string> = { Accept: 'application/vnd.github+json' };
     if (githubToken) headers['Authorization'] = `Bearer ${githubToken}`;
     const controller = new AbortController();
@@ -221,12 +216,12 @@ async function ciSection(env: Env): Promise<OpsSnapshot['ci']> {
 }
 
 export async function buildOpsSnapshot(platform: App.Platform | undefined): Promise<OpsSnapshot> {
-  const env = readEnv(platform);
+  
   const [supabase, vps, ctl, ci] = await Promise.all([
-    supabaseSection(env),
-    vpsSection(env),
-    ctlSection(env),
-    ciSection(env)
+    supabaseSection(platform),
+    vpsSection(platform),
+    ctlSection(platform),
+    ciSection(platform)
   ]);
   // Coverage reuses the Supabase count already fetched to avoid a second query.
   let coverage: OpsSnapshot['coverage'];
@@ -234,7 +229,7 @@ export async function buildOpsSnapshot(platform: App.Platform | undefined): Prom
     coverage = { error: 'R2 credentials missing' };
   } else {
     try {
-      const cp = await r2Json(env, 'ops/dg_fetch_checkpoint.json');
+      const cp = await r2Json(platform, 'ops/dg_fetch_checkpoint.json');
       const completed = Array.isArray(cp['completed']) ? (cp['completed'] as unknown[]).length : 0;
       const ft = cp['failed_terminal'];
       const terminal = ft && typeof ft === 'object' ? Object.keys(ft as object).length : 0;
@@ -267,10 +262,10 @@ export async function setCtlHalt(
   halt: boolean,
   note: string
 ): Promise<{ halt: boolean; note: string; updated_at: string }> {
-  const env = readEnv(platform);
+  
   let existing: Record<string, unknown>;
   try {
-    existing = await r2Json(env, 'ops/ctl.json');
+    existing = await r2Json(platform, 'ops/ctl.json');
   } catch {
     existing = {};
   }
@@ -280,6 +275,6 @@ export async function setCtlHalt(
     note: note.slice(0, 140),
     updated_at: new Date().toISOString().replace(/\.\d+Z$/, 'Z')
   };
-  await r2Fetch(env, 'ops/ctl.json', 'PUT', JSON.stringify(doc, null, 2));
+  await r2Fetch(platform, 'ops/ctl.json', 'PUT', JSON.stringify(doc, null, 2));
   return { halt: doc.halt, note: doc.note, updated_at: doc.updated_at };
 }

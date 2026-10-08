@@ -1,4 +1,5 @@
-import { getAdminSecret, isAuthed } from '#lib/server/auth.js';
+import { isAuthed } from '#lib/server/auth.js';
+import { envVal } from '#lib/server/appEnv.js';
 import { normalizeReg, shapeBase, shapeContact } from '#lib/server/contacts.js';
 import { rateLimited } from '#lib/server/rateLimit.js';
 import type { RequestHandler } from './$types';
@@ -46,7 +47,7 @@ export const GET: RequestHandler = async (event) => {
     });
   }
 
-  const adminSecret = getAdminSecret(platform);
+  const adminSecret = envVal(platform, 'ADMIN_SECRET', 'QUOTA_SECRET');
   if (!adminSecret) {
     return new Response('Not configured', { status: 500 });
   }
@@ -59,9 +60,8 @@ export const GET: RequestHandler = async (event) => {
     return new Response('Bad registration number', { status: 400 });
   }
 
-  const env = (platform?.env || {}) as Record<string, string>;
-  const pat = env['SUPABASE_PAT'];
-  const surl = env['SUPABASE_URL'];
+  const pat = envVal(platform, 'SUPABASE_PAT');
+  const surl = envVal(platform, 'SUPABASE_URL');
   if (!pat || !surl) {
     return new Response('Not configured', { status: 500 });
   }

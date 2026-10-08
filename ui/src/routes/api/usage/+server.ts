@@ -1,4 +1,5 @@
-import { getAdminSecret, isAuthed, safeEqual } from '#lib/server/auth.js';
+import { isAuthed, safeEqual } from '#lib/server/auth.js';
+import { envVal } from '#lib/server/appEnv.js';
 import type { UsageReport, ServiceUsage } from '#lib/types.js';
 import type { RequestHandler } from './$types';
 
@@ -104,12 +105,18 @@ async function checkR2(env: Record<string, string>): Promise<ServiceUsage> {
 }
 
 export const GET: RequestHandler = async ({ request, platform, cookies }) => {
-  const env: Record<string, string> = (platform?.env || {}) as Record<string, string>;
+  // Resolve every credential through platform.env first, $app/env second
+  // (adapter-cloudflare v8 does not populate event.platform — appEnv.ts).
+  const env: Record<string, string> = {};
+  for (const key of ['SUPABASE_PAT', 'SUPABASE_URL', 'CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ACCOUNT_ID']) {
+    const v = envVal(platform, key);
+    if (v) env[key] = v;
+  }
 
   // Fail closed. An unconfigured secret must deny everyone — this handler holds
   // an account-level Supabase PAT and can execute SQL, so an open default is
   // not survivable. (CODE_REVIEW.md finding C3.)
-  const adminSecret = getAdminSecret(platform);
+  const adminSecret = envVal(platform, 'ADMIN_SECRET', 'QUOTA_SECRET');
   if (!adminSecret) {
     return new Response('Not configured', { status: 500 });
   }

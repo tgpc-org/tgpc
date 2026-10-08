@@ -88,7 +88,25 @@ export async function isAuthed(
   cookies: { get: (_name: string) => string | undefined },
   platform: App.Platform | undefined
 ): Promise<boolean> {
-  const secret = getAdminSecret(platform);
+  const secret = getAdminSecret(platform) ?? (await appEnvAdminSecret());
   if (!secret) return false;
   return verifySession(cookies.get(SESSION_COOKIE), secret);
+}
+
+/**
+ * $app/env fallback for the admin secret.
+ *
+ * This module must stay importable from `node:test` unit tests (no Vite
+ * resolver for `$app/*` there), so the import is dynamic with a fail-closed
+ * catch: under plain node it resolves to null and platform.env remains the
+ * only source. See `$lib/server/appEnv.ts` for the static-import variant
+ * used by untested handler modules.
+ */
+async function appEnvAdminSecret(): Promise<string | null> {
+  try {
+    const priv = (await import('$app/env/private')) as unknown as Record<string, string | undefined>;
+    return priv['ADMIN_SECRET'] || priv['QUOTA_SECRET'] || null;
+  } catch {
+    return null;
+  }
 }
