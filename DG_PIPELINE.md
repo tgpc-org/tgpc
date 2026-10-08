@@ -44,7 +44,7 @@ retryable failures first, then fresh IDs in serial order (ordering contract:
   lockdown to an already-deployed project.
 * `scripts/dg_dashboard.py` + `scripts/dg_dashboard.html` — stdlib localhost
   watch-only monitor (status/overview/VPS/drift read APIs, log tail; no
-  controls — Halt/Resume live in the admin OPS tab and the terminal).
+  login, no controls — halt/resume live in the terminal).
   TGPC palette only.
 * `tests/test_details_dg.py`, `tests/test_dg_dashboard.py`.
 

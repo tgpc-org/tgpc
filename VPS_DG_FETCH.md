@@ -116,7 +116,7 @@ Checkpoint + stats are pushed to `tgpc-dg-private/ops/` after every batch.
 |---|---|
 | Progress | `ssh ubuntu@<vm> 'python3 -c "import json;s=json.load(open(\"tgpc/data/dg_stats.json\"));print(s.get(\"done\"),s.get(\"failed\"),s.get(\"fail_by_reason\"))"'` |
 | Dashboard | `ssh -L 8899:localhost:8899 ubuntu@<vm>` → `~/tgpc` → `python3 scripts/dg_dashboard.py --port 8899` → open `http://localhost:8899/` |
-| Clean stop | Admin OPS tab Halt (sets the R2 halt flag, loop pauses after current batch) or `touch ~/tgpc/data/dg_halt` (halts after current batch). Resume: OPS tab Resume, or `sudo systemctl restart tgpc-dg-fetch`. |
+| Clean stop | `./scripts/vps_ctl.sh halt [note]` (sets the R2 halt flag, loop pauses after current batch) or `touch ~/tgpc/data/dg_halt` (halts after current batch). Resume: `./scripts/vps_ctl.sh resume`, or `sudo systemctl restart tgpc-dg-fetch`. |
 | No-SSH ops | `scripts/vps_ctl.sh` (Mac) drives the loop over R2 `ops/ctl.json` — the loop polls it every batch: `status` (progress from R2 backups), `halt [note]` / `resume` (pause without SSH/systemd), `exclude CIDR...` (live WARP exclusions), `show`. A broken control read fails OPEN (never stops fetching). |
 | Egress IP | `curl -s https://api.ipify.org` during a run (must differ from the VM's external IP = masked via WARP) |
 | SSH survival | Operator IPs in `TGPC_SSH_EXCLUDE` (`~/.tgpc_env`) bypass the tunnel; tunnel is DOWN between runs (disconnect-on-exit trap) |

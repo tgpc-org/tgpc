@@ -4,8 +4,8 @@ Usage:
     python3 scripts/dg_dashboard.py [--port 8765]
 Then open http://127.0.0.1:8765 in a browser. Single page, auto-refreshes.
 Read-only: it never launches or stops anything — control lives in the
-terminal (./scripts/dg_run.sh, ./scripts/vps_ctl.sh, touch data/dg_stop)
-and in the admin OPS tab. Binds localhost only — never exposed to a network.
+terminal (./scripts/dg_run.sh, ./scripts/vps_ctl.sh, touch data/dg_stop).
+No login, no session. Binds localhost only — never exposed to a network.
 """
 
 import argparse

@@ -530,9 +530,7 @@ Built with SvelteKit 3 + Tailwind CSS v4 + TypeScript.
 | `/notice` | Notices table with year tabs, search, link badges |
 | `/dispatch` | Dispatch PDF grid with year tabs, search |
 | `/rph/[registration_number]` | SSR pharmacist profile page (SEO title/description/OG image, education + work experience sections) |
-| `/admin` | Operator console (USAGE + INTERNAL LINKS + CONTACTS + OPS tabs); payload served server-side only to a valid session |
-| `/api/admin/ops` | GET session-gated full-ops snapshot (Supabase counts + R2 loop/ctl + checkpoint coverage + GH runs; per-section errors) |
-| `/api/admin/ops/ctl` | POST session-gated halt/resume — writes R2 `ops/ctl.json` (loop polls it); loop start stays in terminal |
+| `/admin` | Operator console (USAGE + INTERNAL LINKS + CONTACTS tabs); payload served server-side only to a valid session |
 | `/api/admin` | POST login (rate-limited, constant-time compare) issues an HttpOnly signed-cookie session; DELETE logs out |
 | `/api/usage` | Service quota report; fails closed without `ADMIN_SECRET`/`QUOTA_SECRET`; accepts session cookie or `x-quota-secret` header |
 | `/api/dispatch` | JSON — lists PDFs from R2 bucket (`dispatch/` prefix); stale-flagged fallback list when the binding is unavailable |
