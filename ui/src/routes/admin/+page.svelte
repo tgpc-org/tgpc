@@ -1,6 +1,8 @@
 <script lang="ts">
   import { invalidateAll } from '$app/navigation';
   import type { ContactLookup, UsageReport } from '$lib/types';
+  import type { OpsSnapshot } from '$lib/ops';
+  import { fmtInt } from '$lib/ops';
   import type { PageData } from './$types';
 
   let { data }: { data: PageData } = $props();
@@ -15,7 +17,7 @@
   let show = $state(false);
   let error = $state('');
   let loading = $state(false);
-  let tab = $state<'usage' | 'links' | 'contacts'>('usage');
+  let tab = $state<'usage' | 'links' | 'contacts' | 'ops'>('usage');
   let report = $state<UsageReport | null>(null);
   let usageLoading = $state(false);
   let usageError = $state('');
@@ -115,6 +117,75 @@
   }
 
   let copied = $state('');
+
+  let ops = $state<OpsSnapshot | null>(null);
+  let opsLoading = $state(false);
+  let opsError = $state('');
+  let ctlLoading = $state(false);
+  let ctlError = $state('');
+  let opsTimer: ReturnType<typeof setInterval> | undefined;
+
+  async function loadOps() {
+    opsLoading = true;
+    opsError = '';
+    try {
+      const r = await fetch('/api/admin/ops');
+      if (r.status === 403) {
+        opsError = 'Unauthorized';
+      } else if (r.ok) {
+        ops = (await r.json()) as OpsSnapshot;
+      } else {
+        opsError = 'Server error';
+      }
+    } catch {
+      opsError = 'Connection error';
+    }
+    opsLoading = false;
+  }
+
+  async function setHalt(halt: boolean) {
+    if (ctlLoading) return;
+    const note = halt ? 'halted from admin OPS tab' : 'resumed from admin OPS tab';
+    ctlLoading = true;
+    ctlError = '';
+    try {
+      const r = await fetch('/api/admin/ops/ctl', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ halt, note })
+      });
+      if (!r.ok) {
+        ctlError = r.status === 403 ? 'Unauthorized' : 'Control failed';
+      } else {
+        await loadOps();
+      }
+    } catch {
+      ctlError = 'Connection error';
+    }
+    ctlLoading = false;
+  }
+
+  function startOpsPolling() {
+    stopOpsPolling();
+    opsTimer = setInterval(() => {
+      if (tab === 'ops' && !document.hidden) loadOps();
+    }, 15000);
+  }
+
+  function stopOpsPolling() {
+    if (opsTimer) clearInterval(opsTimer);
+    opsTimer = undefined;
+  }
+
+  $effect(() => {
+    if (tab === 'ops' && authed) {
+      loadOps();
+      startOpsPolling();
+    } else {
+      stopOpsPolling();
+    }
+    return () => stopOpsPolling();
+  });
 
   async function copyUrl(url: string) {
     try {
@@ -226,6 +297,9 @@
         <span style="color:var(--t-border-soft);font-weight:300;padding:0;user-select:none">/</span>
         <button onclick={() => tab = 'contacts'}
           style="text-decoration:none;padding:2px 4px;font-weight:700;color:{tab === 'contacts' ? '#00cc66' : 'var(--t-muted)'};white-space:nowrap;cursor:pointer;border:none;background:transparent">CONTACTS</button>
+        <span style="color:var(--t-border-soft);font-weight:300;padding:0;user-select:none">/</span>
+        <button onclick={() => tab = 'ops'}
+          style="text-decoration:none;padding:2px 4px;font-weight:700;color:{tab === 'ops' ? '#00cc66' : 'var(--t-muted)'};white-space:nowrap;cursor:pointer;border:none;background:transparent">OPS</button>
       </div>
       <button onclick={logout}
         class="shrink-0 text-xs font-semibold px-3 py-1.5 rounded border border-[var(--t-border)] text-[var(--t-muted)] hover:bg-[var(--t-surface-2)] hover:text-[#ef4444] transition-colors">
@@ -322,7 +396,7 @@
             {/each}
           </div>
         </div>
-      {:else}
+      {:else if tab === 'contacts'}
         <div style="flex:1;min-height:0;overflow-y:auto">
           <form onsubmit={(e) => { e.preventDefault(); lookupContact(); }} class="flex items-center gap-2 mb-3">
             <input
@@ -385,6 +459,134 @@
                 </table>
               </div>
             {/if}
+          {/if}
+        </div>
+      {:else if tab === 'ops'}
+        <div style="flex:1;min-height:0;overflow-y:auto">
+          <div class="flex items-center justify-end gap-2 mb-2 whitespace-nowrap">
+            <span class="text-xs text-[var(--t-muted)]">
+              {#if ops?.generated_at}
+                Updated {new Date(ops.generated_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}
+              {/if}
+            </span>
+            <button onclick={loadOps} disabled={opsLoading}
+              class="shrink-0 bg-[#00cc66] text-[var(--t-ink)] text-xs font-semibold px-3 py-1.5 rounded hover:opacity-90 disabled:opacity-50 transition-opacity">
+              {opsLoading ? 'Loading...' : 'Refresh'}
+            </button>
+          </div>
+
+          {#if opsError}
+            <div class="inline-block text-xs text-[var(--t-ink)] bg-[rgba(239,68,68,0.12)] rounded px-2 py-1 mb-4">{opsError}</div>
+          {/if}
+          {#if ctlError}
+            <div class="inline-block text-xs text-[var(--t-ink)] bg-[rgba(239,68,68,0.12)] rounded px-2 py-1 mb-4 ml-2">{ctlError}</div>
+          {/if}
+
+          {#if ops}
+            <div class="mb-5 border border-[var(--t-border)] rounded-lg overflow-hidden">
+              <div class="bg-[var(--t-surface-2)] px-3 py-2 font-semibold text-sm border-b border-[var(--t-border)]">Registry</div>
+              <table class="w-full text-xs">
+                <tbody>
+                  <tr class="border-b border-[var(--t-border)]">
+                    <td class="px-3 py-1.5 text-[var(--t-muted)]">rph rows</td>
+                    <td class="px-3 py-1.5 text-right font-mono">{ops.supabase.error ? ops.supabase.error : fmtInt(ops.supabase.rph)}</td>
+                  </tr>
+                  <tr class="border-b border-[var(--t-border)]">
+                    <td class="px-3 py-1.5 text-[var(--t-muted)]">DG contacts</td>
+                    <td class="px-3 py-1.5 text-right font-mono">{ops.supabase.error ? ops.supabase.error : fmtInt(ops.supabase.rph_dg_contacts)}</td>
+                  </tr>
+                  <tr>
+                    <td class="px-3 py-1.5 text-[var(--t-muted)]">last_sync</td>
+                    <td class="px-3 py-1.5 text-right font-mono">{ops.supabase.last_sync ? ops.supabase.last_sync.slice(0, 16).replace('T', ' ') : '—'}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="mb-5 border border-[var(--t-border)] rounded-lg overflow-hidden">
+              <div class="bg-[var(--t-surface-2)] px-3 py-2 font-semibold text-sm border-b border-[var(--t-border)]">DG coverage</div>
+              {#if 'error' in ops.coverage}
+                <div class="px-3 py-3 text-xs text-[var(--t-ink)] bg-[rgba(239,68,68,0.12)]">{ops.coverage.error}</div>
+              {:else}
+                <table class="w-full text-xs">
+                  <tbody>
+                    <tr class="border-b border-[var(--t-border)]">
+                      <td class="px-3 py-1.5 text-[var(--t-muted)]">Completed</td>
+                      <td class="px-3 py-1.5 text-right font-mono">{fmtInt(ops.coverage.completed)}</td>
+                    </tr>
+                    <tr class="border-b border-[var(--t-border)]">
+                      <td class="px-3 py-1.5 text-[var(--t-muted)]">Refused at source</td>
+                      <td class="px-3 py-1.5 text-right font-mono">{fmtInt(ops.coverage.terminal)}</td>
+                    </tr>
+                    <tr class="border-b border-[var(--t-border)]">
+                      <td class="px-3 py-1.5 text-[var(--t-muted)]">To go</td>
+                      <td class="px-3 py-1.5 text-right font-mono">{fmtInt(ops.coverage.uncovered)}</td>
+                    </tr>
+                    <tr>
+                      <td class="px-3 py-1.5 text-[var(--t-muted)]">Resolved</td>
+                      <td class="px-3 py-1.5 text-right font-mono">{ops.coverage.pct_resolved ?? '—'}%</td>
+                    </tr>
+                  </tbody>
+                </table>
+              {/if}
+            </div>
+
+            <div class="mb-5 border border-[var(--t-border)] rounded-lg overflow-hidden">
+              <div class="bg-[var(--t-surface-2)] px-3 py-2 font-semibold text-sm border-b border-[var(--t-border)]">VPS fetch loop</div>
+              {#if 'error' in ops.vps && ops.vps.error}
+                <div class="px-3 py-3 text-xs text-[var(--t-ink)] bg-[rgba(239,68,68,0.12)]">{ops.vps.error}</div>
+              {:else}
+                <table class="w-full text-xs">
+                  <tbody>
+                    <tr class="border-b border-[var(--t-border)]">
+                      <td class="px-3 py-1.5 text-[var(--t-muted)]">Batch saved / failed</td>
+                      <td class="px-3 py-1.5 text-right font-mono">{fmtInt(ops.vps.done)} / {fmtInt(ops.vps.failed)}</td>
+                    </tr>
+                    <tr class="border-b border-[var(--t-border)]">
+                      <td class="px-3 py-1.5 text-[var(--t-muted)]">Heartbeat</td>
+                      <td class="px-3 py-1.5 text-right font-mono">{ops.vps.updated_at ? ops.vps.updated_at.slice(0, 16).replace('T', ' ') : '—'}{ops.vps.age_min != null ? ` (${ops.vps.age_min}m ago)` : ''}</td>
+                    </tr>
+                    <tr>
+                      <td class="px-3 py-1.5 text-[var(--t-muted)]">State</td>
+                      <td class="px-3 py-1.5 text-right font-mono">{ops.vps.alive ? 'RUNNING' : ops.vps.halt ? 'HALTED' : 'idle'}</td>
+                    </tr>
+                  </tbody>
+                </table>
+                <div class="flex items-center gap-2 px-3 py-2">
+                  <button onclick={() => setHalt(true)} disabled={ctlLoading}
+                    class="shrink-0 text-xs font-semibold px-3 py-1.5 rounded border border-[rgba(239,68,68,0.35)] text-[var(--t-ink)] bg-[rgba(239,68,68,0.12)] hover:opacity-90 disabled:opacity-50 transition-opacity">
+                    {ctlLoading ? 'Working...' : 'Halt loop'}
+                  </button>
+                  <button onclick={() => setHalt(false)} disabled={ctlLoading}
+                    class="shrink-0 bg-[#00cc66] text-[var(--t-ink)] text-xs font-semibold px-3 py-1.5 rounded hover:opacity-90 disabled:opacity-50 transition-opacity">
+                    {ctlLoading ? 'Working...' : 'Resume loop'}
+                  </button>
+                  <span class="text-xs text-[var(--t-muted)]">Applies next batch (R2 control channel). Loop start stays in terminal.</span>
+                </div>
+              {/if}
+            </div>
+
+            <div class="mb-5 border border-[var(--t-border)] rounded-lg overflow-hidden">
+              <div class="bg-[var(--t-surface-2)] px-3 py-2 font-semibold text-sm border-b border-[var(--t-border)]">CI runs</div>
+              {#if 'error' in ops.ci}
+                <div class="px-3 py-3 text-xs text-[var(--t-ink)] bg-[rgba(239,68,68,0.12)]">{ops.ci.error}</div>
+              {:else if ops.ci.length === 0}
+                <div class="px-3 py-3 text-xs text-[var(--t-muted)]">No runs found.</div>
+              {:else}
+                <table class="w-full text-xs">
+                  <tbody>
+                    {#each ops.ci as run (run.name + run.created_at)}
+                      <tr class="border-b border-[var(--t-border)] last:border-b-0">
+                        <td class="px-3 py-1.5 font-mono">{run.name} ({run.branch})</td>
+                        <td class="px-3 py-1.5 text-right font-mono">{run.result} · {run.created_at}</td>
+                      </tr>
+                    {/each}
+                  </tbody>
+                </table>
+              {/if}
+            </div>
+          {:else if !opsLoading && !opsError}
+            <div class="px-3 py-3 text-xs text-[var(--t-muted)]">No ops data yet.</div>
           {/if}
         </div>
       {/if}

@@ -59,7 +59,7 @@ tgpc/
 │   ├── merge_refresh.py            # Post-scrape recompute of DG-merged rph columns (idempotent, warn-and-continue)
 │   └── dg_migration.sql            # rph_dg_contacts table DDL (service-role only, no anon grants)
 ├── scripts/                        # Standalone helpers (run from repo root)
-│   ├── dg_dashboard.py             # Local DG fetch monitor: localhost HTTP server serving dg_dashboard.html
+│   ├── dg_dashboard.py             # Local DG fetch monitor (watch-only localhost HTTP server serving dg_dashboard.html)
 │   ├── dg_dashboard.html           # DG monitor UI (dark mode, start/stop, live stats)
 │   ├── dg_captcha_bench.py         # Fetch N live DG captchas, OCR-guess, dump for human labeling
 │   ├── vps_bootstrap.sh            # One-time cloud VM setup (apt, WARP, clone, rph.json, ~/.tgpc_env)
@@ -530,7 +530,9 @@ Built with SvelteKit 5 + Tailwind CSS v4 + TypeScript.
 | `/notice` | Notices table with year tabs, search, link badges |
 | `/dispatch` | Dispatch PDF grid with year tabs, search |
 | `/rph/[registration_number]` | SSR pharmacist profile page (SEO title/description/OG image, education + work experience sections) |
-| `/admin` | Operator console (usage report + internal TGPC links); payload served server-side only to a valid session |
+| `/admin` | Operator console (USAGE + INTERNAL LINKS + CONTACTS + OPS tabs); payload served server-side only to a valid session |
+| `/api/admin/ops` | GET session-gated full-ops snapshot (Supabase counts + R2 loop/ctl + checkpoint coverage + GH runs; per-section errors) |
+| `/api/admin/ops/ctl` | POST session-gated halt/resume — writes R2 `ops/ctl.json` (loop polls it); loop start stays in terminal |
 | `/api/admin` | POST login (rate-limited, constant-time compare) issues an HttpOnly signed-cookie session; DELETE logs out |
 | `/api/usage` | Service quota report; fails closed without `ADMIN_SECRET`/`QUOTA_SECRET`; accepts session cookie or `x-quota-secret` header |
 | `/api/dispatch` | JSON — lists PDFs from R2 bucket (`dispatch/` prefix); stale-flagged fallback list when the binding is unavailable |
