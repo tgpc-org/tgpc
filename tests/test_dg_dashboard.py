@@ -99,6 +99,8 @@ class DashboardTests(unittest.TestCase):
             "/api/vps/restart",
             "/api/vps/exclusions",
             "/api/vps/launchlog",
+            'id="vps-fetch-log"',
+            "/api/vps/log",
         ):
             self.assertIn(needle, html)
         for gone in ('id="start"', 'id="stop"', "startRun()", "stopRun()", "/api/start"):

@@ -519,6 +519,33 @@ def restart_loop_service(vm: str) -> dict:
         return {"ok": False, "error": str(e)[:160]}
 
 
+def vps_fetch_log(vm: str, n: int = 40) -> dict:
+    """Tail the VM's fetch log over SSH. Never raises — errors become {"error": ...}."""
+    try:
+        proc = subprocess.run(
+            [
+                "ssh",
+                "-o",
+                "BatchMode=yes",
+                "-o",
+                "ConnectTimeout=15",
+                vm,
+                "tail",
+                "-n",
+                str(max(1, min(n, 100))),
+                "tgpc/data/dg_fetch.log",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if proc.returncode != 0:
+            return {"error": (proc.stderr.strip() or "log unavailable")[:160]}
+        return {"lines": proc.stdout.splitlines()[-n:]}
+    except Exception as e:
+        return {"error": str(e)[:160]}
+
+
 class Handler(BaseHTTPRequestHandler):
     data_dir: Path = DATA
 
@@ -554,6 +581,12 @@ class Handler(BaseHTTPRequestHandler):
             )
         elif self.path == "/api/vps/launchlog":
             self._send(json.dumps(tail_lines(VPS_LAUNCH_LOG, 60)).encode(), "application/json")
+        elif self.path == "/api/vps/log":
+            vm = read_vm()
+            if not vm or "@" not in vm:
+                self._send(b'{"error": "VM not configured"}', "application/json")
+            else:
+                self._send(json.dumps(vps_fetch_log(vm)).encode(), "application/json")
         elif self.path == "/api/overview":
             self._send(json.dumps(build_overview()).encode(), "application/json")
         else:

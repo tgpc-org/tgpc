@@ -100,6 +100,8 @@
     <button id="vps-resume" onclick="resumeVps()" style="background:#00cc66">UNPAUSE VPS</button>
     <button id="vps-restart" onclick="restartVps()">RESTART VPS LOOP</button>
   </div>
+  <h3>What is the cloud computer saying? <span class="hint">— newest at the bottom</span></h3>
+  <pre id="vps-fetch-log">starts showing once the computer is saved and reachable…</pre>
   <details>
     <summary>Rarely needed: SSH safety list, launcher output</summary>
     <div class="row" style="margin-top:8px">
@@ -226,6 +228,12 @@ async function refreshVps() {
     const lines = await (await fetch('/api/vps/launchlog')).json();
     const pre = document.getElementById('vps-log');
     if (lines.length) { pre.textContent = lines.join('\n'); pre.scrollTop = pre.scrollHeight; }
+    try {
+      const log = await (await fetch('/api/vps/log')).json();
+      const fpre = document.getElementById('vps-fetch-log');
+      if (log.lines && log.lines.length) { fpre.textContent = log.lines.join('\n'); fpre.scrollTop = fpre.scrollHeight; }
+      else if (log.error) { fpre.textContent = 'Log unavailable: ' + log.error; }
+    } catch (e) { /* log follows next tick */ }
   } catch (e) { /* retry next tick */ }
 }
 async function saveVm() {
