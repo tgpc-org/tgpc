@@ -100,6 +100,9 @@ class DashboardTests(unittest.TestCase):
             'id="vps-resume"',
             'id="vps-restart"',
             'id="vps-excl"',
+            'id="vps-vm-input"',
+            'id="vps-vm-save"',
+            "/api/vm",
             "/api/vps/resume",
             "/api/vps/restart",
             "/api/vps/exclusions",
@@ -180,6 +183,26 @@ class DashboardTests(unittest.TestCase):
             self.assertEqual(len(tail), 30)
             self.assertEqual(tail[0], "line 20")
             self.assertEqual(tail_lines(Path(tmp) / "missing.log"), [])
+
+    def test_write_vm_validation(self):
+        import tempfile
+
+        from scripts.dg_dashboard import VM_FILE, write_vm
+
+        self.assertFalse(write_vm("not a host")["ok"])
+        self.assertFalse(write_vm("user@ho st")["ok"])
+        self.assertFalse(write_vm("a;b@c")["ok"])
+        with tempfile.TemporaryDirectory() as tmp:
+            real = VM_FILE
+            try:
+                import scripts.dg_dashboard as dash
+
+                dash.VM_FILE = Path(tmp) / "vm.conf"
+                res = write_vm("tester@35.200.132.91")
+                self.assertTrue(res["ok"])
+                self.assertEqual(Path(tmp, "vm.conf").read_text().strip(), "tester@35.200.132.91")
+            finally:
+                dash.VM_FILE = real
 
     def test_ist_day_format(self):
         self.assertEqual(to_ist_day("2026-09-18T12:15:45Z"), "Fri-18-09-2026 17:45 IST")

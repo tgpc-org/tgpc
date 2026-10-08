@@ -101,7 +101,12 @@
   </div>
 
   <h3>Is the cloud computer working? <span class="hint">— the VPS loop</span></h3>
-  <div class="row"><span class="muted" id="vps-vm">VM: —</span></div>
+  <div class="row"><span class="muted" id="vps-vm">Computer: —</span></div>
+  <div class="row">
+    <input id="vps-vm-input" placeholder="Your cloud computer, e.g. ubuntu@35.200.132.91" autocomplete="off" spellcheck="false"
+           style="flex:1;min-width:200px;padding:7px;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--ink)">
+    <button id="vps-vm-save" onclick="saveVm()">SAVE COMPUTER</button>
+  </div>
   <div class="cards">
     <div class="card"><div class="label">Loop state</div><div class="value" id="vps-loop">—</div></div>
     <div class="card"><div class="label">Saved over there</div><div class="value green" id="vps-done">—</div></div>
@@ -264,8 +269,11 @@ async function refreshVps() {
   try {
     const s = await (await fetch('/api/vps/status')).json();
     document.getElementById('vps-vm').textContent =
-      'Computer: ' + (s.vm_configured ? s.vm : 'not set — run: export DG_VM=user@host, then restart this page') +
+      'Computer: ' + (s.vm_configured ? s.vm + ' — saved, survives restarts' : 'not told yet — type it below once, it is remembered') +
       (s.launch_running ? ' · launcher running' : '');
+    if (s.vm_configured && !document.getElementById('vps-vm-input').value) {
+      document.getElementById('vps-vm-input').value = s.vm;
+    }
     const v = s.vps || {};
     if (v.error) {
       document.getElementById('vps-done').textContent = '—';
@@ -294,6 +302,18 @@ async function refreshVps() {
     const pre = document.getElementById('vps-log');
     if (lines.length) { pre.textContent = lines.join('\n'); pre.scrollTop = pre.scrollHeight; }
   } catch (e) { /* retry next tick */ }
+}
+async function saveVm() {
+  const vm = document.getElementById('vps-vm-input').value;
+  const msg = document.getElementById('vps-msg');
+  msg.textContent = 'saving…';
+  try {
+    const r = await (await fetch('/api/vm', {method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({vm})})).json();
+    msg.textContent = r.ok ? 'computer saved — it stays set from now on' : ('not saved: ' + (r.error || 'refused'));
+  } catch (e) { msg.textContent = 'save failed'; }
+  refreshVps();
 }
 async function startVps() {
   const w = document.getElementById('vps-workers').value;

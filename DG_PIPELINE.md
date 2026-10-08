@@ -43,9 +43,10 @@ retryable failures first, then fresh IDs in serial order (ordering contract:
   on purpose). Re-run the whole file safely — re-running also applies the PII
   lockdown to an already-deployed project.
 * `scripts/dg_dashboard.py` + `scripts/dg_dashboard.html` — stdlib localhost
-  dashboard, no login: live status/log plus every control — local
-  START/STOP (with re-probe-refused option), VPS START/STOP/RESUME/RESTART
-  and SSH exclusions over the R2 channel. TGPC palette only.
+  dashboard, no login (`./scripts/dg_open.sh` starts it and opens the
+  browser): live status/log plus every control — local START/STOP (with
+  re-probe-refused option), VPS START/STOP/RESUME/RESTART, VM address and
+  SSH exclusions over the R2 channel. TGPC palette only.
 * `tests/test_details_dg.py`, `tests/test_dg_dashboard.py`.
 
 ## State files (all gitignored, local crash buffer only)

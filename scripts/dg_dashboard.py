@@ -10,6 +10,7 @@ SSH exclusions. Binds localhost only — never exposed to a network.
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
@@ -206,6 +207,22 @@ def read_vm() -> str:
         return VM_FILE.read_text(encoding="utf-8").strip().split()[0]
     except Exception:
         return ""
+
+
+def write_vm(vm: str) -> dict:
+    """Persist the VM address to data/dg_vm.conf. Validates user@host shape.
+
+    Only letters, digits and `._-:` around a single `@` — no whitespace or
+    shell metacharacters, since the value is interpolated into ssh commands.
+    """
+    clean = (vm or "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9._-]+@[A-Za-z0-9._:-]+", clean):
+        return {"ok": False, "error": "use the form user@host (no spaces)"}
+    try:
+        VM_FILE.write_text(clean + "\n", encoding="utf-8")
+        return {"ok": True, "vm": clean}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:120]}
 
 
 def _cred(name: str) -> str:
@@ -613,6 +630,11 @@ class Handler(BaseHTTPRequestHandler):
             ok = "error" not in ctl
             audit("vps-exclusions", f"ok={ok}")
             self._send(json.dumps({"ok": ok, "ctl": ctl}).encode(), "application/json")
+        elif self.path == "/api/vm":
+            body = self._read_json_body()
+            res = write_vm(str(body.get("vm", "")))
+            audit("vm-save", f"ok={res.get('ok')}")
+            self._send(json.dumps(res).encode(), "application/json")
         elif self.path == "/api/vps/start":
             body = self._read_json_body()
             try:
