@@ -18,8 +18,8 @@ DG_VM ?= $(shell cat data/dg_vm.conf 2>/dev/null)
 dg-start:  # Start fetching (preflight + guards + loop)
 	DG_VM=$(DG_VM) ./scripts/dg_run.sh --retry-terminal
 
-dg-stop:  # Pause after the current batch (optional reason: make dg-stop MSG="lunch")
-	./scripts/vps_ctl.sh halt "$(MSG)"
+dg-stop:  # Stop the fetch immediately (sets halt flag)
+	./scripts/vps_ctl.sh stop "$(MSG)"
 
 dg-resume:  # Unpause the loop
 	./scripts/vps_ctl.sh resume

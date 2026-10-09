@@ -93,6 +93,40 @@ s3.upload_file("/tmp/r2_ctl.json", b, "ops/ctl.json")
 print("ctl.json updated:", json.dumps(ctl))
 PYEOF
     ;;
+  stop)
+    # Immediate stop: kill the running fetch process on the VM right now,
+    # then set halt flag so loop never restarts.
+    echo "Stopping fetch on VM…"
+    # Try systemctl stop first (best-case), then pkill (failsafe). Ignore any errors.
+    (gcloud compute ssh tgpc-dg-fetch --zone=asia-south1-c --tunnel-through-iap \
+      --command="systemctl stop tgpc-dg-fetch 2>/dev/null; echo systemctl_done" 2>/dev/null || true)
+    (gcloud compute ssh tgpc-dg-fetch --zone=asia-south1-c --tunnel-through-iap \
+      --command="pkill -f vps_fetch.sh 2>/dev/null || echo no_process; echo pkill_done" 2>/dev/null || true)
+    # Then set the halt flag in R2 so the loop never restarts on its own.
+    _py "$1" "$2" <<'PYEOF'
+import os, sys, json, datetime
+from tgpc.utils import _get_keychain
+import boto3
+b = os.environ["R2_BUCKET"]
+rest = sys.argv[2] if len(sys.argv) > 2 else "immediate stop"
+e = {n: os.environ.get(n) or _get_keychain(n) for n in
+     ("R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "CLOUDFLARE_ACCOUNT_ID")}
+s3 = boto3.client("s3", endpoint_url=f"https://{e['CLOUDFLARE_ACCOUNT_ID']}.r2.cloudflarestorage.com",
+                  aws_access_key_id=e["R2_ACCESS_KEY_ID"], aws_secret_access_key=e["R2_SECRET_ACCESS_KEY"])
+try:
+    s3.download_file(b, "ops/ctl.json", "/tmp/r2_ctl.json")
+    ctl = json.load(open("/tmp/r2_ctl.json"))
+except Exception:
+    ctl = {"halt": False, "ssh_exclude": "", "updated_at": "", "note": ""}
+ctl["halt"] = True
+ctl["note"] = rest
+ctl["updated_at"] = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+open("/tmp/r2_ctl.json", "w").write(json.dumps(ctl, indent=2))
+s3.upload_file("/tmp/r2_ctl.json", b, "ops/ctl.json")
+print("ctl.json updated:", json.dumps(ctl))
+PYEOF
+    echo "Done. Halt flag set in R2 ctl.json."
+    ;;
   *)
     echo "usage: $0 {status|show|halt [note]|resume|exclude CIDR...}" >&2
     exit 2
