@@ -1,4 +1,7 @@
-.PHONY: scrape sync quota dg-status dg-watch dg-start dg-halt dg-resume dg-vm dg-ssh dg-open
+.PHONY: scrape sync quota help dg-status dg-watch dg-start dg-halt dg-resume dg-vm dg-ssh dg-open
+
+help:  # List all commands
+	@grep -E '^[a-z-]+:  #' $(MAKEFILE_LIST) | sed 's/:  #/ — /'
 
 scrape:  # Scrape TGPC → sync all destinations → enrich new records
 	python3 -m tgpc update
