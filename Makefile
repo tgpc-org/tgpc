@@ -15,8 +15,11 @@ help:  # List all commands
 # DG contact collection: the VM does the fetching.
 DG_VM ?= $(shell cat data/dg_vm.conf 2>/dev/null)
 
-dg-start:  # Start fetching (preflight + guards + loop)
-	DG_VM=$(DG_VM) ./scripts/dg_run.sh --retry-terminal
+dg-start:  # Start fetching (stops any running loop first, then starts fresh)
+	@echo "Stopping any running fetch loop first..."
+	@./scripts/vps_ctl.sh stop "pre-start" 2>/dev/null || true
+	@sleep 2
+	DG_VM=$(DG_VM) ./scripts/dg_run.sh --retry-terminal --restart
 
 dg-stop:  # Stop the fetch immediately (sets halt flag)
 	./scripts/vps_ctl.sh stop "$(MSG)"
