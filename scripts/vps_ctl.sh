@@ -11,6 +11,10 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+if [ -z "${TGPC_R2_DG_BUCKET:-}" ]; then
+  # Fall back to the macOS Keychain (same convention as the python loader).
+  TGPC_R2_DG_BUCKET=$(python3 -c "from tgpc.utils import _get_keychain; print(_get_keychain('TGPC_R2_DG_BUCKET') or '')" 2>/dev/null)
+fi
 : "${TGPC_R2_DG_BUCKET:?set TGPC_R2_DG_BUCKET (or source ~/.tgpc_env / use keychain env)}"
 
 _py() {
