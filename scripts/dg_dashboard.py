@@ -254,36 +254,51 @@ def vps_state() -> dict:
         return {"error": str(e)[:160]}
 
 
+_DRIFT_CACHE: dict = {"at": 0.0, "data": None}
+DRIFT_TTL = 300.0  # drift moves only when batches land — never per poll
+
+
 def drift_state() -> dict:
-    """Local checkpoint completed vs Supabase DG rows. Never raises."""
+    """Local checkpoint completed vs Supabase DG rows. Never raises.
+
+    Single exact-count query (no row transfer) + 5-min cache: the old
+    paged count fired ~18 requests per dashboard poll and was the main
+    source of page jitter.
+    """
+    import time as _time
+
+    now = _time.time()
+    if _DRIFT_CACHE["data"] is not None and now - _DRIFT_CACHE["at"] < DRIFT_TTL:
+        return _DRIFT_CACHE["data"]
     try:
         local = len(load_json(DATA / "dg_fetch_checkpoint.json").get("completed", []))
     except Exception:
         return {"error": "local checkpoint unreadable"}
     try:
-        from supabase import create_client  # noqa: PLC0415
+        import urllib.request  # noqa: PLC0415
 
         url = _cred("SUPABASE_URL")
         key = _cred("SUPABASE_SECRET_KEY")
         if not url or not key:
             return {"local_completed": local, "error": "Supabase credentials missing"}
-        sb = create_client(url, key)
-        n, off = 0, 0
-        while True:
-            page = (
-                sb.table("rph_dg_contacts")
-                .select("registration_number")
-                .order("registration_number")
-                .range(off, off + 1999)
-                .execute()
-                .data
-                or []
-            )
-            n += len(page)
-            if len(page) < 2000:
-                break
-            off += 2000
-        return {"local_completed": local, "db_rows": n, "drift": n - local}
+        req = urllib.request.Request(
+            f"{url}/rest/v1/rph_dg_contacts?select=registration_number",
+            headers={
+                "apikey": key,
+                "Authorization": f"Bearer {key}",
+                "Prefer": "count=exact",
+                "Range": "0-0",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            total = resp.headers.get("Content-Range", "").split("/")[-1]
+            n = int(total) if total.isdigit() else -1
+        if n < 0:
+            return {"local_completed": local, "error": "count unavailable"}
+        out = {"local_completed": local, "db_rows": n, "drift": n - local}
+        _DRIFT_CACHE["at"] = now
+        _DRIFT_CACHE["data"] = out
+        return out
     except Exception as e:
         return {"local_completed": local, "error": str(e)[:160]}
 

@@ -186,7 +186,9 @@ async function refreshOverview() {
 }
 setInterval(refreshOverview, 30000);
 refreshOverview();
+let vpsTick = 0;
 async function refreshVps() {
+  vpsTick += 1;
   try {
     const s = await (await fetch('/api/vps/status')).json();
     document.getElementById('vps-vm').textContent =
@@ -229,12 +231,15 @@ async function refreshVps() {
     const lines = await (await fetch('/api/vps/launchlog')).json();
     const pre = document.getElementById('vps-log');
     if (lines.length) { pre.textContent = lines.join('\n'); pre.scrollTop = pre.scrollHeight; }
-    try {
-      const log = await (await fetch('/api/vps/log')).json();
-      const fpre = document.getElementById('vps-fetch-log');
-      if (log.lines && log.lines.length) { fpre.textContent = log.lines.join('\n'); fpre.scrollTop = fpre.scrollHeight; }
-      else if (log.error) { fpre.textContent = 'Log unavailable: ' + log.error; }
-    } catch (e) { /* log follows next tick */ }
+    // The VM log costs an SSH handshake — refresh it every third tick (~15s).
+    if (vpsTick % 3 === 0) {
+      try {
+        const log = await (await fetch('/api/vps/log')).json();
+        const fpre = document.getElementById('vps-fetch-log');
+        if (log.lines && log.lines.length) { fpre.textContent = log.lines.join('\n'); fpre.scrollTop = fpre.scrollHeight; }
+        else if (log.error) { fpre.textContent = 'Log unavailable: ' + log.error; }
+      } catch (e) { /* log follows next tick */ }
+    }
   } catch (e) { /* retry next tick */ }
 }
 async function saveVm() {
