@@ -100,9 +100,10 @@ gscp_to() { # gscp_to <local> <remote-path-under-VM_HOME>
   fi
 }
 
-# Run a remote command as the fetch user (owns checkout + data dir).
+# Run a remote command as the fetch user (owns checkout + data dir), starting
+# inside the checkout so relative data/ paths resolve.
 gfetch() {
-  gssh "sudo -n -u $VM_USER VM_HOME=$VM_HOME bash -lc '$*'"
+  gssh "sudo -n -u $VM_USER VM_HOME=$VM_HOME bash -lc 'cd \$VM_HOME/tgpc && $*'"
 }
 
 fail() { echo "ABORT: $1" >&2; exit 1; }
