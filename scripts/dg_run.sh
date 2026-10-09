@@ -139,7 +139,8 @@ if gssh 'sudo -n systemctl is-active --quiet tgpc-dg-fetch' 2>/dev/null; then
   echo "loop active, --restart given — will restart after refresh."
 fi
 
-echo "=== [3/7] pushing inputs (rph.json + checkpoint) ==="
+echo "=== [3/7] pushing inputs (code + rph.json + checkpoint) ==="
+gfetch 'cd $VM_HOME/tgpc && git pull -q 2>&1 | tail -1 || echo "WARN: git pull failed — loop runs last-pulled code"'
 gscp_to data/rph.json tgpc/data/rph.json
 gscp_to data/dg_fetch_checkpoint.json tgpc/data/dg_fetch_checkpoint.json
 echo "pushed."

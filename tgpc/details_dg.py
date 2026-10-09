@@ -1099,6 +1099,8 @@ def run_fetch(
             next_serial=serial_of(upcoming) if upcoming else None,
             remaining_in_batch=remaining,
             index=f"{processed}/{len(todo)}",
+            overall_done=stats["already_done"] + processed,
+            overall_total=stats["already_done"] + len(todo),
             event=event,
             done=stats["done"],
             failed=stats["failed"],
@@ -1180,7 +1182,10 @@ def run_fetch(
                         break
             bar.set_detail(reg)
             step(f"fetching {reg}")
-            logger.info(f"fetching {reg} ({processed + 1}/{len(todo)})")
+            overall = stats["already_done"] + processed + 1
+            overall_total = stats["already_done"] + len(todo)
+            serial = serial_of(reg)
+            logger.info(f"fetching {reg} (#{serial} · {overall}/{overall_total} this run)")
             live_snapshot(reg, "fetching")
             t0 = time.monotonic()
             ensure_submitted(idx + DG_WORKERS)
