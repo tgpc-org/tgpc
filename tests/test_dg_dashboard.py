@@ -70,7 +70,7 @@ class DashboardTests(unittest.TestCase):
         from scripts.dg_dashboard import PAGE
 
         html = PAGE.read_text(encoding="utf-8")
-        for needle in ("How far along are we?", "Contact details saved", "Finished: ", "plainReason", 'id="state"'):
+        for needle in ("Advanced:", "Contact details saved", "plainReason", 'id="state"', 'id="bigstate"'):
             self.assertIn(needle, html)
         for gone in ("checkpoint:", " terminal'", "Held for review", 'id="quar"', "In cloud database", 'id="sb"'):
             self.assertNotIn(gone, html)

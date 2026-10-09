@@ -26,6 +26,9 @@
   header h1 { font-size: 15px; margin: 0; font-weight: 600; }
   header h1 span { color: #9ca3af; font-weight: 400; font-size: 13px; }
   #state { font-size: 12px; color: #9ca3af; }
+  #bigstate { font-size: 26px; font-weight: 800; margin: 6px 0 0; flex-shrink: 0; }
+  #bigstate.ok { color: #00cc66; } #bigstate.bad { color: #ef4444; } #bigstate.idle { color: var(--muted); }
+  #bigsub { font-size: 13px; color: var(--muted); margin: 0 0 6px; flex-shrink: 0; }
   main { flex: 1; min-height: 0; max-width: 960px; width: 100%; margin: 0 auto; padding: 10px 16px 8px; box-sizing: border-box; display: flex; flex-direction: column; overflow-y: auto; }
   .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-bottom: 8px; flex-shrink: 0; }
   .card { background: var(--card); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; }
@@ -59,52 +62,55 @@
   <button id="theme-toggle" onclick="toggleTheme()">Dark</button>
 </header>
 <main>
-  <h3>How far along are we? <span class="hint">— out of every pharmacist in the master list</span></h3>
+  <div id="bigstate" class="idle">starting…</div>
+  <div id="bigsub">asking the cloud computer…</div>
+
   <div class="bar-wrap"><div class="bar" id="ov-bar"></div></div>
   <div class="row"><span class="muted" id="ov-cover">loading…</span></div>
-  <div class="cards">
-    <div class="card"><div class="label">Contact details saved</div><div class="value blue" id="ov-dg">—</div></div>
-    <div class="card"><div class="label">Site refuses to share</div><div class="value red" id="ov-refused">—</div></div>
-    <div class="card"><div class="label">Still to try</div><div class="value" id="ov-left-count">—</div></div>
-    <div class="card"><div class="label">Master list size</div><div class="value" id="ov-local">—</div></div>
-  </div>
-  <div class="row"><span class="muted" id="ov-left"></span></div>
-  <div class="row"><span class="muted">Cloud copy: <span id="ov-cloud">—</span> · Last full sync: <span id="ov-sync">—</span></span></div>
-  <div class="reasons" id="ov-ci"></div>
 
-  <h3>Is the cloud computer working? <span class="hint">— it does all the fetching</span></h3>
-  <div class="row"><span class="muted" id="vps-vm">Computer: —</span></div>
   <div class="row">
-    <input id="vps-vm-input" placeholder="Just your computer login name — it lives at 35.200.132.91" autocomplete="off" spellcheck="false"
-           style="flex:1;min-width:200px;padding:7px;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--ink)">
-    <button id="vps-vm-save" onclick="saveVm()">SAVE COMPUTER</button>
-  </div>
-  <div class="cards">
-    <div class="card"><div class="label">Loop state</div><div class="value" id="vps-loop">—</div></div>
-    <div class="card"><div class="label">Saved over there</div><div class="value green" id="vps-done">—</div></div>
-    <div class="card"><div class="label">Refused over there</div><div class="value red" id="vps-failed">—</div></div>
-    <div class="card"><div class="label">Cloud ahead by</div><div class="value" id="vps-drift">—</div></div>
-  </div>
-  <div class="row">
-    <button id="vps-start" onclick="startVps()" style="background:#00cc66">START VPS FETCHING</button>
-    <select id="vps-workers" style="padding:7px;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--ink)">
-      <option value="4">4 at once</option>
-      <option value="8" selected>8 at once</option>
-      <option value="12">12 at once</option>
-      <option value="16">16 at once (max)</option>
-    </select>
-    <label class="muted" style="font-size:12px"><input type="checkbox" id="vps-retry"> include refused ones</label>
+    <button id="vps-start" onclick="startVps()" style="background:#00cc66">START FETCHING</button>
+    <button id="vps-stop" onclick="stopVps()">PAUSE</button>
+    <button id="vps-resume" onclick="resumeVps()" style="background:#00cc66">UNPAUSE</button>
     <span class="muted" id="vps-msg"></span>
   </div>
-  <div class="row">
-    <button id="vps-stop" onclick="stopVps()">PAUSE VPS</button>
-    <button id="vps-resume" onclick="resumeVps()" style="background:#00cc66">UNPAUSE VPS</button>
-    <button id="vps-restart" onclick="restartVps()">RESTART VPS LOOP</button>
-  </div>
-  <h3>What is the cloud computer saying? <span class="hint">— newest at the bottom</span></h3>
+
+  <h3>Latest from the cloud computer <span class="hint">— newest at the bottom</span></h3>
   <pre id="vps-fetch-log">starts showing once the computer is saved and reachable…</pre>
+
   <details>
-    <summary>Rarely needed: SSH safety list, launcher output</summary>
+    <summary>Advanced: setup, batch options, counts, launcher output</summary>
+    <div class="row" style="margin-top:8px"><span class="muted" id="vps-vm">Computer: —</span></div>
+    <div class="row">
+      <input id="vps-vm-input" placeholder="Just your computer login name — it lives at 35.200.132.91" autocomplete="off" spellcheck="false"
+             style="flex:1;min-width:200px;padding:7px;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--ink)">
+      <button id="vps-vm-save" onclick="saveVm()">SAVE COMPUTER</button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <select id="vps-workers" style="padding:7px;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--ink)">
+        <option value="4">4 at once</option>
+        <option value="8" selected>8 at once</option>
+        <option value="12">12 at once</option>
+        <option value="16">16 at once (max)</option>
+      </select>
+      <label class="muted" style="font-size:12px"><input type="checkbox" id="vps-retry"> include refused ones</label>
+      <button id="vps-restart" onclick="restartVps()">RESTART LOOP</button>
+    </div>
+    <div class="cards" style="margin-top:8px">
+      <div class="card"><div class="label">Contact details saved</div><div class="value blue" id="ov-dg">—</div></div>
+      <div class="card"><div class="label">Site refuses to share</div><div class="value red" id="ov-refused">—</div></div>
+      <div class="card"><div class="label">Still to try</div><div class="value" id="ov-left-count">—</div></div>
+      <div class="card"><div class="label">Master list size</div><div class="value" id="ov-local">—</div></div>
+    </div>
+    <div class="cards">
+      <div class="card"><div class="label">Saved over there</div><div class="value green" id="vps-done">—</div></div>
+      <div class="card"><div class="label">Refused over there</div><div class="value red" id="vps-failed">—</div></div>
+      <div class="card"><div class="label">Cloud ahead by</div><div class="value" id="vps-drift">—</div></div>
+      <div class="card"><div class="label">Loop state</div><div class="value" id="vps-loop">—</div></div>
+    </div>
+    <div class="row"><span class="muted" id="ov-left"></span></div>
+    <div class="row"><span class="muted">Cloud copy: <span id="ov-cloud">—</span> · Last full sync: <span id="ov-sync">—</span></span></div>
+    <div class="reasons" id="ov-ci"></div>
     <div class="row" style="margin-top:8px">
       <input id="vps-excl" placeholder="Computers that must stay reachable, e.g. 1.2.3.0/24" autocomplete="off" spellcheck="false"
              style="flex:1;min-width:180px;padding:7px;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--ink)">
@@ -114,7 +120,6 @@
   </details>
 
   <footer id="updated"></footer>
-</main>
 <script>
 function plainReason(key) {
   if (key.includes('Not authorized')) return 'site does not share these records';
@@ -153,6 +158,12 @@ function toggleTheme() {
 function setState(text, running) {
   document.getElementById('state').textContent = text;
   document.getElementById('dot').className = 'dot ' + (running || '');
+  const big = document.getElementById('bigstate');
+  big.textContent = text;
+  big.className = running === 'running' ? 'ok' : running === 'stopped' ? 'bad' : 'idle';
+}
+function setSub(text) {
+  document.getElementById('bigsub').textContent = text;
 }
 async function refresh() {
   try {
@@ -234,6 +245,12 @@ async function refreshVps() {
     }
     const busy = !!s.launch_running || !!v.alive;
     document.getElementById('vps-start').disabled = busy || !s.vm_configured;
+    document.getElementById('vps-stop').style.display = v.halt ? 'none' : '';
+    document.getElementById('vps-resume').style.display = v.halt ? '' : 'none';
+    if (v.alive) setSub('Fetching right now — leave it alone.');
+    else if (v.halt) setSub('Paused — press UNPAUSE to carry on, or START for a fresh run.');
+    else if (v.error) setSub('Cannot reach the cloud computer — check it is on.');
+    else setSub('Idle — press START FETCHING when ready.');
     const lines = await (await fetch('/api/vps/launchlog')).json();
     const pre = document.getElementById('vps-log');
     if (lines.length) { pre.textContent = lines.join('\n'); pre.scrollTop = pre.scrollHeight; }
