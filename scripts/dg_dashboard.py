@@ -340,7 +340,11 @@ def _sb_counts() -> dict:
 
 
 def _gh_runs() -> list:
-    """Latest CI runs via gh (best-effort, short timeout)."""
+    """Latest CI runs via gh (best-effort, short timeout).
+
+    Structured dicts — the page renders them as plain words
+    ("Python Checks on main passed, 14:10"), never raw timestamps.
+    """
     try:
         proc = subprocess.run(
             [
@@ -353,8 +357,6 @@ def _gh_runs() -> list:
                 "5",
                 "--json",
                 "name,conclusion,status,headBranch,createdAt",
-                "--jq",
-                '.[] | "\\(.createdAt[0:16]) \\(.name) \\(.headBranch) \\(.conclusion // .status)"',
             ],
             capture_output=True,
             text=True,
@@ -363,7 +365,21 @@ def _gh_runs() -> list:
         )
         if proc.returncode != 0:
             return []
-        return [ln for ln in proc.stdout.splitlines() if ln.strip()][:5]
+        import json as _json
+
+        runs = _json.loads(proc.stdout or "[]")
+        out = []
+        for r in runs[:5]:
+            result = r.get("conclusion") or r.get("status") or ""
+            out.append(
+                {
+                    "name": r.get("name", "workflow"),
+                    "branch": r.get("headBranch", ""),
+                    "result": result,
+                    "at": (r.get("createdAt", "") or "")[11:16],
+                }
+            )
+        return out
     except Exception:
         return []
 

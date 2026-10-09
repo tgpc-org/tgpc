@@ -181,7 +181,13 @@ async function refreshOverview() {
     document.getElementById('ov-bar').style.width = (tot ? Math.round(100 * (done + term) / tot) : 0) + '%';
     document.getElementById('ov-left').textContent =
       (dg.uncovered_sample || []).length ? 'Up first: ' + (dg.uncovered_sample || []).join(', ') + '…' : '';
-    document.getElementById('ov-ci').textContent = (o.ci || []).length ? 'CI: ' + o.ci.join(' · ') : '';
+    const ci = o.ci || [];
+    document.getElementById('ov-ci').textContent = ci.length
+      ? 'Checks: ' + ci.map((r) => {
+          const word = r.result === 'success' ? 'passed' : r.result === 'failure' ? 'FAILED' : r.result === 'in_progress' ? 'running…' : r.result;
+          return r.name + ' on ' + r.branch + ' ' + word + (r.at ? ', ' + r.at : '');
+        }).join(' · ')
+      : '';
   } catch (e) { /* retry next tick */ }
 }
 setInterval(refreshOverview, 30000);
