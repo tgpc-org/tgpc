@@ -1008,9 +1008,16 @@ def run_fetch(
         except Exception:
             pass
 
+    # Full unfetched denominator = master list size minus completed (not just batch)
+    try:
+        master = json.load(open("data/rph.json"))
+        master_ids = {r.get("registration_number") for r in master if r.get("registration_number")}
+        total_unfetched = len(master_ids - set(state.get("completed", [])))
+    except Exception:
+        total_unfetched = len(reg_ids)
     stats: Dict = {
         "total": len(reg_ids),
-        "total_unfetched": len(reg_ids) + len(state.get("completed", [])),  # + completed for position tracking
+        "total_unfetched": total_unfetched,
         "already_done": len(reg_ids) - len(todo),
         "done": 0,
         "failed": 0,
