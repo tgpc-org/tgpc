@@ -1193,7 +1193,7 @@ def run_fetch(
             overall = stats["already_done"] + processed + 1
             overall_total = stats["total_unfetched"]
             serial = serial_of(reg)
-            logger.info(f"fetching {reg} (#{serial} · {overall}/{overall_total} this run)")
+            logger.info(f"#{serial} · {overall}/{overall_total}")
             live_snapshot(reg, "fetching")
             t0 = time.monotonic()
             ensure_submitted(idx + DG_WORKERS)
