@@ -1183,7 +1183,7 @@ def run_fetch(
             bar.set_detail(reg)
             step(f"fetching {reg}")
             overall = stats["already_done"] + processed + 1
-            overall_total = stats["already_done"] + len(todo)
+            overall_total = stats["total"]
             serial = serial_of(reg)
             logger.info(f"fetching {reg} (#{serial} · {overall}/{overall_total} this run)")
             live_snapshot(reg, "fetching")
