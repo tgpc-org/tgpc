@@ -1010,6 +1010,7 @@ def run_fetch(
 
     stats: Dict = {
         "total": len(reg_ids),
+        "total_unfetched": len(reg_ids) + len(state.get("completed", [])),  # + completed for position tracking
         "already_done": len(reg_ids) - len(todo),
         "done": 0,
         "failed": 0,
@@ -1100,7 +1101,7 @@ def run_fetch(
             remaining_in_batch=remaining,
             index=f"{processed}/{len(todo)}",
             overall_done=stats["already_done"] + processed,
-            overall_total=stats["already_done"] + len(todo),
+            overall_total=stats["total_unfetched"],
             event=event,
             done=stats["done"],
             failed=stats["failed"],
@@ -1183,7 +1184,7 @@ def run_fetch(
             bar.set_detail(reg)
             step(f"fetching {reg}")
             overall = stats["already_done"] + processed + 1
-            overall_total = stats["total"]
+            overall_total = stats["total_unfetched"]
             serial = serial_of(reg)
             logger.info(f"fetching {reg} (#{serial} · {overall}/{overall_total} this run)")
             live_snapshot(reg, "fetching")
