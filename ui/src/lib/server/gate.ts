@@ -1,33 +1,59 @@
 /**
  * Site-wide gate path classification (used by hooks.server.ts).
  *
- * Pure so it is unit-testable: only the login flow (/admin page +
- * /api/admin) and the inert assets the login page needs to render are
- * reachable without a session. Everything under /api/ otherwise answers
- * 403; pages redirect to /admin.
+ * TGPC RPh Index is a PUBLIC search portal: search, profiles, notices,
+ * dispatch lists, stats and health are reachable without a session (the
+ * data APIs are rate-limited per IP inside their handlers). Only the admin
+ * surface needs a session: the login endpoint's siblings (/api/admin/*
+ * below the login route, /api/usage) and the dev /sandbox page.
+ * Everything else under /api/ answers 403; gated pages redirect to /admin.
+ *
+ * Pure so it is unit-testable.
  */
 
-const OPEN_EXACT = new Set(['/admin', '/api/admin']);
+const OPEN_EXACT = new Set([
+	'/',
+	'/admin',
+	'/notice',
+	'/dispatch',
+	'/sitemap.xml',
+	'/api/admin',
+	'/api/stats',
+	'/api/search',
+	'/api/record',
+	'/api/refine',
+	'/api/notice',
+	'/api/health'
+]);
 
 const OPEN_ASSETS = new Set([
-  '/favicon.ico',
-  '/favicon.svg',
-  '/favicon-192.png',
-  '/manifest.json',
-  '/robots.txt'
+	'/favicon.ico',
+	'/favicon.svg',
+	'/favicon-192.png',
+	'/manifest.json',
+	'/robots.txt'
 ]);
 
 export function isOpenAsset(pathname: string): boolean {
-  return pathname.startsWith('/_app/') || OPEN_ASSETS.has(pathname);
+	return pathname.startsWith('/_app/') || OPEN_ASSETS.has(pathname);
 }
 
 export type GateDecision =
-  | { kind: 'open' }
-  | { kind: 'api-deny' }
-  | { kind: 'page-login' };
+	| { kind: 'open' }
+	| { kind: 'api-deny' }
+	| { kind: 'page-login' };
 
 export function gatePath(pathname: string): GateDecision {
-  if (OPEN_EXACT.has(pathname) || isOpenAsset(pathname)) return { kind: 'open' };
-  if (pathname.startsWith('/api/')) return { kind: 'api-deny' };
-  return { kind: 'page-login' };
+	if (OPEN_EXACT.has(pathname) || isOpenAsset(pathname)) return { kind: 'open' };
+	if (pathname.startsWith('/api/')) {
+		// /api/dispatch has a [name] file sub-route, so the whole subtree
+		// is public; every other /api/ path is denied unless allowlisted.
+		if (pathname === '/api/dispatch' || pathname.startsWith('/api/dispatch/')) {
+			return { kind: 'open' };
+		}
+		return { kind: 'api-deny' };
+	}
+	// Public profile pages live under /rph/<registration_number>.
+	if (pathname.startsWith('/rph/')) return { kind: 'open' };
+	return { kind: 'page-login' };
 }

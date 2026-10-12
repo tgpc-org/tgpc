@@ -3,17 +3,18 @@ import { dev } from '$app/env';
 import { isAuthed } from '#lib/server/auth.js';
 import { gatePath } from '#lib/server/gate.js';
 
-// Site-wide gate: every data-bearing route requires the admin session.
-// Only the login flow (/admin page + /api/admin) and the inert assets the
-// login page needs to render (JS/CSS chunks, icons, manifest) are reachable
-// without one. API routes answer 403; pages redirect to /admin. Path
-// classification lives in $lib/server/gate (unit-tested).
+// Public-portal gate: search, profiles, notices, dispatch lists, stats and
+// health are reachable without a session (data APIs rate-limit per IP in
+// their handlers). Only the admin surface (/api/admin/* below the login
+// route, /api/usage, /sandbox) needs one. API routes answer 403; gated
+// pages redirect to /admin. Path classification lives in
+// $lib/server/gate (unit-tested).
 //
 // NOTE: files under ui/static/ are served directly by Cloudflare Pages and
 // bypass SvelteKit + this hook. That is acceptable because static/ holds no
 // registry or PII data (notice titles link public council circulars; the
-// search data always flows through gated Functions). Local `vite dev` stays
-// open: there is no platform secret there, so the gate could never pass.
+// search data always flows through rate-limited Functions). Local `vite dev`
+// stays open: there is no platform secret there, so the gate could never pass.
 
 // Security headers applied to every function response (CODE_REVIEW.md H6).
 // Mirrors `ui/_headers` (project root, as adapter-cloudflare requires), which
