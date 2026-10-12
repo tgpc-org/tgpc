@@ -19,6 +19,10 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+# Repo venv first (Homebrew Python upgrades wipe system site-packages).
+PYBIN="python3"
+[ -x .venv/bin/python ] && PYBIN=".venv/bin/python"
+
 # Deterministic credentials: $VM_HOME/.tgpc_env first (background-safe, chmod 600),
 # live env wins, Keychain remains the fallback inside the python heredocs.
 if [ -f "$HOME/.tgpc_env" ]; then
@@ -110,13 +114,13 @@ fail() { echo "ABORT: $1" >&2; exit 1; }
 echo "=== [1/7] preflight (local) ==="
 [ -f data/rph.json ] || fail "data/rph.json missing — run make scrape first."
 [ -f data/dg_fetch_checkpoint.json ] || fail "data/dg_fetch_checkpoint.json missing."
-RPH_N=$(python3 -c "import json; print(len(json.load(open('data/rph.json'))))")
-CP_DONE=$(python3 -c "import json; print(len(json.load(open('data/dg_fetch_checkpoint.json')).get('completed', [])))")
+RPH_N=$($PYBIN -c "import json; print(len(json.load(open('data/rph.json'))))")
+CP_DONE=$($PYBIN -c "import json; print(len(json.load(open('data/dg_fetch_checkpoint.json')).get('completed', [])))")
 echo "local rph.json: $RPH_N records; local checkpoint completed: $CP_DONE"
 gssh true 2>/dev/null || fail "cannot SSH to $VM (gcloud OS Login certs or key auth required)."
 
 echo "=== [2/7] drift guards (refuse to push stale state either way) ==="
-DB_N=$(python3 -c "
+DB_N=$($PYBIN -c "
 import os
 from tgpc.utils import load_credentials
 load_credentials()

@@ -11,14 +11,18 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+
+# Repo venv first (Homebrew Python upgrades wipe system site-packages).
+PYBIN="python3"
+[ -x .venv/bin/python ] && PYBIN=".venv/bin/python"
 if [ -z "${TGPC_R2_DG_BUCKET:-}" ]; then
   # Fall back to the macOS Keychain (same convention as the python loader).
-  TGPC_R2_DG_BUCKET=$(python3 -c "from tgpc.utils import _get_keychain; print(_get_keychain('TGPC_R2_DG_BUCKET') or '')" 2>/dev/null)
+  TGPC_R2_DG_BUCKET=$($PYBIN -c "from tgpc.utils import _get_keychain; print(_get_keychain('TGPC_R2_DG_BUCKET') or '')" 2>/dev/null)
 fi
 : "${TGPC_R2_DG_BUCKET:?set TGPC_R2_DG_BUCKET (or source ~/.tgpc_env / use keychain env)}"
 
 _py() {
-  R2_BUCKET="$TGPC_R2_DG_BUCKET" python3 - "$@"
+  R2_BUCKET="$TGPC_R2_DG_BUCKET" "$PYBIN" - "$@"
 }
 
 case "${1:-status}" in
