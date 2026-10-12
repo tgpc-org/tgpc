@@ -7,7 +7,7 @@
 # half-start a fetch): preflight -> drift guards -> input push -> remote env
 # -> run start -> start verification. Idempotent: safe to re-run; refuses
 # instead of double-starting an active run. The run itself stops by itself
-# when the remaining set is done (or after --max-records).
+# when the remaining set is done.
 #
 # One-time prerequisites (NOT covered here — they need your cloud account
 # and choices): a provisioned VM, SSH key auth as $DG_VM, the one-time
