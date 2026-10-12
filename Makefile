@@ -1,13 +1,16 @@
 .PHONY: scrape sync quota help dg-start dg-stop dg-resume dg-watch
 
+# Use the repo venv when present (survives Homebrew Python upgrades).
+PY := $(shell test -x .venv/bin/python && echo .venv/bin/python || echo python3)
+
 scrape:  # Scrape TGPC → sync all destinations → enrich new records
-	python3 -m tgpc update
+	$(PY) -m tgpc update
 
 sync:  # Full manual sync of rph.json to all cloud destinations
-	python3 -m tgpc sync
+	$(PY) -m tgpc sync
 
 quota:  # Show free quota usage for all services
-	python3 -m tgpc quota
+	$(PY) -m tgpc quota
 
 help:  # List all commands
 	@grep -E '^[a-z-]+:  #' $(MAKEFILE_LIST) | sed 's/:  #/ — /'
