@@ -97,12 +97,18 @@ PYEOF
     # Immediate stop: kill the running fetch process on the VM right now,
     # then set halt flag so loop never restarts.
     echo "Stopping fetch on VM…"
-    # Try systemctl stop first (best-case), then pkill (failsafe). Ignore any errors.
-    (gcloud compute ssh tgpc-dg-fetch --zone=asia-south1-c --tunnel-through-iap \
-      --command="systemctl stop tgpc-dg-fetch 2>/dev/null; echo systemctl_done" 2>/dev/null || true)
-    (gcloud compute ssh tgpc-dg-fetch --zone=asia-south1-c --tunnel-through-iap \
-      --command="pkill -f vps_fetch.sh 2>/dev/null || echo no_process; echo pkill_done" 2>/dev/null || true)
-    # Then set the halt flag in R2 so the loop never restarts on its own.
+    # 1) Force-kill the process immediately (systemctl kill -s KILL bypasses TimeoutStopSec)
+    gcloud compute ssh tgpc-dg-fetch --zone=asia-south1-c --tunnel-through-iap \
+      --command="sudo systemctl kill -s KILL tgpc-dg-fetch 2>/dev/null; echo kill_sent" 2>/dev/null || true
+    sleep 2
+    # 2) Fallback: pkill any remaining vps_fetch.sh and python children
+    gcloud compute ssh tgpc-dg-fetch --zone=asia-south1-c --tunnel-through-iap \
+      --command="sudo pkill -9 -f 'vps_fetch.sh' 2>/dev/null; sudo pkill -9 -f 'python.*fetch.dg' 2>/dev/null; echo pkill_done" 2>/dev/null || true
+    sleep 1
+    # 3) Verify process is dead
+    gcloud compute ssh tgpc-dg-fetch --zone=asia-south1-c --tunnel-through-iap \
+      --command="pgrep -f vps_fetch.sh 2>/dev/null && echo 'WARN: process still running' || echo 'confirmed: process dead'" 2>/dev/null || true
+    # 4) Then set the halt flag in R2 so the loop never restarts on its own.
     _py "$1" "$2" <<'PYEOF'
 import os, sys, json, datetime
 from tgpc.utils import _get_keychain

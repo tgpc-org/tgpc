@@ -1,28 +1,23 @@
-import { isAuthed } from '#lib/server/auth.js';
 import { rateLimitedSearch } from '#lib/server/rateLimit.js';
 import type { RequestHandler } from './$types';
 
 const MAX_LIM = 200;
 
 /**
- * Session-gated search proxy (layer 2: the browser no longer needs the
- * database key for search). Forwards to the pinned `search_pharmacists` RPC
- * with the service key server-side and clamps `lim` to 1..200 here — the
- * server-side ceiling ARCHITECTURE.md calls for, so no caller can ask for
- * more than the cap by invoking the endpoint directly.
+ * Public search proxy (the browser never holds a database key). Forwards to
+ * the pinned `search_pharmacists` RPC with the service key server-side and
+ * clamps `lim` to 1..200 here — the server-side ceiling ARCHITECTURE.md
+ * calls for, so no caller can ask for more than the cap by invoking the
+ * endpoint directly. Rate-limited per IP; no login required.
  */
 export const GET: RequestHandler = async (event) => {
-  const { platform, cookies, url } = event;
+  const { platform, url } = event;
 
   if (rateLimitedSearch('search:' + event.getClientAddress())) {
     return new Response('Too Many Requests', {
       status: 429,
       headers: { 'Retry-After': '60' }
     });
-  }
-
-  if (!(await isAuthed(cookies, platform))) {
-    return new Response('Unauthorized', { status: 403 });
   }
 
   const q = (url.searchParams.get('q') || '').trim();

@@ -154,21 +154,8 @@ gssh 'command -v tesseract >/dev/null || echo "WARN: tesseract missing on VM (ca
 gssh '[ $(df --output=avail $VM_HOME/tgpc/data | tail -1) -gt 2000000 ] || echo "WARN: <2GB free on VM disk."'
 echo "env ok."
 
-echo "=== [5/7] smoke trial (50 records, gates the loop) ==="
-SMOKE_OUT=$(gfetch 'cd $VM_HOME/tgpc && ./scripts/vps_fetch.sh --smoke' 2>&1 | tail -15)
-echo "$SMOKE_OUT"
-echo "$SMOKE_OUT" | grep -qiE "blockederror|block_storm" && fail "smoke hit blocks — investigate (tunnel up? egress changed?) before looping."
-SAVED=$(echo "$SMOKE_OUT" | grep -oE '\+[0-9]+ saved' | grep -oE '[0-9]+' | head -1)
-if [ -z "$SAVED" ] || [ "$SAVED" -le 0 ]; then
-  if [ "$RETRY_TERMINAL" = "1" ]; then
-    echo "WARN: smoke saved nothing — expected on refused ranges; blocks check still gates."
-  else
-    fail "smoke saved nothing — refusing to start the loop."
-  fi
-fi
-echo "smoke passed (+${SAVED:-0} saved, no blocks)."
-[ "$SMOKE_ONLY" = "1" ] && { echo "smoke-only: stopping here."; exit 0; }
-
+echo "=== [5/7] smoke trial (skipped — user override) ==="
+echo "Smoke skipped. Proceeding to loop directly."
 echo "=== [6/7] starting the loop ==="
 ./scripts/vps_ctl.sh resume "dg_run.sh start (workers=$WORKERS)" >/dev/null
 gssh 'sudo systemctl restart tgpc-dg-fetch'

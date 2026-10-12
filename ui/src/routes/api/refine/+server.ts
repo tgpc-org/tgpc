@@ -1,5 +1,4 @@
 import { formatDDMonYYYY } from '#lib/dates.js';
-import { isAuthed } from '#lib/server/auth.js';
 import { rateLimitedSearch } from '#lib/server/rateLimit.js';
 import type { RequestHandler } from './$types';
 
@@ -23,24 +22,19 @@ function clean(s: string, max = 60): string {
 }
 
 /**
- * Session-gated refined search (layer 2: the last browser-held database
- * query). Rebuilds the client filter set server-side with allowlisted
- * enums and sanitized text, then issues one capped PostgREST query with
- * the service key. The row ceiling is a fixed literal — no caller input
- * can raise it.
+ * Public refined search. Rebuilds the client filter set server-side with
+ * allowlisted enums and sanitized text, then issues one capped PostgREST
+ * query with the service key. The row ceiling is a fixed literal — no
+ * caller input can raise it. Rate-limited per IP; no login required.
  */
 export const GET: RequestHandler = async (event) => {
-  const { platform, cookies, url } = event;
+  const { platform, url } = event;
 
   if (rateLimitedSearch('refine:' + event.getClientAddress())) {
     return new Response('Too Many Requests', {
       status: 429,
       headers: { 'Retry-After': '60' }
     });
-  }
-
-  if (!(await isAuthed(cookies, platform))) {
-    return new Response('Unauthorized', { status: 403 });
   }
 
   const sp = url.searchParams;

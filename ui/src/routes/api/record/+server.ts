@@ -1,4 +1,3 @@
-import { isAuthed } from '#lib/server/auth.js';
 import { normalizeReg } from '#lib/server/contacts.js';
 import { rateLimitedSearch } from '#lib/server/rateLimit.js';
 import type { RequestHandler } from './$types';
@@ -18,22 +17,18 @@ const COLS = [
 ].join(',');
 
 /**
- * Session-gated single-record fetch (layer 2: the browser no longer reads
- * the database directly). Reads with the service key server-side and
+ * Public single-record fetch. Reads with the service key server-side and
  * returns the same eleven safe columns the pinned search RPC emits.
+ * Rate-limited per IP; no login required.
  */
 export const GET: RequestHandler = async (event) => {
-  const { platform, cookies, url } = event;
+  const { platform, url } = event;
 
   if (rateLimitedSearch('record:' + event.getClientAddress())) {
     return new Response('Too Many Requests', {
       status: 429,
       headers: { 'Retry-After': '60' }
     });
-  }
-
-  if (!(await isAuthed(cookies, platform))) {
-    return new Response('Unauthorized', { status: 403 });
   }
 
   const reg = normalizeReg(url.searchParams.get('reg'));

@@ -1,25 +1,20 @@
-import { isAuthed } from '#lib/server/auth.js';
 import { rateLimitedSearch } from '#lib/server/rateLimit.js';
 import type { RequestHandler } from './$types';
 
 /**
- * Session-gated stats + last-sync payload (layer 2: replaces the realtime
- * metadata subscription and the anon-key RPC call). Reads with the service
- * key server-side; the browser never touches the database for stats.
- * Polled every 60s by the layout instead of a realtime channel.
+ * Public stats + last-sync payload. Reads with the service key server-side;
+ * the browser never touches the database for stats. Polled every 60s by the
+ * layout instead of a realtime channel. Rate-limited per IP; no login
+ * required.
  */
 export const GET: RequestHandler = async (event) => {
-  const { platform, cookies } = event;
+  const { platform } = event;
 
   if (rateLimitedSearch('stats:' + event.getClientAddress())) {
     return new Response('Too Many Requests', {
       status: 429,
       headers: { 'Retry-After': '60' }
     });
-  }
-
-  if (!(await isAuthed(cookies, platform))) {
-    return new Response('Unauthorized', { status: 403 });
   }
 
   const env = (platform?.env || {}) as Record<string, string>;
