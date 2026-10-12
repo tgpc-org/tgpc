@@ -190,7 +190,8 @@ fresh = sorted([reg for reg in order if reg not in done and reg not in seen],
 # count <= 0 means everything remaining (no chunking — one continuous run).
 ids = (retryable + fresh) if count <= 0 else (retryable + fresh)[:count]
 open("data/dg_ids_vps.txt", "w").write("\n".join(ids) + ("\n" if ids else ""))
-print(f"ids: {len(ids)} ({len([i for i in ids if i in set(retryable)])} retryable)"
+retry_set = set(retryable)
+print(f"ids: {len(ids)} ({len([i for i in ids if i in retry_set])} retryable)"
       + (" [retry-terminal]" if retry_terminal else ""))
 PYEOF
 }

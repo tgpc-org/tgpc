@@ -631,13 +631,18 @@ def _record_failure(
     """
     state["failed"][reg] = reason[:200]
     if terminal:
+        # Terminal verdict lives ONLY in failed_terminal — dropping it from
+        # failed keeps the two sets disjoint, so ID generation never emits
+        # the same record twice (that double-emit once doubled a 53k run).
         state["failed_terminal"][reg] = reason[:200]
+        state["failed"].pop(reg, None)
         state.get("fail_counts", {}).pop(reg, None)
     else:
         counts = state.setdefault("fail_counts", {})
         counts[reg] = counts.get(reg, 0) + 1
         if max_retries and counts[reg] >= max_retries:
             state["failed_terminal"][reg] = f"retry-exhausted({counts[reg]}): {reason}"[:200]
+            state["failed"].pop(reg, None)
             counts.pop(reg, None)
             stats["fail_by_reason"]["retry-exhausted"] = stats["fail_by_reason"].get("retry-exhausted", 0) + 1
     stats["fail_by_reason"][reason] = stats["fail_by_reason"].get(reason, 0) + 1
@@ -1244,6 +1249,7 @@ def run_fetch(
                 counts[reg] = counts.get(reg, 0) + 1
                 if max_transient_retries and counts[reg] >= max_transient_retries:
                     state["failed_terminal"][reg] = f"retry-exhausted({counts[reg]}): unexpected"[:200]
+                    state["failed"].pop(reg, None)
                     counts.pop(reg, None)
                     stats["fail_by_reason"]["retry-exhausted"] = stats["fail_by_reason"].get("retry-exhausted", 0) + 1
                 logger.error(f"{reg}: unexpected {e}")
