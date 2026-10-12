@@ -253,6 +253,14 @@ while true; do
   python3 -m tgpc fetch-dg --ids-file data/dg_ids_vps.txt \
     --sync-cloud --sync-every 50 $FETCH_EXTRA_ARGS
   backup_checkpoint
+  # One-shot mode: data/dg_once (pushed by dg_run.sh --once, or touched by
+  # hand on the VM) means "this batch, then stop" — no loop, no sweep.
+  if [ -f data/dg_once ]; then
+    rm -f data/dg_once
+    echo "once marker seen — one batch done, exiting (no further batches)"
+    EXIT_REASON="once"
+    break
+  fi
   # data/dg_stop (or the R2 halt flag via vps_ctl.sh) makes
   # fetch-dg halt the batch (recording stopped:true in stats). Without this
   # break the loop would march straight into the next batch — a halt must stay
@@ -275,6 +283,10 @@ SWEEP_SAVED=$((SWEEP_AFTER - SWEEP_BEFORE))
 echo "=== SWEEP $SWEEP done: +$SWEEP_SAVED saved ($SWEEP_BEFORE -> $SWEEP_AFTER) ==="
 if [ "$EXIT_REASON" = "halt" ]; then
   echo "halted — staying stopped (restart service to resume)"
+  break
+fi
+if [ "$EXIT_REASON" = "once" ]; then
+  echo "once run complete — staying stopped (start again whenever wanted)"
   break
 fi
 if [ "${TGPC_DG_RETRY_TERMINAL:-0}" = "1" ] && [ "$SWEEP_SAVED" -gt 0 ]; then

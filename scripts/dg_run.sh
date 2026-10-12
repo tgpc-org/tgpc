@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # One-command DG fetch launcher (Mac side).
 #
-#   ./scripts/dg_run.sh [--vm user@host] [--workers N] [--smoke-only] [--restart]
+#   ./scripts/dg_run.sh [--vm user@host] [--workers N] [--smoke-only] [--restart] [--once] [--batch N]
 #
 # Runs every recurring step in order, each gating the next (fail fast, never
 # half-start a fetch): preflight -> drift guards -> input push -> remote env
@@ -34,12 +34,17 @@ WORKERS="${DG_WORKERS:-8}"
 SMOKE_ONLY=0
 RESTART=0
 RETRY_TERMINAL=0
+ONCE=0
+BATCH="1000"
 while [ $# -gt 0 ]; do
   case "$1" in
     --vm=*) VM="${1#--vm=}" ; shift ;;
     --vm) VM="${2:?--vm needs user@host}"; shift 2 ;;
     --workers=*) WORKERS="${1#--workers=}" ; shift ;;
     --workers) WORKERS="${2:?--workers needs 1..16}"; shift 2 ;;
+    --batch=*) BATCH="${1#--batch=}" ; shift ;;
+    --batch) BATCH="${2:?--batch needs a record count}"; shift 2 ;;
+    --once) ONCE=1 ; shift ;;
     --smoke-only) SMOKE_ONLY=1 ; shift ;;
     --restart) RESTART=1 ; shift ;;
     --retry-terminal) RETRY_TERMINAL=1 ; shift ;;
@@ -146,16 +151,23 @@ gscp_to data/rph.json tgpc/data/rph.json
 gscp_to data/dg_fetch_checkpoint.json tgpc/data/dg_fetch_checkpoint.json
 echo "pushed."
 
-echo "=== [4/7] remote env (workers=$WORKERS, retry-terminal=$RETRY_TERMINAL, warp, disk, OCR) ==="
+echo "=== [4/7] remote env (workers=$WORKERS, retry-terminal=$RETRY_TERMINAL, once=$ONCE, batch=$BATCH, warp, disk, OCR) ==="
 gfetch "grep -q '^TGPC_DG_WORKERS=' \$VM_HOME/.tgpc_env 2>/dev/null && sed -i 's/^TGPC_DG_WORKERS=.*/TGPC_DG_WORKERS=$WORKERS/' \$VM_HOME/.tgpc_env || echo 'TGPC_DG_WORKERS=$WORKERS' >> \$VM_HOME/.tgpc_env"
 gfetch "grep -q '^TGPC_DG_RETRY_TERMINAL=' \$VM_HOME/.tgpc_env 2>/dev/null && sed -i 's/^TGPC_DG_RETRY_TERMINAL=.*/TGPC_DG_RETRY_TERMINAL=$RETRY_TERMINAL/' \$VM_HOME/.tgpc_env || echo 'TGPC_DG_RETRY_TERMINAL=$RETRY_TERMINAL' >> \$VM_HOME/.tgpc_env"
+gfetch "grep -q '^TGPC_BATCH_SIZE=' \$VM_HOME/.tgpc_env 2>/dev/null && sed -i 's/^TGPC_BATCH_SIZE=.*/TGPC_BATCH_SIZE=$BATCH/' \$VM_HOME/.tgpc_env || echo 'TGPC_BATCH_SIZE=$BATCH' >> \$VM_HOME/.tgpc_env"
 gssh 'command -v warp-cli >/dev/null || echo "WARN: warp-cli missing on VM (GCE IPs are source-blocked without it)."'
 gssh 'command -v tesseract >/dev/null || echo "WARN: tesseract missing on VM (captcha OCR unavailable)."'
 gssh '[ $(df --output=avail $VM_HOME/tgpc/data | tail -1) -gt 2000000 ] || echo "WARN: <2GB free on VM disk."'
 echo "env ok."
 
 echo "=== [5/7] smoke trial (skipped — user override) ==="
-echo "Smoke skipped. Proceeding to loop directly."
+echo "Smoke skipped. Proceeding directly."
+if [ "$ONCE" = "1" ]; then
+  echo "once mode: planting data/dg_once so the loop stops after one $BATCH-record batch."
+  touch data/dg_once
+  gscp_to data/dg_once tgpc/data/dg_once
+  rm -f data/dg_once
+fi
 echo "=== [6/7] starting the loop ==="
 ./scripts/vps_ctl.sh resume "dg_run.sh start (workers=$WORKERS)" >/dev/null
 gssh 'sudo systemctl restart tgpc-dg-fetch'

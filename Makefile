@@ -1,4 +1,4 @@
-.PHONY: scrape sync quota help dg-start dg-stop dg-resume dg-watch
+.PHONY: scrape sync quota help dg-start dg-once dg-stop dg-resume dg-watch
 
 # Use the repo venv when present (survives Homebrew Python upgrades).
 PY := $(shell test -x .venv/bin/python && echo .venv/bin/python || echo python3)
@@ -17,12 +17,16 @@ help:  # List all commands
 
 # DG contact collection: the VM does the fetching.
 DG_VM ?= $(shell cat data/dg_vm.conf 2>/dev/null)
+BATCH ?= 1000
 
 dg-start:  # Start fetching (stops any running loop first, then starts fresh)
 	@echo "Stopping any running fetch loop first..."
 	@./scripts/vps_ctl.sh stop "pre-start" 2>/dev/null || true
 	@sleep 2
 	DG_VM=$(DG_VM) ./scripts/dg_run.sh --retry-terminal --restart
+
+dg-once:  # Run one batch, then stop by itself (BATCH=200 for a short run)
+	DG_VM=$(DG_VM) ./scripts/dg_run.sh --retry-terminal --restart --once --batch $(BATCH)
 
 dg-stop:  # Stop the fetch immediately (sets halt flag)
 	./scripts/vps_ctl.sh stop "$(MSG)"
