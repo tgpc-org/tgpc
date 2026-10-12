@@ -1,25 +1,25 @@
 #!/usr/bin/env bash
-# Long-run DG fetch harness for the VPS. Loops in BATCH_SIZE chunks until
-# the ID pool is exhausted, syncing to cloud + backing up the checkpoint
-# after every batch.
+# DG fetch harness for the VPS. One continuous run over everything remaining,
+# then it stops by itself — no batches, no endless loop.
+#
+# Safety without chunking: fetch-dg checkpoints after EVERY record and checks
+# data/dg_stop before every record, so a supervisor below watches the run and
+# stops it after the current record on halt, re-verifies the WARP tunnel, and
+# backs the checkpoint up to R2 along the way.
 #
 # Usage:
-#   ./scripts/vps_fetch.sh [--smoke] [--batch N]
+#   ./scripts/vps_fetch.sh [--smoke]
 #     --smoke   50-record trial (proves WARP egress + creds before a long run)
-#     --batch N records per loop iteration (default 1000, smoke forces 50)
 #
-# Stop cleanly:  touch data/dg_halt   (halts after the current batch)
-# Stop now:      sudo systemctl stop tgpc-dg-fetch   (in-flight record retries next run)
+# Stop: touch data/dg_halt, or scripts/vps_ctl.sh stop (R2 halt flag) —
+#       the run finishes the current record, then exits (checkpoint-safe).
 # Remote (no SSH): scripts/vps_ctl.sh halt|resume|status (R2 ops/ctl.json channel)
-# Dashboard:     ssh -L 8899:localhost:8899 <vm>  then open http://localhost:8899/
 set -euo pipefail
 
 SMOKE=0
-BATCH="${TGPC_BATCH_SIZE:-1000}"
 while [ $# -gt 0 ]; do
   case "$1" in
-    --smoke) SMOKE=1; BATCH=50; shift ;;
-    --batch) [ $# -ge 2 ] || { echo "--batch needs a value" >&2; exit 2; }; BATCH="$2"; shift 2 ;;
+    --smoke) SMOKE=1; shift ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
@@ -141,7 +141,7 @@ backup_checkpoint() {
   # already cloud-synced via --sync-cloud and the local checkpoint persists).
   # Checkpoint holds reg IDs + failure reasons (no PII) but lives in the
   # private DG bucket under ops/ anyway — never the public bucket.
-  python3 - "$TGPC_R2_DG_BUCKET" <<'PYEOF' || echo "WARNING: R2 checkpoint backup failed — local checkpoint intact, will retry next batch" >&2
+  python3 - "$TGPC_R2_DG_BUCKET" <<'PYEOF' || echo "WARNING: R2 checkpoint backup failed — local checkpoint intact, will retry at the next backup" >&2
 import sys, boto3, os
 bucket = sys.argv[1]
 s3 = boto3.client(
@@ -187,7 +187,8 @@ if retry_terminal:
     seen |= set(term)
 fresh = sorted([reg for reg in order if reg not in done and reg not in seen],
                key=lambda r: order.get(r, (True, 0)))
-ids = (retryable + fresh)[: max(0, count)]
+# count <= 0 means everything remaining (no chunking — one continuous run).
+ids = (retryable + fresh) if count <= 0 else (retryable + fresh)[:count]
 open("data/dg_ids_vps.txt", "w").write("\n".join(ids) + ("\n" if ids else ""))
 print(f"ids: {len(ids)} ({len([i for i in ids if i in set(retryable)])} retryable)"
       + (" [retry-terminal]" if retry_terminal else ""))
@@ -223,80 +224,58 @@ completed_count() {
   python3 -c "import json; print(len(json.load(open('data/dg_fetch_checkpoint.json')).get('completed', [])))" 2>/dev/null || echo 0
 }
 
-# Sweep-until-done: each sweep walks the whole remaining set (53.6k when
-# retry-terminal is on). A sweep that saves nothing proves the source gaps
-# are unchanged, so the loop parks instead of grinding forever — rerun next
-# week for the next attempt. Any saves at all trigger another full sweep.
-SWEEP=0
-while true; do
-SWEEP=$((SWEEP + 1))
-SWEEP_BEFORE=$(completed_count)
-echo "=== SWEEP $SWEEP (completed so far: $SWEEP_BEFORE) ==="
+# One continuous run over everything remaining, then stop. A supervisor
+# watches the background fetch: R2 halt flag or data/dg_halt stops it after
+# the current record (dg_stop), the WARP tunnel is re-verified, and the
+# checkpoint is backed up to R2 every ~10 minutes. When the pool empties the
+# run ends by itself; a run that saves nothing proves the source gaps are
+# unchanged — rerun next week for the next attempt.
+RUN_BEFORE=$(completed_count)
+echo "=== RUN (completed so far: $RUN_BEFORE) ==="
+gen_ids 0
+[ -s data/dg_ids_vps.txt ] || { echo "nothing remaining — exiting"; backup_checkpoint; echo "vps_fetch.sh finished"; exit 0; }
+rm -f data/dg_stop
+echo "records this run: $(wc -l < data/dg_ids_vps.txt)"
 
-EXIT_REASON=""
-while true; do
-  if [ -f data/dg_halt ]; then echo "dg_halt present — stopping cleanly"; EXIT_REASON="halt"; break; fi
-  # Multi-day runs: re-verify the tunnel every batch. If it dropped, fetches
-  # would silently go direct (datacenter IP = blocks), so reconnect first.
+MAXREC=""
+if [ -n "${TGPC_MAX_RECORDS:-}" ]; then
+  MAXREC="--max-records $TGPC_MAX_RECORDS"
+  echo "capped at $TGPC_MAX_RECORDS records this run."
+fi
+python3 -m tgpc fetch-dg --ids-file data/dg_ids_vps.txt \
+  --sync-cloud --sync-every 50 $FETCH_EXTRA_ARGS $MAXREC &
+FETCH_PID=$!
+POLLS=0
+while kill -0 "$FETCH_PID" 2>/dev/null; do
+  sleep 60
+  POLLS=$((POLLS + 1))
+  # Halt (file or R2 flag) stops the run after the current record.
+  if [ -f data/dg_halt ] || ! poll_ctl; then
+    echo "halt requested — stopping after the current record…"
+    touch data/dg_stop
+  fi
+  # A dropped tunnel would silently go direct (datacenter IP = blocks).
   if ! warp-cli --accept-tos status 2>/dev/null | grep -qi "connected"; then
     echo "tunnel down mid-run — reconnecting…"
     warp_up
   fi
-  # R2 operator channel: remote halt/resume + live exclusion updates, no SSH.
-  if ! poll_ctl; then
-    echo "ctl: HALT set — pausing 5 min (clear with scripts/vps_ctl.sh resume)"
-    sleep 300
-    continue
+  if [ $((POLLS % 10)) -eq 0 ]; then
+    backup_checkpoint
   fi
-  gen_ids "$BATCH"
-  [ -s data/dg_ids_vps.txt ] || { echo "ID pool exhausted for sweep $SWEEP"; EXIT_REASON="exhausted"; break; }
-  python3 -m tgpc fetch-dg --ids-file data/dg_ids_vps.txt \
-    --sync-cloud --sync-every 50 $FETCH_EXTRA_ARGS
-  backup_checkpoint
-  # One-shot mode: data/dg_once (pushed by dg_run.sh --once, or touched by
-  # hand on the VM) means "this batch, then stop" — no loop, no sweep.
-  if [ -f data/dg_once ]; then
-    rm -f data/dg_once
-    echo "once marker seen — one batch done, exiting (no further batches)"
-    EXIT_REASON="once"
-    break
-  fi
-  # data/dg_stop (or the R2 halt flag via vps_ctl.sh) makes
-  # fetch-dg halt the batch (recording stopped:true in stats). Without this
-  # break the loop would march straight into the next batch — a halt must stay
-  # halted. Resume with:
-  #   sudo systemctl restart tgpc-dg-fetch   (VM) — or vps_ctl.sh resume.
-  # NOTE: no --warp-rotate-every here. Consumer WARP egress is sticky per
-  # account, so the rotation gate can never verify a *different* IP and halts
-  # every 500 records instead. The tunnel itself (masked egress) is what
-  # matters and is established above; blocks are monitored via fail reasons.
-  if python3 -c "import json,sys; sys.exit(0 if json.load(open('data/dg_stats.json')).get('stopped') else 1)" 2>/dev/null; then
-    reason=$(python3 -c "import json; print(json.load(open('data/dg_stats.json')).get('stop_reason','stop file'))" 2>/dev/null)
-    echo "halted ($reason) — loop stopped (restart service to resume)"
-    EXIT_REASON="halt"
-    break
-  fi
-  # fetch-dg exit 0 covers batch-complete; loop on.
 done
-SWEEP_AFTER=$(completed_count)
-SWEEP_SAVED=$((SWEEP_AFTER - SWEEP_BEFORE))
-echo "=== SWEEP $SWEEP done: +$SWEEP_SAVED saved ($SWEEP_BEFORE -> $SWEEP_AFTER) ==="
-if [ "$EXIT_REASON" = "halt" ]; then
-  echo "halted — staying stopped (restart service to resume)"
-  break
-fi
-if [ "$EXIT_REASON" = "once" ]; then
-  echo "once run complete — staying stopped (start again whenever wanted)"
-  break
-fi
-if [ "${TGPC_DG_RETRY_TERMINAL:-0}" = "1" ] && [ "$SWEEP_SAVED" -gt 0 ]; then
-  echo "progress this sweep — starting sweep $((SWEEP + 1)) over what remains"
-  continue
-fi
-if [ "${TGPC_DG_RETRY_TERMINAL:-0}" = "1" ]; then
-  echo "sweep saved nothing — source gaps unchanged, parking until next week"
-fi
-break
-done
+RC=0
+wait "$FETCH_PID" || RC=$?
+echo "fetch exited ($RC)."
 backup_checkpoint
+RUN_AFTER=$(completed_count)
+RUN_SAVED=$((RUN_AFTER - RUN_BEFORE))
+echo "=== RUN done: +$RUN_SAVED saved ($RUN_BEFORE -> $RUN_AFTER) ==="
+if python3 -c "import json,sys; sys.exit(0 if json.load(open('data/dg_stats.json')).get('stopped') else 1)" 2>/dev/null; then
+  reason=$(python3 -c "import json; print(json.load(open('data/dg_stats.json')).get('stop_reason','stop file'))" 2>/dev/null)
+  echo "halted ($reason) — staying stopped (start again to resume from the checkpoint)"
+elif [ "${TGPC_DG_RETRY_TERMINAL:-0}" = "1" ] && [ "$RUN_SAVED" -eq 0 ]; then
+  echo "run saved nothing — source gaps unchanged, parking until next week"
+else
+  echo "run complete — staying stopped (start again whenever wanted)"
+fi
 echo "vps_fetch.sh finished"

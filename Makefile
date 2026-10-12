@@ -17,21 +17,21 @@ help:  # List all commands
 
 # DG contact collection: the VM does the fetching.
 DG_VM ?= $(shell cat data/dg_vm.conf 2>/dev/null)
-BATCH ?= 1000
+N ?= 200
 
-dg-start:  # Start fetching (stops any running loop first, then starts fresh)
-	@echo "Stopping any running fetch loop first..."
+dg-start:  # Start fetching (stops any running fetch first, then starts fresh)
+	@echo "Stopping any running fetch first..."
 	@./scripts/vps_ctl.sh stop "pre-start" 2>/dev/null || true
 	@sleep 2
 	DG_VM=$(DG_VM) ./scripts/dg_run.sh --retry-terminal --restart
 
-dg-once:  # Run one batch, then stop by itself (BATCH=200 for a short run)
-	DG_VM=$(DG_VM) ./scripts/dg_run.sh --retry-terminal --restart --once --batch $(BATCH)
+dg-once:  # Run up to N records, then stop by itself: make dg-once N=200
+	DG_VM=$(DG_VM) ./scripts/dg_run.sh --retry-terminal --restart --max-records $(N)
 
-dg-stop:  # Stop the fetch immediately (sets halt flag)
+dg-stop:  # Stop the run after the current record (nothing lost)
 	./scripts/vps_ctl.sh stop "$(MSG)"
 
-dg-resume:  # Unpause the loop
+dg-resume:  # Unpause the run
 	./scripts/vps_ctl.sh resume
 
 dg-watch:  # Stream the fetch log live (Ctrl+C stops viewing only)
