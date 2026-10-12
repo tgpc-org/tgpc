@@ -237,13 +237,8 @@ gen_ids 0
 rm -f data/dg_stop
 echo "records this run: $(wc -l < data/dg_ids_vps.txt)"
 
-MAXREC=""
-if [ -n "${TGPC_MAX_RECORDS:-}" ]; then
-  MAXREC="--max-records $TGPC_MAX_RECORDS"
-  echo "capped at $TGPC_MAX_RECORDS records this run."
-fi
 python3 -m tgpc fetch-dg --ids-file data/dg_ids_vps.txt \
-  --sync-cloud --sync-every 50 $FETCH_EXTRA_ARGS $MAXREC &
+  --sync-cloud --sync-every 50 $FETCH_EXTRA_ARGS &
 FETCH_PID=$!
 POLLS=0
 while kill -0 "$FETCH_PID" 2>/dev/null; do
