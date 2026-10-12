@@ -1,3 +1,4 @@
+import { envVal } from '#lib/server/appEnv.js';
 import { rateLimitedSearch } from '#lib/server/rateLimit.js';
 import type { RequestHandler } from './$types';
 
@@ -27,9 +28,8 @@ export const GET: RequestHandler = async (event) => {
   const rawLim = Number(url.searchParams.get('lim') || MAX_LIM);
   const lim = Math.min(Math.max(Math.floor(rawLim) || MAX_LIM, 1), MAX_LIM);
 
-  const env = (platform?.env || {}) as Record<string, string>;
-  const surl = env['SUPABASE_URL'];
-  const serviceKey = env['SUPABASE_SECRET_KEY'];
+  const surl = envVal(platform, 'SUPABASE_URL');
+  const serviceKey = envVal(platform, 'SUPABASE_SECRET_KEY');
   if (!surl || !serviceKey) {
     return new Response('Not configured', { status: 500 });
   }

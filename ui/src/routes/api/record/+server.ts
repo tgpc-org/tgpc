@@ -1,3 +1,4 @@
+import { envVal } from '#lib/server/appEnv.js';
 import { normalizeReg } from '#lib/server/contacts.js';
 import { rateLimitedSearch } from '#lib/server/rateLimit.js';
 import type { RequestHandler } from './$types';
@@ -36,9 +37,8 @@ export const GET: RequestHandler = async (event) => {
     return new Response('Bad registration number', { status: 400 });
   }
 
-  const env = (platform?.env || {}) as Record<string, string>;
-  const surl = env['SUPABASE_URL'];
-  const serviceKey = env['SUPABASE_SECRET_KEY'];
+  const surl = envVal(platform, 'SUPABASE_URL');
+  const serviceKey = envVal(platform, 'SUPABASE_SECRET_KEY');
   if (!surl || !serviceKey) {
     return new Response('Not configured', { status: 500 });
   }
