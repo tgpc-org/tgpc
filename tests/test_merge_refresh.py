@@ -53,6 +53,14 @@ class FakeQuery:
         lo, hi = self.slice
         return SimpleNamespace(data=[{k: r.get(k) for k in self.cols} for r in rows[lo : hi + 1]])
 
+    def update(self, patch):
+        self.client.updates.append((self.table, patch))
+        return self
+
+    def eq(self, _col, val):
+        self.client.update_filters.append(val)
+        return self
+
     def upsert(self, batch, on_conflict=None):
         self.client.upserts.append((self.table, batch, on_conflict))
         return self
@@ -62,6 +70,8 @@ class FakeClient:
     def __init__(self, store):
         self.store = store
         self.upserts = []
+        self.updates = []
+        self.update_filters = []
 
     def table(self, name):
         return FakeQuery(self, name)
@@ -154,7 +164,7 @@ RPH = [
 
 
 class RefreshMergedColumnsTests(unittest.TestCase):
-    def run_refresh(self, temp_dir, store):
+    def run_refresh(self, temp_dir: str, store: dict):
         manager = make_manager(temp_dir)
         fake = FakeClient(store)
         env = {"SUPABASE_URL": "https://test.supabase.co", "SUPABASE_SECRET_KEY": "k"}
@@ -171,12 +181,10 @@ class RefreshMergedColumnsTests(unittest.TestCase):
             self.assertEqual(stats["home_filled"], 1)  # FILL only (upper-cased)
             self.assertEqual(stats["validity_updated"], 3)  # FILL blank + NEWER + OWN
             self.assertEqual(stats["review_skipped"], 1)  # BADDATE unparseable
-            # Only changed rows upserted, carrying only changed columns + key
+            # Only changed rows updated, carrying only changed columns + key
             sent = {}
-            for _table, batch, conflict in fake.upserts:
-                self.assertEqual(conflict, "registration_number")
-                for row in batch:
-                    sent[row["registration_number"]] = row
+            for _table, patch in fake.updates:
+                sent[patch["registration_number"]] = patch
             self.assertEqual(set(sent), {"FILL", "NEWER", "BADDATE", "OWN"})
             self.assertEqual(
                 sent["FILL"],
