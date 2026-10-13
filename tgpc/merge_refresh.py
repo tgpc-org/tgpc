@@ -101,6 +101,9 @@ def refresh_merged_columns(manager):
         logger.error("Merge refresh skipped: %s", stats["error"])
         return stats
 
+    # Only update existing rph rows; never insert (name is required).
+    existing_regs = {row["registration_number"] for row in rph_rows}
+
     dg = {r["registration_number"]: r for r in dg_rows}
     # Renewal source of truth: rph-direct fetches (post-retarget) overlay the
     # legacy DG table. rph.renewal_validity wins when present; the DG table
@@ -142,8 +145,10 @@ def refresh_merged_columns(manager):
                 elif rv > cur:
                     patch["validity_date"] = rv.strftime("%d-%b-%Y")
                     stats["validity_updated"] += 1
-        if len(patch) > 1:
+        if len(patch) > 1 and reg in existing_regs:
             updates.append(patch)
+        elif len(patch) > 1:
+            stats["review_skipped"] += 1
 
     try:
         for i in range(0, len(updates), BATCH):
