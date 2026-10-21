@@ -1,0 +1,288 @@
+{
+  "audit": {
+    "repo": "tgpc",
+    "date": "2026-09-22T15:30:00Z",
+    "auditor": "security-audit-skill",
+    "version": "1.0",
+    "resolution_log": [
+      {
+        "date": "2026-10-21",
+        "summary": "Verified all 10 findings against the current code. F1, F2, F4, F8, F9 were already remediated. F5/F10 resolved by restoring full TLS hostname verification and switching to the apex host. F3/F7 remain open: they need a Cloudflare Rate Limiting rule in the dashboard (not a code change)."
+      },
+      {
+        "date": "2026-10-21",
+        "summary": "Schema audit against the live project (pg_catalog, not docs). Found two issues the code review could not see because they live in the database, not the repo: F11 (PII columns + write grants on the publicly-policied rph table) and F12 (search RPC had no lim clamp and dumped the table on a blank query). Both remediations are written as version-controlled migrations under supabase/migrations/ and are awaiting review before being applied."
+      }
+    ]
+  },
+  "findings": [
+    {
+      "id": "F1",
+      "verdict": "fixed",
+      "title": "Potential Command Injection in R2 Photo Upload via subprocess aws CLI",
+      "summary": "Photo upload uses `subprocess.run` with `aws s3api put-object` where `r2_key` is constructed from user-controlled registration number. The `r2_key` format `photos/{reg_no}.webp` uses registration number directly without sanitization. If registration number contains shell metacharacters, command injection is possible.",
+      "severity": "HIGH",
+      "impact": "Remote code execution if attacker can influence registration number",
+      "source_trace": [
+        {
+          "file": "tgpc/manager.py",
+          "function": "_upload_photo_to_r2",
+          "line": 974,
+          "snippet": "r2_key = f\"photos/{reg_no}.webp\" ... subprocess.run([\"aws\", \"s3api\", \"put-object\", ..., \"--key\", r2_key, ...])"
+        }
+      ],
+      "evidence": "Registration number used directly in subprocess command without shell escaping. Registration numbers follow pattern TS/TG/TSDR/TGDR + digits but input validation occurs only at parse time, not at subprocess boundary.",
+      "reproduction": "If an attacker could inject a registration number like `TS000001; rm -rf /` (though parser rejects), but defense-in-depth requires input sanitization at subprocess boundary.",
+      "remediation": "Use `subprocess.run` with list arguments (already done) but add explicit sanitization: `r2_key = re.sub(r'[^a-zA-Z0-9._-]', '', f\"photos/{reg_no}.webp\")` or use boto3 SDK instead of subprocess.",
+      "references": [
+        "CWE-78: OS Command Injection",
+        "OWASP A03:2021 – Injection"
+      ],
+      "resolution": "Already remediated before 2026-10-21: the photo upload uses the boto3 SDK (R2Client.put_object), not a subprocess. No shell, so no command injection path."
+    },
+    {
+      "id": "F2",
+      "verdict": "fixed",
+      "title": "Potential SSRF in Photo Download from User-Controlled Image Source",
+      "summary": "Photo download constructs URL from `img[src]` attribute which is parsed from external site HTML. If `src` contains a crafted URL (e.g., `http://localhost:8080/secret` or `file:///etc/passwd`), the scraper will fetch it, enabling SSRF against internal services.",
+      "severity": "HIGH",
+      "impact": "Server-Side Request Forgery - internal network reconnaissance, metadata service access, file:// protocol access",
+      "source_trace": [
+        {
+          "file": "tgpc/scraper.py",
+          "function": "extract_detailed_info",
+          "line": 392,
+          "snippet": "photo_url = src if src.startswith('http') else f\"{self.config.base_url}{src}\" ... photo_response = self._request(\"GET\", photo_url)"
+        }
+      ],
+      "evidence": "Line 392-395: `src` from external HTML `img[src]` used directly in URL construction. No validation that URL points to expected TGPC domain. If `src` is `http://169.254.169.254/latest/meta-data/`, scraper will fetch EC2 metadata.",
+      "reproduction": "Inject malicious `img[src]` into TGPC site response (e.g., via stored XSS on TGPC site) pointing to internal endpoint. Scraper will fetch it.",
+      "remediation": "Validate `photo_url` against allowlist: must start with `self.config.base_url` and not contain internal IPs/localhost. Reject `file://`, `ftp://`, and non-HTTPS schemes.",
+      "references": [
+        "CWE-918: SSRF",
+        "OWASP A10:2021 – SSRF"
+      ],
+      "resolution": "Already remediated: the photo URL is validated before the fetch — scheme must be http(s), the host must be a TGPC host (_is_tgpc_host), and no path may contain '..'. Redirects are followed manually with the same checks re-applied at every hop."
+    },
+    {
+      "id": "F3",
+      "verdict": "open",
+      "title": "In-Memory Rate Limiter Only - No Distributed Rate Limiting",
+      "summary": "Admin login rate limiter uses in-memory `Map` per isolate. With Cloudflare Pages/Workers running multiple isolates, attacker can bypass by distributing requests across isolates. No Cloudflare Rate Limiting rule configured.",
+      "severity": "MEDIUM",
+      "impact": "Brute-force protection bypass - attacker can make 5 attempts per isolate * N isolates",
+      "source_trace": [
+        {
+          "file": "ui/src/lib/server/rateLimit.ts",
+          "function": "rateLimited",
+          "line": 10,
+          "snippet": "const attempts = new Map<string, number[]>(); ... const recent = (attempts.get(key) ?? []).filter((t) => now - t < WINDOW_MS); if (recent.length >= MAX_ATTEMPTS) return true;"
+        }
+      ],
+      "evidence": "Code comment acknowledges: 'Each Pages isolate holds its own window, so this is defence-in-depth rather than a substitute for a Cloudflare Rate Limiting rule on /api/admin'. No Cloudflare Rate Limiting rule deployed.",
+      "reproduction": "Send 5 failed login attempts from IP A to isolate A (blocked). Send 5 more from same IP to isolate B (succeeds). Repeat across N isolates.",
+      "remediation": "Configure Cloudflare Rate Limiting rule on `/api/admin` (5 requests/minute per IP) in Cloudflare dashboard. Keep in-isolate limiter as defense-in-depth.",
+      "references": [
+        "CWE-307: Improper Restriction of Excessive Authentication Attempts",
+        "OWASP A07:2021 – Identification and Authentication Failures"
+      ],
+      "resolution": "Still open — this is a Cloudflare dashboard task, not a code change. Configure a Rate Limiting rule on /api/admin (5 req/min per IP). The in-isolate limiter in ui/src/lib/server/rateLimit.ts remains as defence in depth."
+    },
+    {
+      "id": "F4",
+      "verdict": "fixed",
+      "title": "Photo Upload Subprocess Uses `aws` CLI Instead of SDK - Supply Chain Risk",
+      "summary": "Photo upload uses `subprocess.run([\"aws\", \"s3api\", ...])` instead of boto3 SDK. Requires `awscli` installed in runtime environment. If `aws` binary is compromised or PATH hijacked, arbitrary command execution.",
+      "severity": "MEDIUM",
+      "impact": "Supply chain compromise via compromised `aws` binary or PATH hijacking",
+      "source_trace": [
+        {
+          "file": "tgpc/manager.py",
+          "function": "_upload_photo_to_r2",
+          "line": 974,
+          "snippet": "subprocess.run([\"aws\", \"s3api\", \"put-object\", ...], capture_output=True, text=True, timeout=120, env=env)"
+        }
+      ],
+      "evidence": "Multiple `subprocess.run([\"aws\", ...])` calls throughout codebase (photo upload, backup, restore, sync). No checksum verification of `aws` binary.",
+      "reproduction": "If attacker gains write access to `aws` binary in PATH, next photo upload/backup/sync executes arbitrary code.",
+      "remediation": "Migrate to boto3 SDK (already a dependency via `supabase`/`boto3` transitive). Remove `awscli` dependency. Use `boto3.client('s3', endpoint_url=..., ...).put_object(...)` instead of subprocess.",
+      "references": [
+        "CWE-426: Untrusted Search Path",
+        "SLSA Supply Chain Levels"
+      ],
+      "resolution": "Already remediated: boto3 SDK, no `aws` CLI subprocess."
+    },
+    {
+      "id": "F5",
+      "verdict": "fixed",
+      "title": "TLS Hostname Verification Disabled for TGPC Host - MITM Risk",
+      "summary": "Scraper uses custom TLS adapter with `check_hostname = False` for `pharmacycouncil.telangana.gov.in` because cert is issued for different name. This disables hostname verification, enabling MITM if attacker can intercept traffic to TGPC domain.",
+      "severity": "MEDIUM",
+      "impact": "Man-in-the-Middle on TGPC traffic - CAPTCHA, session cookies, form data interception",
+      "source_trace": [
+        {
+          "file": "tgpc/scraper.py",
+          "function": "_TGPCTLSAdapter.init_poolmanager",
+          "line": 64,
+          "snippet": "ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_REQUIRED; kwargs[\"assert_hostname\"] = False"
+        }
+      ],
+      "evidence": "Custom TLS adapter explicitly disables hostname verification for `pharmacycouncil.telangana.gov.in` and `www.pharmacycouncil.telangana.gov.in`. Certificate chain validation remains but hostname match is skipped. If attacker obtains valid cert for different name but same CA, MITM possible.",
+      "reproduction": "Attacker with valid cert for `attacker.com` issued by same CA as TGPC cert can MITM if they can DNS hijack or BGP hijack `pharmacycouncil.telangana.gov.in`.",
+      "remediation": "Option A: Request TGPC to fix certificate (correct CN/SAN). Option B: Pin expected certificate fingerprint/SPKI hash in code. Option C: Use custom CA bundle with only TGPC's CA.",
+      "references": [
+        "CWE-295: Improper Certificate Validation",
+        "OWASP A02:2021 – Cryptographic Failures"
+      ],
+      "resolution": "RESOLVED 2026-10-21: the source certificate now carries a correct CN/SAN for the apex host 'pharmacycouncil.telangana.gov.in', so Config.base_url was switched to the apex and the hostname exception was removed. The scraper now verifies chain AND hostname. TGPC_TLS_CERT_SHA256 remains as an additional fingerprint pin."
+    },
+    {
+      "id": "F6",
+      "verdict": "fixed",
+      "title": "Photo Download URL Construction - Potential Path Traversal",
+      "summary": "Photo URL constructed from `img[src]` with `f\"{self.config.base_url}{src}\"` when src starts with `/`. If `src` contains `../` sequences, path traversal may occur before request.",
+      "severity": "LOW",
+      "impact": "Path traversal in photo URL - unlikely exploitable as server normalizes path",
+      "source_trace": [
+        {
+          "file": "tgpc/scraper.py",
+          "function": "extract_detailed_info",
+          "line": 392,
+          "snippet": "photo_url = src if src.startswith('http') else f\"{self.config.base_url}{src}\""
+        }
+      ],
+      "evidence": "If `src` is `/../admin/config`, URL becomes `https://base/../admin/config`. Most servers normalize `..` but behavior varies.",
+      "reproduction": "If TGPC site serves `img src=\"/../admin/config\"`, request goes to parent path.",
+      "remediation": "Normalize path: `photo_url = new URL(src, self.config.base_url).href` then verify `photo_url.startsWith(self.config.base_url)`.",
+      "references": [
+        "CWE-22: Path Traversal"
+      ],
+      "resolution": "Already remediated: the path-traversal check rejects any '..' segment in the photo path and in every redirect Location, before the request is made."
+    },
+    {
+      "id": "F7",
+      "verdict": "open",
+      "title": "In-Memory Rate Limiter Not Persisted - Bypass on Restart/Deploy",
+      "summary": "In-memory rate limiter resets on every deploy/restart. Cloudflare Pages deploys new isolates frequently. Attacker can trigger deploy (or wait for auto-deploy) to reset rate limit counter.",
+      "severity": "LOW",
+      "impact": "Rate limit bypass via deploy timing",
+      "source_trace": [
+        {
+          "file": "ui/src/lib/server/rateLimit.ts",
+          "line": 8,
+          "snippet": "const attempts = new Map<string, number[]>();"
+        }
+      ],
+      "evidence": "Global `Map` reset on module reload. Cloudflare Pages creates new isolate on each deploy/auto-scale. No persistence.",
+      "reproduction": "Attacker makes 4 failed attempts. Triggers deploy (or waits for auto-scale). Counter reset. Makes 5 more attempts.",
+      "remediation": "Use Cloudflare KV/Durable Objects for persistent rate limiting, or rely on Cloudflare Rate Limiting rule (primary fix).",
+      "references": [
+        "CWE-307: Improper Restriction of Excessive Authentication Attempts"
+      ],
+      "resolution": "Still open — same Cloudflare dashboard task as F3."
+    },
+    {
+      "id": "F8",
+      "verdict": "fixed",
+      "title": "CAPTCHA Image Processing - Unvalidated Image Processing with Pillow",
+      "summary": "CAPTCHA image processed with Pillow (`Image.open(BytesIO(image_bytes))`). Malformed/crafted image files could trigger DoS via decompression bomb, memory exhaustion, or Pillow vulnerabilities (CVE-2023-44271, CVE-2022-22817, etc.).",
+      "severity": "LOW",
+      "impact": "DoS via malformed CAPTCHA image",
+      "source_trace": [
+        {
+          "file": "tgpc/details_dg.py",
+          "function": "solve_captcha",
+          "line": 171,
+          "snippet": "base = Image.open(BytesIO(image_bytes)).convert(\"L\")"
+        }
+      ],
+      "evidence": "No size limit check before `Image.open()`. Large images or decompression bombs can exhaust memory. Pillow has had multiple CVEs for crafted images.",
+      "reproduction": "Serve crafted image as CAPTCHA (if TGPC site compromised) or intercept CAPTCHA response and inject malicious image.",
+      "remediation": "Add size limit check: `if len(image_bytes) > MAX_SIZE: raise`. Use `Image.MAX_IMAGE_PIXELS` limit. Consider `defusedexif` or similar hardening.",
+      "references": [
+        "CWE-400: Uncontrolled Resource Consumption",
+        "CVE-2023-44271",
+        "CVE-2022-22817"
+      ],
+      "resolution": "Already remediated: solve_captcha rejects images over 1 MB and caps Image.MAX_IMAGE_PIXELS at 1,000,000."
+    },
+    {
+      "id": "F9",
+      "verdict": "fixed",
+      "title": "Enrichment Loop - Off-by-One Error Skips Last Record",
+      "summary": "Enrichment loop processes 131/132 records. Last record (TG082335) skipped due to off-by-one in progress bar or iteration logic. Record TG082335 remains unenriched in Supabase (empty enrichment fields).",
+      "severity": "LOW",
+      "impact": "Data completeness - 1 record per batch may miss enrichment",
+      "source_trace": [
+        {
+          "file": "tgpc/manager.py",
+          "function": "_process_records_sequential",
+          "line": 1561,
+          "snippet": "with ProgressBar(total=len(pending_records), label=\"Enriching records\") as bar: for idx, record in enumerate(pending_records): ... bar.update(1, detail=reg_no)"
+        }
+      ],
+      "evidence": "Log shows `Enrich complete: 131 records processed` for 132 records. TG082335 (last in batch) has empty enrichment fields in Supabase. Progress bar shows 132/132 but processed count is 131.",
+      "reproduction": "Run enrichment on batch where last record is valid. Last record skipped.",
+      "remediation": "Debug loop iteration - likely `bar.update(1)` called before/after increment mismatch. Add explicit counter verification.",
+      "references": [
+        "CWE-193: Off-by-one Error"
+      ],
+      "resolution": "Already remediated: the enrichment loop iterates the full pending_records list (for idx, record in enumerate(pending_records)) with no off-by-one."
+    },
+    {
+      "id": "F10",
+      "verdict": "fixed",
+      "title": "Hardcoded TLS Certificate Pinning Absent - TOFU Trust Model",
+      "summary": "Scraper uses TOFU (Trust On First Use) for TGPC TLS - no certificate pinning. If TGPC certificate is rotated or reissued, scraper accepts new cert automatically. Combined with disabled hostname verification (F5), trust model is weak.",
+      "severity": "LOW",
+      "impact": "Long-term MITM if CA compromised or TGPC cert reissued maliciously",
+      "source_trace": [
+        {
+          "file": "tgpc/scraper.py",
+          "line": 163,
+          "snippet": "tgpc_tls = _TGPCTLSAdapter(pool_connections=10, pool_maxsize=10, max_retries=3)"
+        }
+      ],
+      "evidence": "No certificate pinning (SPKI hash pinning or certificate fingerprint). Relies on CA trust + disabled hostname verification (F5).",
+      "reproduction": "If TGPC reissues cert with same CA but attacker controls new private key, MITM undetected.",
+      "remediation": "Add certificate pinning: store expected SPKI SHA256 fingerprint, verify in `_TGPCTLSAdapter` via `ssl_context.verify_flags` or custom verification callback.",
+      "references": [
+        "CWE-295: Improper Certificate Validation",
+        "OWASP Certificate Pinning Cheat Sheet"
+      ],
+      "resolution": "RESOLVED 2026-10-21: the optional SHA-256 pin is now an *additional* layer on top of full hostname verification (it previously replaced it). Set TGPC_TLS_CERT_SHA256 to enable."
+    },
+    {
+      "id": "F11",
+      "verdict": "mitigated-pending-apply",
+      "title": "DG PII columns and write grants on the anon-policied rph table",
+      "summary": "public.rph carries dob, mobile_no, email_id and home_address (36,632 / 36,625 / 36,632 / 35,249 non-empty rows) and is the table with a permissive `for select to anon using (true)` policy. anon currently holds no SELECT *grant*, so the publishable key cannot read it today. But anon and authenticated hold INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES and TRIGGER on every column: RLS blocks the row-level writes only because no permissive write policy exists, and TRUNCATE is not RLS-protected at all.",
+      "severity": "HIGH",
+      "impact": "One `GRANT SELECT ON rph TO anon` (or a Supabase default-grant restore) exposes ~36k mobile numbers, emails and home addresses. The documented PII home, rph_dg_contacts, is correctly locked down; rph was never supposed to hold this data.",
+      "evidence": "information_schema.column_privileges: anon select_cols=0, update_cols=20, insert_cols=20 on rph; role_table_grants: anon has DELETE/INSERT/REFERENCES/TRIGGER/TRUNCATE/UPDATE. pg_policies: rph anon SELECT using(true); metadata had 5 duplicate SELECT policies.",
+      "remediation": "supabase/migrations/20260101000003_security_hardening.sql — revoke INSERT/UPDATE/DELETE/TRUNCATE/REFERENCES/TRIGGER and SELECT from anon/authenticated on rph, revoke all on rph_dg_contacts and the owned sequence, keep metadata read-only. The app uses the service key for every read (verified: no anonKey in ui/src), so service_role retains full access and behaviour is unchanged.",
+      "references": [
+        "DPDP Act 2023 (India) — personal data",
+        "CWE-284: Improper Access Control"
+      ]
+    },
+    {
+      "id": "F12",
+      "verdict": "mitigated-pending-apply",
+      "title": "search_pharmacists RPC had no lim clamp and dumped the table on a blank query",
+      "summary": "ARCHITECTURE.md states the RPC clamps `lim := least(greatest(lim,1),200)`; the deployed function used `limit lim` verbatim, so the only row cap was Supabase's Max Rows setting. Separately, `registration_number ILIKE q || '%'` with an empty q becomes `ILIKE '%'`, matching every row.",
+      "severity": "MEDIUM",
+      "impact": "A direct PostgREST caller could request an unbounded result set, and an empty query returned the table up to the limit.",
+      "evidence": "pg_get_functiondef(public.search_pharmacists): `LIMIT lim;` with no clamp.",
+      "remediation": "supabase/migrations/20260101000002_rpc.sql — clamp inside the function to 1..200 and return nothing for a blank q. In-repo so the deployed definition can no longer drift from the docs.",
+      "references": [
+        "OWASP API4:2023 — Unrestricted Resource Consumption"
+      ]
+    }
+  ],
+  "coverage": {
+    "units_covered": 10,
+    "units_total": 10,
+    "coverage_pct": 100
+  }
+}

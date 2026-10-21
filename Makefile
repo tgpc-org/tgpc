@@ -1,4 +1,4 @@
-.PHONY: scrape sync quota help dg-start dg-stop dg-resume dg-watch
+.PHONY: scrape sync quota help dg-start dg-stop dg-resume dg-watch clean-data clean-ui clean
 
 # Use the repo venv when present (survives Homebrew Python upgrades).
 PY := $(shell test -x .venv/bin/python && echo .venv/bin/python || echo python3)
@@ -33,3 +33,17 @@ dg-resume:  # Unpause the run
 dg-watch:  # Stream the fetch log live (Ctrl+C stops viewing only)
 	gcloud compute ssh tgpc-dg-fetch --zone=asia-south1-c --tunnel-through-iap \
 		--command='sudo -u tgpc-mac tail -f /home/tgpc-mac/tgpc/data/dg_fetch.log'
+
+# Housekeeping. Deliberately conservative: NEVER removes rph.json, backups/,
+# dg_contacts.jsonl (captcha-gated — expensive to re-fetch) or any *.jsonl
+# dataset. Only regenerable scratch and build output.
+clean-data:  # Remove regenerable scratch under data/ (keeps every dataset)
+	rm -rf data/webp data/img data/progress data/backups/*.restore_tmp
+	rm -f data/dg_captcha_tmp.jpg data/*.tmp data/*.restore_tmp
+	rm -f data/dg_fetch_checkpoint.json.bak-*
+	@echo "kept: rph.json, backups/, dg_contacts.jsonl, *.jsonl"
+
+clean-ui:  # Remove UI build/cache/test artifacts
+	rm -rf ui/.svelte-kit ui/.wrangler ui/build ui/dist ui/test-results ui/playwright-report
+
+clean: clean-data clean-ui  # Both of the above

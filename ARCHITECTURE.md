@@ -25,7 +25,10 @@ tgpc/
 ├── .github/FUNDING.yml             # GitHub Sponsors + PayPal funding config
 ├── .husky/                         # Husky pre-commit hook → triggers pre-commit (ruff)
 ├── .pre-commit-config.yaml         # ruff lint + ruff-format only
-├── pyproject.toml                  # Package: tgpc-data-extraction v2.0.0, min-version deps
+├── pyproject.toml                  # Package: tgpc-data-extraction v2.0.0, min-version deps (requires-python >=3.10)
+├── uv.lock                         # Locked dependency graph (uv lock) — reproducible installs
+├── supabase/migrations/            # Version-controlled schema, RLS, RPC + hardening SQL
+├── docs/security/                  # Security audit findings (JSON, with resolution log)
 ├── Makefile                        # scrape / sync / quota + DG run-control targets (dg-start/stop/resume/watch)
 ├── .gitignore
 ├── ARCHITECTURE.md
@@ -390,7 +393,12 @@ dependencies = [
 ]
 ```
 
-Deps are floor-pinned (min versions, not exact). CVE patching is handled by manual bumps (e.g. commit 51ad6c6) plus the `pip-audit` / `npm audit --audit-level=high` gates in CI.
+Deps are floor-pinned (min versions, not exact) in `pyproject.toml`, and
+`uv.lock` pins the full resolved graph (51 packages) so CI and a fresh clone
+install exactly the same versions. Regenerate with `uv lock`; install with
+`uv sync`. `requires-python` is `>=3.10` (3.9 is EOL and Pillow requires 3.10).
+CVE patching is handled by manual bumps (e.g. commit 51ad6c6) plus the
+`pip-audit` / `npm audit --audit-level=high` gates in CI.
 
 ### Supabase Schema
 
@@ -435,7 +443,13 @@ CREATE TABLE metadata (
 -- search_pharmacists(q text, lim int) → ranked rows via ts_rank + similarity
 ```
 
-RLS allows anonymous `SELECT` on `rph` and `metadata` tables. The publishable/anon key (set as `PUBLIC_SUPABASE_PUBLISHABLE_KEY` in the Cloudflare Pages dashboard / local `ui/.env`, which is gitignored) is safe to expose.
+RLS is enabled on `rph` and `metadata` with read-only (`SELECT`) policies. Note
+(re-verified 2026-10-21): the `anon` role holds **no SELECT grant** on `rph` at
+all, so the policy is inert — the publishable key cannot read the table. That is
+the stronger posture, not the documented one, and it matters because `rph`
+carries DG PII columns (`dob`, `mobile_no`, `email_id`, `home_address`). The
+schema, policies and RPC functions now live in version control under
+`supabase/migrations/`; see that README for the drift that was found.
 
 > **Note (2026-10):** the browser no longer holds the anon key. The "Layer 2" refactor moved every data read behind a rate-limited server proxy (`/api/search`, `/api/refine`, `/api/record`, `/api/stats`) that queries with the **service** key server-side. `ui/src/lib/supabase.ts` was deleted and `PUBLIC_SUPABASE_PUBLISHABLE_KEY` is no longer read by the app. The anon `SELECT` policies below are retained as defence in depth — if the key is ever reintroduced, they still permit read-only access and nothing more.
 
@@ -497,13 +511,21 @@ select mobile_no from public.rph_dg_contacts limit 1;
 reset role;
 ```
 
-**✅ Verified state (2026-09-01):** RLS is enabled on both tables
-(`rowsecurity = true` on `rph` and `metadata`). Six policies are in place —
-the anon/public/`realtime` roles have **read-only** (`SELECT`) policies only,
-and the service role has full access. This is the correct read-only posture for
-a public search portal; the publishable/anon key is safe to expose. (Since the
-Layer 2 refactor the deployed app does not use the anon key at all, so these
-policies are now defence in depth rather than the active path.)
+**✅ Verified state (2026-10-21, supersedes 2026-09-01):** RLS is enabled on
+`rph`, `metadata` and `rph_dg_contacts`. The deployed app never uses the anon
+key (Layer 2), so the policies are defence in depth rather than the active path.
+Re-querying the live database corrected two earlier assumptions:
+
+- **`anon` has no SELECT grant on `rph`** (0 column privileges) — the table is
+  not readable with the publishable key, despite the permissive SELECT policy.
+- **`rph` carries PII columns** (`dob`, `mobile_no`, `email_id`, `home_address`;
+  ~36k non-empty each). Together with the permissive policy that is one
+  `GRANT SELECT` away from a leak, and `anon`/`authenticated` additionally held
+  INSERT/UPDATE/DELETE/TRUNCATE grants (RLS blocks row writes; TRUNCATE is not
+  RLS-protected). `supabase/migrations/20260101000003_security_hardening.sql`
+  revokes them; it is written but **not yet applied**.
+- The duplicate policies (five on `metadata`, two on `rph`) are normalised in
+  `supabase/migrations/20260101000001_rls.sql`.
 
 `rph_dg_contacts` is intentionally outside that count: it has RLS enabled with
 **no** policies and no anon grant, because the registry's contact columns are
