@@ -3,44 +3,54 @@
 //
 // Two tiers, cheapest first:
 //
-//  1. Per-isolate in-memory window. Costs nothing, no I/O, and is the tier
-//     that runs today. It is *not* shared: each Pages isolate keeps its own
-//     counters, so the effective global budget is roughly
-//     `limit x live_isolates`.
+//  1. Per-isolate in-memory window. Costs nothing and has no dependencies.
+//     It is NOT shared, and in practice this deployment spreads requests over
+//     many short-lived isolates — measured 2026-10-21: twelve sequential
+//     login attempts produced zero blocks, so the local tier alone offers
+//     close to no brute-force protection.
 //
-//  2. Optional shared counter in Workers KV (`RATE_LIMIT` binding). It is
-//     consulted *only* after the local budget for a key is exhausted, so
-//     ordinary traffic costs zero KV operations — important because KV bills
-//     and quota-caps writes, and /api/stats is polled by every open tab.
-//     Only a caller that already looks abusive pays for the global check.
+//  2. A shared fixed-window counter in Postgres (`bump_rate_limit` RPC).
+//     `requireShared` callers — the credential paths — consult it on every
+//     attempt, because volume there is inherently tiny. High-frequency read
+//     callers consult it only after an isolate's local budget is spent, so
+//     ordinary search traffic performs no SQL at all.
 //
-// Why not do this at the edge: a Cloudflare WAF / Rate Limiting rule needs a
-// zone. This project is served from `tgpc.pages.dev` and the account owns no
-// zones (verified 2026-10-21), so there is nothing to attach a rule to. The
-// Workers Rate Limiting binding is likewise not among the bindings Pages
-// Functions support. Adding a custom domain would restore the edge option;
-// until then this is the honest ceiling.
+// Why not the edge: a Cloudflare Rate Limiting rule needs a zone. This project
+// is served from `tgpc.pages.dev`, the account owns no zones, and Pages
+// Functions do not support the Workers Rate Limiting binding. Why not KV: an
+// `event.platform` binding is unreachable in production (adapter-cloudflare v8
+// does not pass `platform`), so the Supabase service key is the only shared
+// store that actually resolves. See audit F13.
 //
-// Availability beats strictness: if KV misbehaves we fall back to the local
-// verdict rather than failing the request.
+// Availability beats strictness: if the shared counter errors we fall back to
+// the local verdict rather than failing the request.
+//
+// This module must stay free of `$app/env` imports so `node:test` can load it
+// directly; the env-aware wrapper lives in rateLimitShared.ts.
+
 const WINDOW_MS = 60_000;
 const MAX_ATTEMPTS = 5;
 /** Higher budget for high-frequency, unauthenticated read endpoints. */
 const MAX_SEARCH_ATTEMPTS = 120;
 
-/** Upper bound on tracked keys, so spoofed/rotating addresses cannot grow the
- *  map without limit for the lifetime of an isolate. */
+/** Upper bound on tracked keys, so rotating addresses cannot grow the map for
+ *  the lifetime of an isolate. */
 const MAX_KEYS = 5_000;
 
-/** The slice of a KV namespace binding this module needs (kept structural so
- *  tests can pass a fake and so the module compiles without worker types). */
-export interface RateLimitKV {
-  get(_key: string): Promise<string | null>;
-  put(
-    _key: string,
-    _value: string,
-    _options?: { expirationTtl?: number }
-  ): Promise<void>;
+/** PostgREST endpoint + service key for the shared counter. */
+export interface SharedCounter {
+  url: string;
+  secret: string;
+}
+
+export interface RateLimitOptions {
+  /** Shared counter, or null/undefined when unconfigured (local tier only). */
+  shared?: SharedCounter | null;
+  /** Consult the shared counter on every call, not just after the local
+   *  budget is spent. Correct for low-volume credential checks. */
+  requireShared?: boolean;
+  /** Injectable fetch, for tests. */
+  call?: typeof fetch;
 }
 
 /** Each key holds the timestamps of its hits inside the current window. */
@@ -88,56 +98,98 @@ function sweep(now: number, windowMs: number): void {
   }
 }
 
+/** Buckets are hashed so the counter never becomes an address log. */
+async function bucketFor(key: string): Promise<string> {
+  const bytes = new TextEncoder().encode(key);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+/**
+ * Ask the shared counter. Returns true when the caller must be blocked, or
+ * null when there is no usable verdict (unconfigured or upstream error).
+ */
+async function sharedBlocked(
+  key: string,
+  max: number,
+  windowSeconds: number,
+  options: RateLimitOptions
+): Promise<boolean | null> {
+  const shared = options.shared;
+  if (!shared?.url || !shared.secret) return null;
+
+  const call = options.call ?? fetch;
+  try {
+    const bucket = await bucketFor(key);
+    const res = await call(
+      `${shared.url.replace(/\/+$/, '')}/rest/v1/rpc/bump_rate_limit`,
+      {
+        method: 'POST',
+        headers: {
+          apikey: shared.secret,
+          Authorization: `Bearer ${shared.secret}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          p_bucket: bucket,
+          p_window_seconds: windowSeconds,
+          p_max: max
+        })
+      }
+    );
+    if (!res.ok) return null;
+    // The RPC returns true when the call is allowed.
+    return (await res.json()) === false;
+  } catch {
+    return null;
+  }
+}
+
 async function limited(
   key: string,
   max: number,
   windowMs: number,
-  platform?: App.Platform
+  options: RateLimitOptions
 ): Promise<boolean> {
-  if (takeLocal(key, max, windowMs)) return false;
+  const localAllowed = takeLocal(key, max, windowMs);
 
-  // Local budget is spent. With no shared counter there is nothing else to
-  // consult, which is exactly the pre-existing behaviour.
-  const kv = platform?.env?.RATE_LIMIT;
-  if (!kv) return true;
+  // Fast path: inside the local budget and the shared tier is optional.
+  if (localAllowed && !options.requireShared) return false;
 
-  try {
-    const window = Math.floor(Date.now() / windowMs);
-    const kvKey = `rl:${key}:${window}`;
-    const seen = Number(await kv.get(kvKey));
-    const count = Number.isFinite(seen) ? seen : 0;
+  const verdict = await sharedBlocked(
+    key,
+    max,
+    Math.max(1, Math.round(windowMs / 1000)),
+    options
+  );
 
-    if (count >= max) return true;
-
-    await kv.put(kvKey, String(count + 1), {
-      // Outlive the window so the counter cannot be read/reset mid-flight,
-      // then expire on its own (no cleanup job).
-      expirationTtl: Math.ceil(windowMs / 1000) + 60
-    });
-    return false;
-  } catch {
-    // KV unavailable: keep the local verdict instead of failing the request.
-    return true;
-  }
+  // No shared state: the local verdict is all we have.
+  if (verdict === null) return !localAllowed;
+  return verdict;
 }
 
 /**
- * Login / credential-checking limiter. `platform` is optional so callers that
- * have no binding (and unit tests) keep the in-memory behaviour.
+ * Credential-checking limiter. Consults the shared counter on every call when
+ * one is configured, since per-isolate windows are effectively unshared here.
  */
 export function rateLimited(
   key: string,
-  platform?: App.Platform
+  options: RateLimitOptions = {}
 ): Promise<boolean> {
-  return limited(key, MAX_ATTEMPTS, WINDOW_MS, platform);
+  return limited(key, MAX_ATTEMPTS, WINDOW_MS, {
+    ...options,
+    requireShared: true
+  });
 }
 
 /** Higher-budget limiter for high-frequency read endpoints (search-as-you-type). */
 export function rateLimitedSearch(
   key: string,
-  platform?: App.Platform
+  options: RateLimitOptions = {}
 ): Promise<boolean> {
-  return limited(key, MAX_SEARCH_ATTEMPTS, WINDOW_MS, platform);
+  return limited(key, MAX_SEARCH_ATTEMPTS, WINDOW_MS, options);
 }
 
 /** Test seam: forget every local window. */

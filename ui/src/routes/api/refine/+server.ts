@@ -1,6 +1,6 @@
 import { formatDDMonYYYY } from '#lib/dates.js';
 import { envVal } from '#lib/server/appEnv.js';
-import { rateLimitedSearch } from '#lib/server/rateLimit.js';
+import { rateLimitedSearch } from '#lib/server/rateLimitShared.js';
 import type { RequestHandler } from './$types';
 
 const SELECT_COLS =

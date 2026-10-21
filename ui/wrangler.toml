@@ -7,3 +7,8 @@ pages_build_output_dir = ".svelte-kit/cloudflare"
 [[r2_buckets]]
 binding = "DISPATCH"
 bucket_name = "tgpc"
+# NOTE (audit F13): this binding is currently UNREACHABLE from application code.
+# adapter-cloudflare v8 does not pass `platform` to `server.respond`, so
+# event.platform is undefined in production and both /api/dispatch routes fall
+# back to FALLBACK_FILES / 404. Kept because it is the correct declaration once
+# binding access is restored; see ui/src/lib/server/appEnv.ts.

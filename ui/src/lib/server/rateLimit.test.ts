@@ -12,33 +12,30 @@ import {
   rateLimited,
   rateLimitedSearch,
   resetRateLimits,
-  trackedKeyCount
+  trackedKeyCount,
+  type SharedCounter
 } from './rateLimit.ts';
 
-/** Minimal KV stand-in that records operations. */
-function fakeKV(seed: Record<string, string> = {}) {
-  const store = new Map(Object.entries(seed));
-  const ops = { gets: 0, puts: 0 };
-  return {
-    ops,
-    store,
-    async get(key: string) {
-      ops.gets++;
-      return store.get(key) ?? null;
-    },
-    async put(key: string, value: string) {
-      ops.puts++;
-      store.set(key, value);
-    }
-  };
-}
+const SHARED: SharedCounter = {
+  url: 'https://example.supabase.co',
+  secret: 'service-key'
+};
 
-function platformWith(kv: ReturnType<typeof fakeKV>) {
-  return { env: { RATE_LIMIT: kv } } as unknown as App.Platform;
+/** Fake PostgREST call. `allowed` decides what the RPC returns per call. */
+function fakeCall(handler: (_body: Record<string, unknown>) => boolean) {
+  const seen: Record<string, unknown>[] = [];
+  let count = 0;
+  const call = (async (_url: string, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body ?? '{}'));
+    seen.push(body);
+    count++;
+    return { ok: true, json: async () => handler(body) };
+  }) as unknown as typeof fetch;
+  return { call, seen, get calls() { return count; } };
 }
 
 describe('rateLimited', () => {
-  it('allows a few attempts then blocks within the window', async () => {
+  it('allows a few attempts then blocks when no shared counter exists', async () => {
     resetRateLimits();
     const key = 'test-login-' + Math.random();
     for (let i = 0; i < 5; i++) assert.equal(await rateLimited(key), false);
@@ -59,8 +56,64 @@ describe('rateLimited', () => {
     const key = 'test-spam-' + Math.random();
     for (let i = 0; i < 5; i++) await rateLimited(key);
     assert.equal(await rateLimited(key), true);
-    // Still blocked: a blocked hit must not refresh the budget.
     assert.equal(await rateLimited(key), true);
+  });
+});
+
+describe('shared counter (credential paths)', () => {
+  it('is consulted on every attempt, not just after the local budget', async () => {
+    resetRateLimits();
+    const key = 'cred-' + Math.random();
+    const fake = fakeCall(() => true);
+
+    for (let i = 0; i < 5; i++) {
+      assert.equal(await rateLimited(key, { shared: SHARED, call: fake.call }), false);
+    }
+    // Per-isolate windows proved useless in production, so the shared counter
+    // must see every credential attempt.
+    assert.equal(fake.calls, 5);
+  });
+
+  it('blocks as soon as the shared counter denies, even with local budget left', async () => {
+    resetRateLimits();
+    const key = 'cred-deny-' + Math.random();
+    const fake = fakeCall(() => false);
+    assert.equal(await rateLimited(key, { shared: SHARED, call: fake.call }), true);
+  });
+
+  it('sends a hashed bucket, never the raw key', async () => {
+    resetRateLimits();
+    const key = '203.0.113.7:admin';
+    const fake = fakeCall(() => true);
+    await rateLimited(key, { shared: SHARED, call: fake.call });
+
+    const body = fake.seen[0];
+    assert.match(String(body.p_bucket), /^[0-9a-f]{64}$/);
+    assert.ok(!JSON.stringify(body).includes('203.0.113.7'));
+    assert.equal(body.p_window_seconds, 60);
+    assert.equal(body.p_max, 5);
+  });
+
+  it('falls back to the local verdict when the shared counter errors', async () => {
+    resetRateLimits();
+    const key = 'cred-down-' + Math.random();
+    const call = (async () => {
+      throw new Error('supabase down');
+    }) as unknown as typeof fetch;
+
+    // Under the local budget: stay available.
+    for (let i = 0; i < 5; i++) {
+      assert.equal(await rateLimited(key, { shared: SHARED, call }), false);
+    }
+    // Over the local budget with no shared verdict: block, do not 500.
+    assert.equal(await rateLimited(key, { shared: SHARED, call }), true);
+  });
+
+  it('falls back to the local verdict on a non-2xx response', async () => {
+    resetRateLimits();
+    const key = 'cred-500-' + Math.random();
+    const call = (async () => ({ ok: false, json: async () => true })) as unknown as typeof fetch;
+    assert.equal(await rateLimited(key, { shared: SHARED, call }), false);
   });
 });
 
@@ -71,61 +124,27 @@ describe('rateLimitedSearch', () => {
     for (let i = 0; i < 120; i++) assert.equal(await rateLimitedSearch(key), false);
     assert.equal(await rateLimitedSearch(key), true);
   });
-});
 
-describe('shared KV tier', () => {
-  it('is not consulted while the local budget lasts', async () => {
+  it('does not touch the shared counter for ordinary traffic', async () => {
     resetRateLimits();
-    const kv = fakeKV();
-    const key = 'test-kv-idle-' + Math.random();
-    for (let i = 0; i < 5; i++) await rateLimited(key, platformWith(kv));
-    // Exactly five hits fill the budget without exceeding it, so ordinary
-    // traffic must not touch KV at all.
-    assert.equal(kv.ops.gets, 0);
-    assert.equal(kv.ops.puts, 0);
+    const key = 'search-quiet-' + Math.random();
+    const fake = fakeCall(() => true);
+    for (let i = 0; i < 120; i++) {
+      await rateLimitedSearch(key, { shared: SHARED, call: fake.call });
+    }
+    // 120 searches must cost zero SQL: the shared tier is the abuse path only.
+    assert.equal(fake.calls, 0);
 
-    // The sixth hit exceeds the local budget and is the first global check.
-    await rateLimited(key, platformWith(kv));
-    assert.equal(kv.ops.gets, 1);
-    assert.equal(kv.ops.puts, 1);
+    await rateLimitedSearch(key, { shared: SHARED, call: fake.call });
+    assert.equal(fake.calls, 1);
   });
 
-  it('allows past the local budget while the shared counter has room', async () => {
+  it('lets the shared counter allow a burst the local window would refuse', async () => {
     resetRateLimits();
-    const kv = fakeKV();
-    const key = 'test-kv-room-' + Math.random();
-    for (let i = 0; i < 5; i++) await rateLimited(key, platformWith(kv));
-    // Local window is spent, but the shared counter is well under the limit.
-    assert.equal(await rateLimited(key, platformWith(kv)), false);
-    assert.equal(await rateLimited(key, platformWith(kv)), false);
-  });
-
-  it('blocks when the shared counter is already at the limit', async () => {
-    resetRateLimits();
-    const window = Math.floor(Date.now() / 60_000);
-    const key = 'test-kv-full-' + Math.random();
-    const kv = fakeKV({ [`rl:${key}:${window}`]: '5' });
-    for (let i = 0; i < 5; i++) await rateLimited(key, platformWith(kv));
-    assert.equal(await rateLimited(key, platformWith(kv)), true);
-  });
-
-  it('falls back to the local verdict when KV throws', async () => {
-    resetRateLimits();
-    const key = 'test-kv-down-' + Math.random();
-    const broken = {
-      async get() {
-        throw new Error('kv down');
-      },
-      async put() {
-        throw new Error('kv down');
-      }
-    };
-    const platform = { env: { RATE_LIMIT: broken } } as unknown as App.Platform;
-
-    // Under budget: local verdict stands, KV is never reached.
-    for (let i = 0; i < 5; i++) assert.equal(await rateLimited(key, platform), false);
-    // Over budget and KV is broken: stay blocked rather than 500 the request.
-    assert.equal(await rateLimited(key, platform), true);
+    const key = 'search-burst-' + Math.random();
+    const fake = fakeCall(() => true);
+    for (let i = 0; i < 120; i++) await rateLimitedSearch(key, { shared: SHARED, call: fake.call });
+    assert.equal(await rateLimitedSearch(key, { shared: SHARED, call: fake.call }), false);
   });
 });
 
@@ -133,9 +152,6 @@ describe('memory bound', () => {
   it('caps the number of tracked keys', async () => {
     resetRateLimits();
     for (let i = 0; i < 6_000; i++) await rateLimited('flood-' + i);
-    assert.ok(
-      trackedKeyCount() <= 5_000,
-      `map grew to ${trackedKeyCount()} keys`
-    );
+    assert.ok(trackedKeyCount() <= 5_000, `map grew to ${trackedKeyCount()} keys`);
   });
 });

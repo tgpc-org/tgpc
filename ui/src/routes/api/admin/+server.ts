@@ -6,7 +6,7 @@ import {
   safeEqual
 } from '#lib/server/auth.js';
 import { envVal } from '#lib/server/appEnv.js';
-import { rateLimited } from '#lib/server/rateLimit.js';
+import { rateLimited } from '#lib/server/rateLimitShared.js';
 import type { RequestHandler } from './$types';
 
 /** Log in: verify the shared secret, then issue an HttpOnly session cookie. */

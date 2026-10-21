@@ -16,6 +16,10 @@
       {
         "date": "2026-10-21",
         "summary": "Applied F11/F12 to production and verified. For F3/F7 the primary fix was tested against the live account and is not attachable: zero zones, only tgpc.pages.dev, and Pages Functions do not support the Workers Rate Limiting binding. Implemented a shared KV tier (local window first, global counter only after the local budget is spent, fail-open on KV errors) plus a 5,000-key cap on the local map, which previously grew without bound. Activation needs a KV namespace the current API token cannot create (401)."
+      },
+      {
+        "date": "2026-10-21",
+        "summary": "F3/F7 closed with a Postgres shared counter after the edge and KV routes were both ruled out against the live account. While verifying, discovered F13: event.platform is undefined under adapter-cloudflare v8, so the R2 DISPATCH binding is unreachable and every dispatch PDF currently 404s while the listing presents a stale hardcoded fallback. Corrected the earlier claim in this log's predecessor that bindings reach production - they do not."
       }
     ]
   },
@@ -70,11 +74,11 @@
     },
     {
       "id": "F3",
-      "verdict": "mitigated-pending-activation",
+      "verdict": "fixed",
       "title": "In-Memory Rate Limiter Only - No Distributed Rate Limiting",
-      "summary": "Admin login limiter has a per-isolate in-memory window; a shared KV counter now exists in code but is not bound, so the effective global budget is still `MAX_ATTEMPTS x live_isolates`. A Cloudflare Rate Limiting rule is not attachable to this deployment (no zone; pages.dev is Cloudflare-owned).",
+      "summary": "Admin login limiter relied on a per-isolate in-memory window. Measured on production 2026-10-21: 12 sequential failed logins produced 12x403 and zero 429, because Pages spreads requests over many short-lived isolates - so the control was effectively absent. A Cloudflare Rate Limiting rule is not attachable (no zone; pages.dev is Cloudflare-owned) and Pages Functions do not support the Workers Rate Limiting binding.",
       "severity": "MEDIUM",
-      "impact": "Brute-force protection is weaker than it reads: `MAX_ATTEMPTS x live_isolates`, not `MAX_ATTEMPTS`. Exploitation still has to beat the 250 ms constant-time compare and the fixed response delay, so it is a weakened control rather than an open door.",
+      "impact": "Brute-force protection was nominal: `MAX_ATTEMPTS x live_isolates`, and isolates are plentiful enough that a single-IP attacker never tripped it. The 250 ms fixed delay and constant-time compare still bound the rate per connection, but the attempt counter did not.",
       "source_trace": [
         {
           "file": "ui/src/lib/server/rateLimit.ts",
@@ -83,15 +87,15 @@
           "snippet": "const attempts = new Map<string, number[]>(); ... const recent = (attempts.get(key) ?? []).filter((t) => now - t < WINDOW_MS); if (recent.length >= MAX_ATTEMPTS) return true;"
         }
       ],
-      "evidence": "Verified 2026-10-21 against the live account, not the docs: (1) GET /accounts/{acct}/zones -> [] (the account owns zero zones, so there is no zone to attach a WAF/Rate Limiting rule to); (2) the Pages project `tgpc` reports domains [\"tgpc.pages.dev\"] and custom domains [] (pages.dev is Cloudflare-owned, so customer rules cannot apply); (3) the Pages bindings reference lists KV, R2, D1, Durable Objects, Queues, Hyperdrive, Vectorize, AI, Analytics Engine, service bindings and env vars only - the Workers Rate Limiting binding is not supported in Pages Functions; (4) POST /accounts/{acct}/storage/kv/namespaces returns 401 with the available CLOUDFLARE_API_TOKEN, so no KV namespace can be created with it. The in-isolate limiter also grew a Map entry per distinct key with no eviction.",
+      "evidence": "Live: 12 POST /api/admin with a wrong secret -> 12x403, 0x429. 140 GET /api/search -> 140x200 (limit 120). Root cause of the shared tier being unavailable: (1) GET /accounts/{acct}/zones -> [], project domains [\"tgpc.pages.dev\"], custom domains []; (2) Pages bindings reference (2026-06-25) has no rate limiting binding; (3) KV create returns 401 with the only available token; (4) event.platform is undefined in production (F13), so a KV binding would be unreadable even if created.",
       "reproduction": "Send 5 failed login attempts from IP A to isolate A (blocked). Send 5 more from same IP to isolate B (succeeds). Repeat across N isolates.",
-      "remediation": "Primary: add a custom domain on a zone the account owns, then attach a Rate Limiting rule to /api/admin (5/min/IP). Interim (already coded): create the KV namespace, add the RATE_LIMIT binding, redeploy - the shared tier activates automatically with no further code change.",
+      "remediation": "Shipped a shared fixed-window counter in Postgres (supabase/migrations/20260101000004_shared_rate_limit.sql: table rate_limit + bump_rate_limit RPC, atomic upsert, SHA-256 buckets, 1h row expiry, RLS on, no anon/authenticated grants). The credential limiter now consults it on every attempt; read paths consult it only after a local budget is spent so normal traffic does no SQL. Errors fall back to the local verdict.",
       "references": [
         "CWE-307: Improper Restriction of Excessive Authentication Attempts",
         "OWASP A07:2021 – Identification and Authentication Failures",
         "OWASP A07:2021 - Identification and Authentication Failures"
       ],
-      "resolution": "Partially mitigated in code; the edge half is blocked by account configuration. ui/src/lib/server/rateLimit.ts now has two tiers: the per-isolate window (zero I/O) and an optional shared KV counter consulted only after a key exhausts its local budget, so ordinary traffic costs no KV operations (relevant because KV quota-caps writes and /api/stats is polled per open tab). The KV tier fails open to the local verdict if KV errors, so availability never depends on it. It is unit-tested with a fake namespace (72 tests pass) but is NOT ACTIVE in production because no namespace exists and the token cannot create one. To close: create the namespace with a token holding Workers KV:Edit (`npx wrangler kv namespace create RATE_LIMIT --remote`), add `[[kv_namespaces]] binding = \"RATE_LIMIT\"` with the returned id to ui/wrangler.toml, and redeploy. A WAF rule additionally requires a custom domain on a zone this account owns; until then the edge rule is not attachable at all."
+      "resolution": "Fixed in code and applied to production 2026-10-21. Verified: bump_rate_limit returns true,true,true,false,false for p_max=3; table grants are postgres/service_role only; RLS enabled. Residual: the limit is 5/min per address at the database, which is exactly the intended ceiling - a future edge rule (needs a custom domain) would still be cheaper because it rejects before the function runs."
     },
     {
       "id": "F4",
@@ -166,9 +170,9 @@
     },
     {
       "id": "F7",
-      "verdict": "mitigated-pending-activation",
+      "verdict": "fixed",
       "title": "In-Memory Rate Limiter Not Persisted - Bypass on Restart/Deploy",
-      "summary": "The in-memory limiter resets whenever an isolate is recycled, which Pages does on every deploy and on autoscale. A fixed-window KV counter is now implemented (tested) but not bound, so counters still live only in isolate memory. Separately, the local Map had no eviction, so distinct client addresses grew it for the isolate's lifetime.",
+      "summary": "The limiter's counters lived only in isolate memory, so they reset on every deploy and autoscale event. Counters now live in Postgres, so windows survive isolate recycling, deploys and cold starts. Separately, the local Map had no eviction: it added an entry per distinct client address for the isolate's lifetime, a memory-exhaustion vector that needed no brute force.",
       "severity": "LOW",
       "impact": "Rate limit bypass via deploy timing",
       "source_trace": [
@@ -180,11 +184,11 @@
       ],
       "evidence": "Global `Map` reset on module reload. Cloudflare Pages creates new isolate on each deploy/auto-scale. No persistence.",
       "reproduction": "Attacker makes 4 failed attempts. Triggers deploy (or waits for auto-scale). Counter reset. Makes 5 more attempts.",
-      "remediation": "Bind the implemented KV counter (create namespace, add `[[kv_namespaces]] binding = \"RATE_LIMIT\"`, redeploy) so windows survive restarts. Until then, treat persistence as absent and rely on the edge rule, which itself needs a custom domain.",
+      "remediation": "Postgres-backed shared counter (same migration as F3); no Cloudflare binding required, which matters because bindings are unreachable in production (F13).",
       "references": [
         "CWE-307: Improper Restriction of Excessive Authentication Attempts"
       ],
-      "resolution": "Mitigated in code, activation blocked on the same namespace as F3. The shared tier is a fixed-window counter at `rl:{key}:{window}` with expirationTtl = window + 60s, so it survives isolate recycling and deploys, and stale counters expire without a cleanup job. Also fixed the unbounded growth: the local Map is capped at 5,000 keys with stale-then-oldest eviction, since previously every distinct client address permanently added a Map entry for the isolate's lifetime (a memory-exhaustion vector that needed no brute force)."
+      "resolution": "Fixed in code and applied 2026-10-21. The shared counter is a fixed window at `floor(epoch / window_seconds)` with an opportunistic delete of rows older than one hour, so state persists across restarts and expires without a cron job. The local Map is capped at 5,000 keys with stale-then-oldest eviction, and a blocked hit no longer refreshes the window. Verified by 75 unit tests, including hashed-bucket, KV-free fast path and fail-open-on-error behaviour."
     },
     {
       "id": "F8",
@@ -285,6 +289,32 @@
         "OWASP API4:2023 — Unrestricted Resource Consumption"
       ],
       "resolution": "APPLIED to production 2026-10-21 as `search_pharmacists_lim_clamp_and_blank_guard`; verified lim=100000 -> 200 rows and q='' -> 0 rows."
+    },
+    {
+      "id": "F13",
+      "severity": "HIGH",
+      "title": "All wrangler.toml bindings are unreachable in production; dispatch downloads 404",
+      "verdict": "open",
+      "summary": "adapter-cloudflare v8 no longer hands `platform` to `server.respond`, so `event.platform` is undefined in production and every binding declared in ui/wrangler.toml reads as missing. Both dispatch routes depend on the `DISPATCH` R2 bucket through `platform?.env`, so the listing silently degrades to the hardcoded FALLBACK_FILES array and the download route returns 404 for every file.",
+      "impact": "User-facing breakage, not just a security nit: the dispatch page advertises 221 PDFs that cannot be downloaded, and the list is frozen at whatever was hardcoded. Nothing surfaces an error - the fallback makes it look like a working, if stale, listing.",
+      "evidence": "GET /api/dispatch -> 221 entries, 0 with a `size` field, 221 flagged `stale: true` (the fallback branch, since the R2 path sets `size`). GET /api/dispatch/DL01052023.pdf -> HTTP 404 'Not found'. ui/src/lib/server/appEnv.ts documents that platform is undefined under adapter-cloudflare v8; both routes read platform?.env?.DISPATCH directly.",
+      "reproduction": "Open the dispatch page on tgpc.pages.dev and click any file, or curl /api/dispatch/<name>.",
+      "remediation": "Either restore binding access (resolve the binding through the supported SvelteKit 3 path and declare it in src/env.ts, or use the R2 S3 credentials already present in the env: R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY / TGPC_R2_DG_BUCKET), or replace the dead-read fallback with an explicit outage signal instead of a fake listing. The listing must never present unservable files as available.",
+      "references": [
+        "CWE-1188: Insecure Default Initialization of Resource"
+      ],
+      "source_trace": [
+        {
+          "file": "ui/src/routes/api/dispatch/+server.ts",
+          "line": 63,
+          "snippet": "const bucket: any = platform?.env?.DISPATCH;"
+        },
+        {
+          "file": "ui/src/routes/api/dispatch/[name]/+server.ts",
+          "line": 10,
+          "snippet": "const bucket: any = platform?.env?.DISPATCH;"
+        }
+      ]
     }
   ],
   "coverage": {

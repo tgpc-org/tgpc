@@ -1,6 +1,6 @@
 import { envVal } from '#lib/server/appEnv.js';
 import { normalizeReg } from '#lib/server/contacts.js';
-import { rateLimitedSearch } from '#lib/server/rateLimit.js';
+import { rateLimitedSearch } from '#lib/server/rateLimitShared.js';
 import type { RequestHandler } from './$types';
 
 const COLS = [

@@ -1,7 +1,7 @@
 import { isAuthed } from '#lib/server/auth.js';
 import { envVal } from '#lib/server/appEnv.js';
 import { normalizeReg, shapeBase, shapeContact } from '#lib/server/contacts.js';
-import { rateLimited } from '#lib/server/rateLimit.js';
+import { rateLimited } from '#lib/server/rateLimitShared.js';
 import type { RequestHandler } from './$types';
 
 const CONTACT_COLS = [
