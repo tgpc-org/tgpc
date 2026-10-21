@@ -40,7 +40,7 @@ const BASE_COLS = [
 export const GET: RequestHandler = async (event) => {
   const { platform, cookies, url } = event;
 
-  if (rateLimited('contacts:' + event.getClientAddress())) {
+  if (await rateLimited('contacts:' + event.getClientAddress(), platform)) {
     return new Response('Too Many Requests', {
       status: 429,
       headers: { 'Retry-After': '60' }

@@ -31,7 +31,7 @@ function clean(s: string, max = 60): string {
 export const GET: RequestHandler = async (event) => {
   const { platform, url } = event;
 
-  if (rateLimitedSearch('refine:' + event.getClientAddress())) {
+  if (await rateLimitedSearch('refine:' + event.getClientAddress(), platform)) {
     return new Response('Too Many Requests', {
       status: 429,
       headers: { 'Retry-After': '60' }

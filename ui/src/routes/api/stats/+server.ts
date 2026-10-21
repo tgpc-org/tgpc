@@ -11,7 +11,7 @@ import type { RequestHandler } from './$types';
 export const GET: RequestHandler = async (event) => {
   const { platform } = event;
 
-  if (rateLimitedSearch('stats:' + event.getClientAddress())) {
+  if (await rateLimitedSearch('stats:' + event.getClientAddress(), platform)) {
     return new Response('Too Many Requests', {
       status: 429,
       headers: { 'Retry-After': '60' }

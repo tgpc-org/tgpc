@@ -14,7 +14,7 @@ const MAX_LIM = 200;
 export const GET: RequestHandler = async (event) => {
   const { platform, url } = event;
 
-  if (rateLimitedSearch('search:' + event.getClientAddress())) {
+  if (await rateLimitedSearch('search:' + event.getClientAddress(), platform)) {
     return new Response('Too Many Requests', {
       status: 429,
       headers: { 'Retry-After': '60' }

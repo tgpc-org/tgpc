@@ -12,6 +12,10 @@
       {
         "date": "2026-10-21",
         "summary": "Schema audit against the live project (pg_catalog, not docs). Found two issues the code review could not see because they live in the database, not the repo: F11 (PII columns + write grants on the publicly-policied rph table) and F12 (search RPC had no lim clamp and dumped the table on a blank query). Both remediations are written as version-controlled migrations under supabase/migrations/ and are awaiting review before being applied."
+      },
+      {
+        "date": "2026-10-21",
+        "summary": "Applied F11/F12 to production and verified. For F3/F7 the primary fix was tested against the live account and is not attachable: zero zones, only tgpc.pages.dev, and Pages Functions do not support the Workers Rate Limiting binding. Implemented a shared KV tier (local window first, global counter only after the local budget is spent, fail-open on KV errors) plus a 5,000-key cap on the local map, which previously grew without bound. Activation needs a KV namespace the current API token cannot create (401)."
       }
     ]
   },
@@ -66,11 +70,11 @@
     },
     {
       "id": "F3",
-      "verdict": "open",
+      "verdict": "mitigated-pending-activation",
       "title": "In-Memory Rate Limiter Only - No Distributed Rate Limiting",
-      "summary": "Admin login rate limiter uses in-memory `Map` per isolate. With Cloudflare Pages/Workers running multiple isolates, attacker can bypass by distributing requests across isolates. No Cloudflare Rate Limiting rule configured.",
+      "summary": "Admin login limiter has a per-isolate in-memory window; a shared KV counter now exists in code but is not bound, so the effective global budget is still `MAX_ATTEMPTS x live_isolates`. A Cloudflare Rate Limiting rule is not attachable to this deployment (no zone; pages.dev is Cloudflare-owned).",
       "severity": "MEDIUM",
-      "impact": "Brute-force protection bypass - attacker can make 5 attempts per isolate * N isolates",
+      "impact": "Brute-force protection is weaker than it reads: `MAX_ATTEMPTS x live_isolates`, not `MAX_ATTEMPTS`. Exploitation still has to beat the 250 ms constant-time compare and the fixed response delay, so it is a weakened control rather than an open door.",
       "source_trace": [
         {
           "file": "ui/src/lib/server/rateLimit.ts",
@@ -79,14 +83,15 @@
           "snippet": "const attempts = new Map<string, number[]>(); ... const recent = (attempts.get(key) ?? []).filter((t) => now - t < WINDOW_MS); if (recent.length >= MAX_ATTEMPTS) return true;"
         }
       ],
-      "evidence": "Code comment acknowledges: 'Each Pages isolate holds its own window, so this is defence-in-depth rather than a substitute for a Cloudflare Rate Limiting rule on /api/admin'. No Cloudflare Rate Limiting rule deployed.",
+      "evidence": "Verified 2026-10-21 against the live account, not the docs: (1) GET /accounts/{acct}/zones -> [] (the account owns zero zones, so there is no zone to attach a WAF/Rate Limiting rule to); (2) the Pages project `tgpc` reports domains [\"tgpc.pages.dev\"] and custom domains [] (pages.dev is Cloudflare-owned, so customer rules cannot apply); (3) the Pages bindings reference lists KV, R2, D1, Durable Objects, Queues, Hyperdrive, Vectorize, AI, Analytics Engine, service bindings and env vars only - the Workers Rate Limiting binding is not supported in Pages Functions; (4) POST /accounts/{acct}/storage/kv/namespaces returns 401 with the available CLOUDFLARE_API_TOKEN, so no KV namespace can be created with it. The in-isolate limiter also grew a Map entry per distinct key with no eviction.",
       "reproduction": "Send 5 failed login attempts from IP A to isolate A (blocked). Send 5 more from same IP to isolate B (succeeds). Repeat across N isolates.",
-      "remediation": "Configure Cloudflare Rate Limiting rule on `/api/admin` (5 requests/minute per IP) in Cloudflare dashboard. Keep in-isolate limiter as defense-in-depth.",
+      "remediation": "Primary: add a custom domain on a zone the account owns, then attach a Rate Limiting rule to /api/admin (5/min/IP). Interim (already coded): create the KV namespace, add the RATE_LIMIT binding, redeploy - the shared tier activates automatically with no further code change.",
       "references": [
         "CWE-307: Improper Restriction of Excessive Authentication Attempts",
-        "OWASP A07:2021 – Identification and Authentication Failures"
+        "OWASP A07:2021 – Identification and Authentication Failures",
+        "OWASP A07:2021 - Identification and Authentication Failures"
       ],
-      "resolution": "Still open — this is a Cloudflare dashboard task, not a code change. Configure a Rate Limiting rule on /api/admin (5 req/min per IP). The in-isolate limiter in ui/src/lib/server/rateLimit.ts remains as defence in depth."
+      "resolution": "Partially mitigated in code; the edge half is blocked by account configuration. ui/src/lib/server/rateLimit.ts now has two tiers: the per-isolate window (zero I/O) and an optional shared KV counter consulted only after a key exhausts its local budget, so ordinary traffic costs no KV operations (relevant because KV quota-caps writes and /api/stats is polled per open tab). The KV tier fails open to the local verdict if KV errors, so availability never depends on it. It is unit-tested with a fake namespace (72 tests pass) but is NOT ACTIVE in production because no namespace exists and the token cannot create one. To close: create the namespace with a token holding Workers KV:Edit (`npx wrangler kv namespace create RATE_LIMIT --remote`), add `[[kv_namespaces]] binding = \"RATE_LIMIT\"` with the returned id to ui/wrangler.toml, and redeploy. A WAF rule additionally requires a custom domain on a zone this account owns; until then the edge rule is not attachable at all."
     },
     {
       "id": "F4",
@@ -161,9 +166,9 @@
     },
     {
       "id": "F7",
-      "verdict": "open",
+      "verdict": "mitigated-pending-activation",
       "title": "In-Memory Rate Limiter Not Persisted - Bypass on Restart/Deploy",
-      "summary": "In-memory rate limiter resets on every deploy/restart. Cloudflare Pages deploys new isolates frequently. Attacker can trigger deploy (or wait for auto-deploy) to reset rate limit counter.",
+      "summary": "The in-memory limiter resets whenever an isolate is recycled, which Pages does on every deploy and on autoscale. A fixed-window KV counter is now implemented (tested) but not bound, so counters still live only in isolate memory. Separately, the local Map had no eviction, so distinct client addresses grew it for the isolate's lifetime.",
       "severity": "LOW",
       "impact": "Rate limit bypass via deploy timing",
       "source_trace": [
@@ -175,11 +180,11 @@
       ],
       "evidence": "Global `Map` reset on module reload. Cloudflare Pages creates new isolate on each deploy/auto-scale. No persistence.",
       "reproduction": "Attacker makes 4 failed attempts. Triggers deploy (or waits for auto-scale). Counter reset. Makes 5 more attempts.",
-      "remediation": "Use Cloudflare KV/Durable Objects for persistent rate limiting, or rely on Cloudflare Rate Limiting rule (primary fix).",
+      "remediation": "Bind the implemented KV counter (create namespace, add `[[kv_namespaces]] binding = \"RATE_LIMIT\"`, redeploy) so windows survive restarts. Until then, treat persistence as absent and rely on the edge rule, which itself needs a custom domain.",
       "references": [
         "CWE-307: Improper Restriction of Excessive Authentication Attempts"
       ],
-      "resolution": "Still open — same Cloudflare dashboard task as F3."
+      "resolution": "Mitigated in code, activation blocked on the same namespace as F3. The shared tier is a fixed-window counter at `rl:{key}:{window}` with expirationTtl = window + 60s, so it survives isolate recycling and deploys, and stale counters expire without a cleanup job. Also fixed the unbounded growth: the local Map is capped at 5,000 keys with stale-then-oldest eviction, since previously every distinct client address permanently added a Map entry for the isolate's lifetime (a memory-exhaustion vector that needed no brute force)."
     },
     {
       "id": "F8",
@@ -254,7 +259,7 @@
     },
     {
       "id": "F11",
-      "verdict": "mitigated-pending-apply",
+      "verdict": "fixed",
       "title": "Leftover table-level write grants for anon/authenticated on rph and metadata",
       "summary": "anon and authenticated hold INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES and TRIGGER on public.rph and public.metadata. RLS blocks the row-level writes only because no permissive write policy exists, and TRUNCATE is not RLS-protected at all. Context: the DG PII columns on rph (dob/mobile_no/email_id/home_address, ~36k each) were merged deliberately (migrations 20261007130122 and siblings, with `GRANT ALL (col) TO service_role` only), and SELECT for anon/authenticated was deliberately revoked on rph AND metadata by 20261007125739 (revoke_anon_reads_layer2). So reads are already closed; the write grants were simply left behind by Supabase's creation-time default.",
       "severity": "MEDIUM",
@@ -264,11 +269,12 @@
       "references": [
         "DPDP Act 2023 (India) — personal data",
         "CWE-284: Improper Access Control"
-      ]
+      ],
+      "resolution": "APPLIED to production 2026-10-21 as `revoke_anon_writes_rph_metadata`; verified zero grants remain for anon/authenticated on rph, metadata and rph_dg_contacts, and all four live endpoints still 200 (the app reads only via service_role)."
     },
     {
       "id": "F12",
-      "verdict": "mitigated-pending-apply",
+      "verdict": "fixed",
       "title": "search_pharmacists RPC had no lim clamp and dumped the table on a blank query",
       "summary": "ARCHITECTURE.md states the RPC clamps `lim := least(greatest(lim,1),200)`; the deployed function used `limit lim` verbatim, so the only row cap was Supabase's Max Rows setting. Separately, `registration_number ILIKE q || '%'` with an empty q becomes `ILIKE '%'`, matching every row.",
       "severity": "MEDIUM",
@@ -277,7 +283,8 @@
       "remediation": "supabase/migrations/20260101000002_rpc.sql — clamp inside the function to 1..200 and return nothing for a blank q. In-repo so the deployed definition can no longer drift from the docs.",
       "references": [
         "OWASP API4:2023 — Unrestricted Resource Consumption"
-      ]
+      ],
+      "resolution": "APPLIED to production 2026-10-21 as `search_pharmacists_lim_clamp_and_blank_guard`; verified lim=100000 -> 200 rows and q='' -> 0 rows."
     }
   ],
   "coverage": {

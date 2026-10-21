@@ -13,7 +13,7 @@ import type { RequestHandler } from './$types';
 export const POST: RequestHandler = async (event) => {
   const { request, platform, cookies } = event;
 
-  if (rateLimited(event.getClientAddress())) {
+  if (await rateLimited(event.getClientAddress(), platform)) {
     return new Response('Too Many Requests', {
       status: 429,
       headers: { 'Retry-After': '60' }

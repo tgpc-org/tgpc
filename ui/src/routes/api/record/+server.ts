@@ -25,7 +25,7 @@ const COLS = [
 export const GET: RequestHandler = async (event) => {
   const { platform, url } = event;
 
-  if (rateLimitedSearch('record:' + event.getClientAddress())) {
+  if (await rateLimitedSearch('record:' + event.getClientAddress(), platform)) {
     return new Response('Too Many Requests', {
       status: 429,
       headers: { 'Retry-After': '60' }
