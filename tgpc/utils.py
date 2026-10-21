@@ -39,17 +39,23 @@ class Config:
     """Configuration for TGPC system."""
 
     # API Settings
-    base_url: str = "https://www.pharmacycouncil.telangana.gov.in"
+    #
+    # The apex host, not "www.": the source's certificate carries a correct
+    # CN/SAN for `pharmacycouncil.telangana.gov.in` but NOT for the `www.`
+    # variant, so full TLS hostname verification only works against the apex
+    # (CODE_REVIEW.md C4, resolved 2026-10). Both hosts serve the same
+    # endpoints, so this costs nothing and removes the last MITM gap.
+    base_url: str = "https://pharmacycouncil.telangana.gov.in"
     connect_timeout: int = 20
     read_timeout: int = 180
     max_retries: int = 3
     proxy_url: Optional[str] = None
 
     # Optional SHA-256 fingerprint (hex, colons allowed) of the TGPC host
-    # certificate. Empty (the default) preserves current behaviour: chain
-    # validation stays on and only the hostname match is relaxed, because the
-    # source certificate is issued for a different name. Set it to pin the
-    # exact certificate and close the remaining MITM gap (audit F5/F10).
+    # certificate. Empty (the default) keeps the standard posture: full chain
+    # AND hostname verification. Set it to additionally pin the exact
+    # certificate, closing the gap where a compromised CA could issue a
+    # valid-looking cert for the host (audit F5/F10).
     tls_cert_sha256: Optional[str] = None
 
     # Rate Limiting
@@ -77,8 +83,10 @@ class Config:
         )
         enrichment_dir = os.environ.get("TGPC_ENRICHMENT_DIR", "data")
         tls_cert_sha256 = (os.environ.get("TGPC_TLS_CERT_SHA256") or "").strip() or None
+        base_url = (os.environ.get("TGPC_BASE_URL") or "").strip() or Config.base_url
 
         return cls(
+            base_url=base_url.rstrip("/"),
             proxy_url=proxy_url,
             enrichment_directory=enrichment_dir,
             r2_public_base=os.environ.get("TGPC_R2_PUBLIC_BASE", Config.r2_public_base),

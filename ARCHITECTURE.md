@@ -26,7 +26,7 @@ tgpc/
 ├── .husky/                         # Husky pre-commit hook → triggers pre-commit (ruff)
 ├── .pre-commit-config.yaml         # ruff lint + ruff-format only
 ├── pyproject.toml                  # Package: tgpc-data-extraction v2.0.0, min-version deps
-├── Makefile                        # scrape / sync / quota shortcuts into the CLI
+├── Makefile                        # scrape / sync / quota + DG run-control targets (dg-start/stop/resume/watch)
 ├── .gitignore
 ├── ARCHITECTURE.md
 ├── README.md
@@ -36,15 +36,18 @@ tgpc/
 ├── DG_PIPELINE.md                  # DG contact-pipeline deep dive (captcha capture, fetch-dg CLI, dashboard :8765)
 ├── VPS_DG_FETCH.md                 # Runbook: DG fetch on Oracle Always Free VPS (bootstrap → smoke → systemd)
 ├── data/
-│   ├── rph.json                     # ~89K pharmacist records (JSON array) — gitignored but tracked historically
+│   ├── rph.json                     # ~91K pharmacist records (JSON array) — gitignored
 │   ├── update_details.json         # Sync diff summary — gitignored
 │   ├── webp/                       # Per-record enrichment photos (WebP) — gitignored
 │   ├── inactive_records.jsonl      # Inactive-sweep phase 1 output — gitignored
 │   ├── now_active_from_inactive.jsonl # Inactive-sweep phase 2 output — gitignored
+│   ├── dg_contacts.jsonl           # DG contact capture (PII) — gitignored
+│   ├── dg_fetch_checkpoint.json    # DG fetch resume state — gitignored
+│   ├── dg_raw/                     # Per-record DG raw snapshots — gitignored
 │   └── backups/                    # Timestamped rph.json backups (R2-backed) — gitignored
 ├── tgpc/                           # Python package
 │   ├── __init__.py                 # Imports Config, setup_logging, Scraper, Manager; __version__ = "2.0.0"
-│   ├── __main__.py                 # CLI: python3 -m tgpc {update, sync, enrich, retry-photos, quota, creds} + WARP mgmt
+│   ├── __main__.py                 # CLI: python3 -m tgpc {update, sync, enrich, retry-photos, fetch-dg, validate-dg, quota, creds} + WARP mgmt
 │   ├── utils.py                    # Config dataclass, TGPCError/BlockedError, setup_logging, credentials (Keychain/env/file)
 │   ├── progress.py                 # ProgressBar, Phase, heartbeat, BarHandler (TTY + CI-safe output)
 │   ├── quota.py                    # Free-tier quota report (Supabase, R2, Resend, GDrive)
@@ -55,9 +58,11 @@ tgpc/
 │   ├── enrichment.py               # run_enrichment / enrich_new_records / process_records_sequential bodies
 │   ├── inactive_sweep.py           # Detect inactive→active reactivations (2-phase, resumable)
 │   ├── enrich_actives.py           # Parallel enrichment + upsert of reactivated records
-│   ├── details_dg.py               # DG getdetailsdg captcha flow → PII contacts; L1-L4 redundancy + --resume (~1260 lines)
+│   ├── details_dg.py               # DG getdetailsdg captcha flow → PII contacts; L1-L4 redundancy + --resume (~1390 lines)
 │   ├── merge_refresh.py            # Post-scrape recompute of DG-merged rph columns (idempotent, warn-and-continue)
-│   └── dg_migration.sql            # rph_dg_contacts table DDL (service-role only, no anon grants)
+│   ├── backfill_missing.py         # Blank-only column fills from the live source (strictly additive)
+│   ├── dg_migration.sql            # rph_dg_contacts table DDL (service-role only, no anon grants)
+│   └── dg_serial_int_migration.sql # rph_dg_contacts.serial_number TEXT -> INTEGER
 ├── scripts/                        # Standalone helpers (run from repo root)
 │   ├── dg_dashboard.py             # Local DG fetch dashboard (localhost, no login: status + START/STOP + VPS controls)
 │   ├── dg_dashboard.html           # DG monitor UI (dark mode, start/stop, live stats)
@@ -69,59 +74,77 @@ tgpc/
 │   ├── vm_view.sh                  # Re-open the Mac→VM dashboard tunnel (:8900; sleep kills it)
 │   ├── tgpc-dg-fetch.service       # systemd unit for the VPS fetch loop
 │   ├── tgpc-dg-dashboard.service   # systemd unit for the VPS dashboard (localhost-only)
+│   ├── vm_sweep_inactives.sh       # VM-side re-sweep of inactive records (runs tgpc.inactive_sweep sweep)
+│   ├── dg_open.sh                  # Start the local DG dashboard and open it in the browser
 │   └── optimize_images.py          # Batch data/img/ → WebP q85, passport 413x531 resize
 ├── ui/                            # Production frontend (SvelteKit)
 │   ├── src/
 │   │   ├── app.html               # HTML shell (%sveltekit.head/body); inline theme bootstrap
 │   │   ├── app.css                # Global stylesheet (Tailwind v4 entry, theme tokens)
 │   │   ├── app.d.ts               # Ambient types
-│   │   ├── hooks.server.ts        # Security headers on every function response (CSP lives in svelte.config.js)
+│   │   ├── env.ts                 # defineEnvVars: every server-read var must be declared here
+│   │   ├── hooks.server.ts        # Security headers on every function response (CSP lives in vite.config.ts)
 │   │   ├── routes/
 │   │   │   ├── +layout.svelte     # Shared header/footer/stats bar
+│   │   │   ├── +layout.ts         # SSR stats/last-sync load (via /api/stats)
 │   │   │   ├── +page.svelte       # Search page
 │   │   │   ├── notice/+page.svelte
 │   │   │   ├── dispatch/+page.svelte
 │   │   │   ├── rph/[registration_number]/  # SSR profile page with SEO
 │   │   │   ├── admin/+page.svelte (server load gates payload)
+│   │   │   ├── sandbox/           # LOCAL-ONLY dev loader (gitignored data, never ships)
+│   │   │   ├── sitemap.xml/+server.ts
 │   │   │   └── api/
 │   │   │       ├── admin/+server.ts      # POST login / DELETE logout (session cookie)
 │   │   │       ├── admin/contacts/+server.ts # GET ?reg= session-gated DG contact lookup (service-side join, PII never public)
 │   │   │       ├── usage/+server.ts      # Service quota report (fail-closed)
 │   │   │       ├── dispatch/+server.ts   # R2 bucket listing proxy (stale fallback)
 │   │   │       ├── dispatch/[name]/+server.ts # PDF proxy w/ title rewrite
+│   │   │       ├── search/+server.ts     # Public ranked search proxy (capped 1..200)
+│   │   │       ├── record/+server.ts     # Public single-record proxy
+│   │   │       ├── refine/+server.ts      # Public refined-search proxy (allowlisted enums)
+│   │   │       ├── stats/+server.ts      # Public stats + last-sync proxy
 │   │   │       ├── health/+server.ts     # Connectivity + staleness health check
 │   │   │       └── notice/+server.ts     # Static notice JSON
 │   │   └── lib/
-│   │       ├── supabase.ts        # Supabase client (anon key)
 │   │       ├── api.ts              # Search/record/stats API + input sanitization + ranking
 │   │       ├── cache.ts            # localStorage TTL cache helpers
-│   │       ├── colors.ts          # CATEGORY_COLORS (exempt from brand gate)
+│   │       ├── colors.ts          # TGPC palette + CATEGORY_COLORS (exempt from brand gate)
 │   │       ├── dates.ts            # Shared MONTHS table + DD-Mon-YYYY parse/format helpers
+│   │       ├── exporters.ts        # PDF (jsPDF) + CSV export with formula-injection guard (+ exporters.test.ts)
 │   │       ├── fitToViewport.ts    # availableHeight() + `use:fitToViewport` action: list sizing above the fixed footer (+ fitToViewport.test.ts)
+│   │       ├── motion.ts           # prefersReducedMotion() helper
 │   │       ├── r2.ts              # R2 public URLs from PUBLIC_R2_PHOTO_BASE
+│   │       ├── recent.ts           # Recently-viewed records (localStorage) (+ recent.test.ts)
 │   │       ├── searchLimits.ts     # MAX_SEARCH_RESULTS cap + isTruncated() hint (+ searchLimits.test.ts)
+│   │       ├── searchUrl.ts        # URL <-> search-state serialization (+ searchUrl.test.ts)
 │   │       ├── theme.ts            # Light/dark theme store (localStorage tgpc-theme, system-preference fallback)
 │   │       ├── types.ts            # Shared TS interfaces
 │   │       ├── DatePicker.svelte
-│   │       ├── components/         # Clock.svelte, ProfileSidebar.svelte
-│   │       └── server/             # Compiler-enforced server-only: auth.ts, adminLinks.ts, rateLimit.ts, auth.test.ts
+│   │       ├── components/         # Clock, ProfileSidebar, ContactDetails, MobileCards, Refiners, ResultsTable, SearchForm
+│   │       └── server/             # Compiler-enforced server-only: appEnv.ts, auth.ts, adminLinks.ts, contacts.ts, gate.ts, rateLimit.ts (+ their .test.ts)
 │   ├── static/
 │   │   ├── favicon.svg, .ico, -192.png
 │   │   ├── pdf.svg, notice.json, manifest.json
+│   │   ├── .well-known/strix-verify.txt
 │   │   └── _headers               # Security headers for Pages-served static assets (no CSP here — nonce comes from hooks)
 │   ├── playwright.config.ts       # Playwright: desktop + mobile (iPhone-SE) projects; baseURL = PROD_URL ?? tgpc.pages.dev
 │   ├── wrangler.toml              # R2 DISPATCH bucket binding
-│   ├── svelte.config.js
+│   ├── vite.config.ts             # SvelteKit plugin + adapter-cloudflare + the single CSP definition
 │   ├── scripts/check-colors.mjs   # Brand-color gate (0 offenders required)
 │   ├── e2e/                       # Playwright specs (chromium; CI `e2e` job)
 │   │   ├── smoke.spec.ts          # Homepage shell, search flow, notice/dispatch, API locking
 │   │   ├── a11y.spec.ts           # axe: zero serious/critical violations (contrast excluded — see contrast spec)
 │   │   ├── contrast.spec.ts       # No NEW color-contrast violations vs baseline
 │   │   ├── mobile.spec.ts         # iPhone-SE viewport: no overflow, usable search, footer layering
+│   │   ├── drawer.spec.ts         # Admin console drawer
+│   │   ├── gate.spec.ts           # Unauthenticated contract: 302 -> /admin, 403 on gated APIs
+│   │   ├── searchUrl.spec.ts      # URL <-> search-state roundtrip
+│   │   ├── auth.setup.ts          # One-time admin login (E2E_ADMIN_SECRET) -> e2e/.auth.json
 │   │   ├── contrast-baseline.json # Tracked contrast debt baseline
 │   │   └── update-baseline.mjs    # Refresh the baseline after intentional palette changes
-├── tests/                          # 173 tests, 12 files (all mocked — no real HTTP/Supabase)
-│   ├── test_scraper.py             # 14: timeouts, WAF/blocked detection, table fallback, bad rows, detail parsing, legacy headers, missing tables, opt-in TLS pinning
+├── tests/                          # 195 tests, 13 files (all mocked — no real HTTP/Supabase)
+│   ├── test_scraper.py             # 24: timeouts, WAF/blocked detection, table fallback, bad rows, detail parsing, legacy headers, missing tables, TLS verification + source-host rules
 │   ├── test_manager_update.py      # 7: safety guard, dedup/sort/GITHUB_OUTPUT, deterministic ordering, source-unavailable, +3 sync return-value regressions
 │   ├── test_manager_enrichment.py  # 3: enrichment save, registration mismatch, null serial_number regression
 │   ├── test_manager_sync.py        # 17: every sync destination's fail-closed/success/failure contract
@@ -130,8 +153,10 @@ tgpc/
 │   ├── test_inactive_sweep.py      # 6: JSONL parsing, checkpoint roundtrip, resume/partial runs
 │   ├── test_bugfix_regressions.py  # 18: restore/backup/release/force regressions
 │   ├── test_security_audit_regressions.py  # 27: audit remediations (DG PII RLS posture, R2 publicity gate, email escaping, rclone temp paths)
-│   ├── test_details_dg.py          # 37: DG caption/detail parsing, captcha handling, RLS/Storage posture
-│   └── test_dg_dashboard.py        # 12: DG monitor status merge, zombie-PID detection, IST formatting
+│   ├── test_details_dg.py          # 47: DG caption/detail parsing, captcha handling, RLS/Storage posture
+│   ├── test_dg_dashboard.py        # 19: DG monitor status merge, zombie-PID detection, IST formatting
+│   ├── test_merge_refresh.py       # 3: post-scrape merged-column refresh (fill/newer-wins/skip rules)
+│   └── test_backfill_missing.py    # 5: blank-only backfill contract (never overwrites, never blanks)
 └── (credentials stored in macOS Keychain, not files)
 ```
 
@@ -173,12 +198,14 @@ python3 -m tgpc sync                # Sync to all destinations
 python3 -m tgpc enrich              # Enrich records (photo, gender, status, validity) for pending records
 python3 -m tgpc retry-photos        # Retry uploading failed photos from data/webp/ to R2
 python3 -m tgpc quota               # Show free quota usage for all services
+python3 -m tgpc fetch-dg --ids-file data/dg_ids.txt --captcha auto --sync-cloud  # DG contact capture (see DG_PIPELINE.md)
+python3 -m tgpc validate-dg         # Offline validation pass over data/dg_contacts.jsonl
 python3 -m tgpc creds {set,list,delete}  # Manage credentials in macOS Keychain
 python3 -m tgpc.inactive_sweep {inactive,sweep}  # Detect inactive→active reactivations (resumable)
 python3 -m tgpc.enrich_actives      # Parallel enrichment of reactivated records
 ```
 
-For `update`/`sync`/`enrich`/`retry-photos`, the CLI connects Cloudflare WARP for network routing (auto-disconnects via `atexit`) when `warp-cli` is available.
+For `update`/`sync`/`enrich`/`retry-photos`/`fetch-dg`, the CLI connects Cloudflare WARP for network routing (auto-disconnects via `atexit`) when `warp-cli` is available.
 
 `load_credentials()` loads env vars first, then macOS Keychain (via `security`), then `~/.config/tgpc/creds.sh` / `tgpc-creds.sh` file fallback.
 
@@ -194,7 +221,7 @@ class BlockedError(TGPCError):
 
 @dataclass
 class Config:
-    base_url: str = "https://www.pharmacycouncil.telangana.gov.in"
+    base_url: str = "https://pharmacycouncil.telangana.gov.in"  # apex, not www. (C4: valid cert)
     connect_timeout: int = 20
     read_timeout: int = 180
     max_retries: int = 3
@@ -227,6 +254,7 @@ Config is loaded via `Config.load()` classmethod (reads env vars for proxy and e
 
 **Scraper:**
 - Uses `requests.Session` with connection pooling (10 pools, 10 max)
+- **TLS** — full verification everywhere: certificate **chain** *and* **hostname**. The source's certificate covers the apex name `pharmacycouncil.telangana.gov.in` but **not** `www.`, so `Config.base_url` points at the apex (override with `TGPC_BASE_URL`); both hosts serve the same endpoints — the bulk listing and detail pages are byte-identical once the per-session `jsessionid` is normalised, and the source returns the same response for an apex URL carrying a `www.` `Referer` — and the apex one is what makes strict hostname checking possible (CODE_REVIEW.md C4, resolved 2026-10). `TGPC_TLS_CERT_SHA256` optionally pins the exact peer certificate **in addition to** the hostname match — defence in depth against a compromised CA (audit F5/F10). Every other host (photo CDNs, R2) is verified by the default adapter.
 - Applies `Config.proxy_url` (TGPC_PROXY_URL / HTTPS_PROXY / HTTP_PROXY) to the session; sends the single `Config.user_agent` header
 - Two API endpoints (constructed from `config.base_url`):
   - `total`: `{base_url}/pharmacy/srchpharmacisttotal` — full listing table
@@ -235,6 +263,7 @@ Config is loaded via `Config.load()` classmethod (reads env vars for proxy and e
 - `_request(method, url)` → `requests.Response` — wrapped with `@tenacity.retry` (3 attempts, exponential backoff 2-10s), calls `rate_limiter.wait()` before each request, runs block detection (status, access denied, captcha, short response)
 - `extract_basic_records()` → `List[PharmacistRecord]` — fetches total endpoint, finds `<table id="tablesorter-demo">` (fallback to any `<table>`), extracts rows with ≥5 cells (serial, reg_no, name, father, category)
 - `extract_detailed_info(reg_no, img_dir)` → `Optional[PharmacistRecord]` — POSTs to search endpoint, parses detail page for: registration table (name, father, gender, category, status, validity), education table (qualification → category, university, college, years, HT No), work experience table (address, state, district, pin code), and photos (base64 data URI or URL download → saved to `img_dir`)
+- **Photo SSRF guard** — a photo `src` may only point at a TGPC host (`_is_tgpc_host`: apex or `www.`), the scheme must be http(s), and no path may contain `..`. Redirects are followed manually (max 4 hops) with the **same checks re-applied at every hop** — `allow_redirects=True` would let a 302 move the fetch to any host after the initial same-host check.
 
 ### `tgpc/manager.py` — Orchestration facade (~730 lines)
 
@@ -331,6 +360,17 @@ source-unavailable classification), and the photo pipeline
 - `Phase` — `[N/M] label` headers with `— done`/`— FAILED` footers; `heartbeat()` — indeterminate progress for single-shot operations
 - `step()` — granular sub-steps routed to the active bar; `BarHandler` — logging to stderr that clears/redraws the bar so log lines never corrupt it
 
+### `tgpc/merge_refresh.py` — post-scrape merged-column refresh
+- Runs as Phase 4/4 of `python3 -m tgpc update`. Recomputes three dashboard
+  backfills on `public.rph` from the live tables: `date_of_registration`,
+  `home_state`, and `validity_date` (newer-wins, DD-MM-YYYY → DD-Mon-YYYY).
+- Idempotent by construction: it recomputes from scratch every run and only
+  writes rows that still need it, so a typical run writes zero rows.
+- Writes with individual `UPDATE`s, never an upsert — an upsert would INSERT
+  a row without a name and hit the `name` not-null constraint (`3d6483f`).
+- Deliberately warn-and-continue: a refresh hiccup must never fail a scrape.
+  Missing credentials fail closed with an `error` stat instead of raising.
+
 ### `tgpc/quota.py` — quota report
 - `python3 -m tgpc quota` prints free-tier usage for Supabase (DB size, storage, API requests), Cloudflare R2 (storage, objects, Class A/B ops via GraphQL), Resend (daily/monthly quota headers), and Google Drive (`rclone about`)
 - Each `check_*` fails closed with a `Missing … credentials` message rather than raising
@@ -367,7 +407,11 @@ CREATE TABLE rph (
   status TEXT,                 -- 'Active' | 'Inactive' | …
   education JSONB,             -- [{Category, Board/University, College Name, College Address, From, To, HT No}]
   work_experience JSONB,       -- {Address, State, District, Pin code}
-  photo_url TEXT               -- R2 public URL, only set after a verified upload
+  photo_url TEXT,              -- R2 public URL, only set after a verified upload
+  -- merged columns (written by tgpc/merge_refresh.py from rph_dg_contacts):
+  date_of_registration TEXT,   -- verbatim DD-MM-YYYY
+  renewal_validity TEXT,       -- verbatim DD-MM-YYYY (own value wins over the DG table)
+  home_state TEXT              -- uppercased state
 );
 
 -- DG contact details live in a SEPARATE table (never new columns on rph,
@@ -393,13 +437,16 @@ CREATE TABLE metadata (
 
 RLS allows anonymous `SELECT` on `rph` and `metadata` tables. The publishable/anon key (set as `PUBLIC_SUPABASE_PUBLISHABLE_KEY` in the Cloudflare Pages dashboard / local `ui/.env`, which is gitignored) is safe to expose.
 
+> **Note (2026-10):** the browser no longer holds the anon key. The "Layer 2" refactor moved every data read behind a rate-limited server proxy (`/api/search`, `/api/refine`, `/api/record`, `/api/stats`) that queries with the **service** key server-side. `ui/src/lib/supabase.ts` was deleted and `PUBLIC_SUPABASE_PUBLISHABLE_KEY` is no longer read by the app. The anon `SELECT` policies below are retained as defence in depth — if the key is ever reintroduced, they still permit read-only access and nothing more.
+
 `rph_dg_contacts` is the deliberate exception. It holds captcha-gated PII (mobile, email, home address) that TGPC gates behind a captcha on `getdetailsdg`, so it carries no anon grant at all — the publishable key cannot read it, and the enrichment pipeline is its only consumer (service role). See `tgpc/dg_migration.sql`.
 
 **⚠️ RLS verification (do this in the Supabase dashboard → SQL Editor):**
 
-The frontend uses the **publishable/anon key** against 87k rows, so protection from
-unauthorized writes/deletes depends entirely on RLS being enabled. Run this to
-confirm the right posture (public **read-only**, no writes from anon):
+The anon key is not used by the deployed app, but the tables remain publicly
+readable by it, so protection from unauthorized writes/deletes still depends
+entirely on RLS being enabled. Run this to confirm the right posture (public
+**read-only**, no writes from anon):
 
 ```sql
 -- Confirm RLS is enabled and anon can only SELECT
@@ -454,7 +501,9 @@ reset role;
 (`rowsecurity = true` on `rph` and `metadata`). Six policies are in place —
 the anon/public/`realtime` roles have **read-only** (`SELECT`) policies only,
 and the service role has full access. This is the correct read-only posture for
-a public search portal; the publishable/anon key is safe to expose.
+a public search portal; the publishable/anon key is safe to expose. (Since the
+Layer 2 refactor the deployed app does not use the anon key at all, so these
+policies are now defence in depth rather than the active path.)
 
 `rph_dg_contacts` is intentionally outside that count: it has RLS enabled with
 **no** policies and no anon grant, because the registry's contact columns are
@@ -501,10 +550,36 @@ captcha-gated at the source.
 | `NOTIFICATION_EMAIL` | `sync_to_email()`, CI | Email recipient for sync report |
 | `RELEASE_PASSWORD` | `sync_to_release()`, CI | Password for the AES-256 encrypted release zip |
 | `TGPC_PROXY_URL` | `Config.load()` | Optional outbound proxy for scraping |
+| `TGPC_BASE_URL` | `Config.load()` | Override the source base URL. Default is the **apex** host `https://pharmacycouncil.telangana.gov.in` — its certificate covers that name, which is what allows strict TLS hostname verification (the `www.` variant's cert does not). |
 | `TGPC_TLS_CERT_SHA256` | `Config.load()` | Optional SHA-256 fingerprint pin for the TGPC host certificate (hex, colons allowed). Unset = current behaviour (hostname match relaxed, chain validated); set = fingerprint enforced in place of the hostname check (audit F5/F10) |
 | `TGPC_ENRICHMENT_DIR` | `Config.load()` | Override enrichment working directory |
 | `TGPC_R2_PUBLIC_BASE` | `Config.load()` | R2 public bucket base URL (default: the `pub-…r2.dev` host) |
 | `TGPC_R2_DG_BUCKET` | `details_dg.push_file_to_r2()` | **Private** bucket for DG PII artifacts. Unset (or set to the public bucket) = pushes refuse; never falls back to the public bucket |
+| `TGPC_DG_WORKERS` | `fetch-dg` | DG fetch pool size (default 4, max 16) |
+| `TGPC_DG_RETRY_TERMINAL` | `scripts/dg_run.sh` | Whether the VM run re-attempts terminal DG failures |
+
+### Frontend env vars
+
+The SvelteKit 3 app resolves server-side variables through `$app/env` (declared
+in `ui/src/env.ts`); `envVal()` in `ui/src/lib/server/appEnv.ts` tries
+`platform.env` first, then `$app/env`, and returns `null` when a variable is
+unset so every consumer fails closed. `platform.env` alone is empty on
+adapter-cloudflare v8 — reading it directly is the bug fixed in `8ee00ca`.
+
+| Variable | Scope | Purpose |
+|---|---|---|
+| `PUBLIC_SUPABASE_URL` | public | Supabase project URL (health check) |
+| `PUBLIC_R2_PHOTO_BASE` | public | R2 public photo/notice/dispatch base URL |
+| `SUPABASE_URL` / `SUPABASE_SECRET_KEY` | private | Service-role access for the data proxies |
+| `SUPABASE_PAT` | private | Account PAT for `/api/usage` and the admin contacts join |
+| `ADMIN_SECRET` (preferred) / `QUOTA_SECRET` | private | Signs the admin session cookie; absent = nobody is authorized |
+| `ADMIN_LINK_PHARMACIST_URL` / `ADMIN_LINK_EMAIL_VERIFY_URL` | private | The two credential-bearing admin links (no token fallbacks exist in code) |
+| `CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_API_TOKEN` | private | R2 usage queries for the quota report |
+| `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` | private | R2 S3-compatible credentials |
+| `TGPC_R2_DG_BUCKET` | private | Private DG bucket name (the app must never push PII to the public bucket) |
+
+`PUBLIC_SUPABASE_PUBLISHABLE_KEY` is no longer read by the app — the browser
+holds no database key at all.
 
 ---
 
@@ -518,7 +593,7 @@ Built with SvelteKit 3 + Tailwind CSS v4 + TypeScript.
 |---|---|
 | Framework | SvelteKit 3 (`@sveltejs/adapter-cloudflare`) |
 | Styling | Tailwind CSS v4 |
-| Database | Supabase (anon key with RLS — `SELECT` only) |
+| Database | Supabase via server-side proxies (service key, RLS read-only for anon) |
 | Hosting | Cloudflare Pages (build: `ui/.svelte-kit/cloudflare`) |
 | Env vars | Public: `PUBLIC_SUPABASE_URL`, `PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `PUBLIC_R2_PHOTO_BASE`. Server-side (Pages dashboard): `ADMIN_SECRET` (preferred) or `QUOTA_SECRET` for the admin session; `ADMIN_LINK_PHARMACIST_URL` / `ADMIN_LINK_EMAIL_VERIFY_URL` for the two credential-bearing admin links (no token fallbacks exist in code) |
 
@@ -531,28 +606,54 @@ Built with SvelteKit 3 + Tailwind CSS v4 + TypeScript.
 | `/dispatch` | Dispatch PDF grid with year tabs, search |
 | `/rph/[registration_number]` | SSR pharmacist profile page (SEO title/description/OG image, education + work experience sections) |
 | `/admin` | Operator console (USAGE + INTERNAL LINKS + CONTACTS tabs); payload served server-side only to a valid session |
+| `/sandbox` | LOCAL-ONLY dev loader for contact-block layouts against real local datasets; gitignored, never ships |
+| `/sitemap.xml` | Generated sitemap of profile pages |
 | `/api/admin` | POST login (rate-limited, constant-time compare) issues an HttpOnly signed-cookie session; DELETE logs out |
+| `/api/admin/contacts` | GET `?reg=` — session-gated DG contact lookup; PII never public |
 | `/api/usage` | Service quota report; fails closed without `ADMIN_SECRET`/`QUOTA_SECRET`; accepts session cookie or `x-quota-secret` header |
 | `/api/dispatch` | JSON — lists PDFs from R2 bucket (`dispatch/` prefix); stale-flagged fallback list when the binding is unavailable |
-| `/api/dispatch/[name]` | Streams a dispatch PDF from R2 (strict `DL…pdf` name validation) and rewrites its `/Title` metadata so the tab shows the filename |
+| `/api/dispatch/[name]` | Streams a dispatch PDF from R2 (strict `DL…pdf` name validation). Bytes are served **untouched** — rewriting `/Title` in place changes the file length without rebuilding the PDF xref table and corrupts downloads for strict readers; `Content-Disposition: inline; filename=…` gives the tab a sane title instead |
+| `/api/search` | Public ranked search proxy → `search_pharmacists` RPC; `lim` clamped to 1..200 server-side; rate-limited per IP |
+| `/api/refine` | Public refined-search proxy; allowlisted enums + sanitized text, one capped PostgREST query; rate-limited per IP |
+| `/api/record` | Public single-record proxy (eleven safe columns); rate-limited per IP |
+| `/api/stats` | Public stats + last-sync payload (service key server-side); polled every 60s, not realtime |
 | `/api/health` | Connectivity + staleness health check (Supabase latency, last_sync freshness; 503 when down) |
 | `/api/notice` | JSON — notice data from `static/notice.json` |
 
-Server-only modules under `ui/src/lib/server/` (`auth.ts`, `adminLinks.ts`, `rateLimit.ts`) are compiler-enforced: SvelteKit fails the build if client code imports them.
+Server-only modules under `ui/src/lib/server/` (`appEnv.ts`, `auth.ts`, `adminLinks.ts`, `contacts.ts`, `gate.ts`, `rateLimit.ts`) are compiler-enforced: SvelteKit fails the build if client code imports them.
+
+### Data access (Layer 2)
+
+The browser holds **no database key**. Every data read goes through a
+rate-limited server proxy that queries Supabase with the **service** key
+server-side, so the anon/publishable key is never shipped to the client:
+
+| Browser call | Proxy | Upstream |
+|---|---|---|
+| `searchRecords()` | `/api/search?q=&lim=` | `search_pharmacists` RPC |
+| `searchWithRefiners()` | `/api/refine?...` | one capped PostgREST query |
+| `getRecord()` | `/api/record?reg=` | one row, eleven allowlisted columns |
+| `getStats()` / `getLastSync()` | `/api/stats` | stats RPC + `metadata.last_sync` |
+
+Each proxy re-validates its input server-side (the client's `validateQuery()`
+is a UX nicety, not the security boundary) and clamps the row ceiling to a
+fixed literal, so no caller — browser or direct — can exceed it.
 
 ### Key Features
 
 - **Shell** — sticky header (brand lockup · live status pill · theme toggle), a single horizontally scrollable stats strip (total + 6 category tiles + last-sync/active/inactive meta), and a primary tab nav with a measured green slider. Footer is in-flow on phones and fixed on `sm+`, so lists are sized to the footer by the shared `fitToViewport` action instead of hardcoded `100vh - Npx` offsets
-- **Stats strip** — total + per-category counts from the Supabase RPC, cached in localStorage, live-updated over Realtime
-- **Realtime** — Supabase Realtime subscription on `metadata` table for live stats/timestamp updates
-- **Search** — client-side Supabase query (min 3 chars, debounced 300ms) via `search_pharmacists` RPC (capped at `MAX_SEARCH_RESULTS` — 200 rows per query), ranked by prefix priority then numeric; falls back to a sanitized PostgREST `.or()` query if the RPC fails. Result refiners (RPC/name/father/gender/status/valid-till) filter client-side; results render in a single scrollable list sized by the `fitToViewport` action (`content-visibility: auto` on rows), with sortable headers (RPC / name / category / valid-till / status, `aria-sort`-tracked) that fall back to the server's relevance rank. When a result set comes back full, the header says so and asks for a narrower query — `isTruncated()` in `ui/src/lib/searchLimits.ts` drives that hint, and `searchLimits.test.ts` fails if any query path drops its limit or asks for more than the cap
+- **Stats strip** — total + per-category counts from the Supabase stats RPC, fetched server-side via `/api/stats`, cached in localStorage
+- **Freshness** — stats + last-sync polled every 60s from `/api/stats` instead of a Supabase Realtime channel (the channel needed the anon database key the browser no longer holds)
+- **Search** — server-side search through `/api/search` (min 3 chars, debounced 300ms) → `search_pharmacists` RPC (capped at `MAX_SEARCH_RESULTS` — 200 rows per query), ranked by prefix priority then numeric. Result refiners (RPC/name/father/gender/status/valid-till) go through `/api/refine`, which re-validates every filter server-side and returns one capped, allowlisted result set; results render in a single scrollable list sized by the `fitToViewport` action (`content-visibility: auto` on rows), with sortable headers (RPC / name / category / valid-till / status, `aria-sort`-tracked) that fall back to the server's relevance rank. When a result set comes back full, the header says so and asks for a narrower query — `isTruncated()` in `ui/src/lib/searchLimits.ts` drives that hint, and `searchLimits.test.ts` fails if any query path drops its limit or asks for more than the cap
+- **Shareable state** — the search query, refiners and sort order are mirrored to the URL (`searchUrl.ts`), so a link, a refresh and back/forward all restore the same result set
 
-The 200-row ceiling is a **client-side** cap. It bounds what the browser receives and renders, but it cannot stop a caller from invoking `search_pharmacists` directly with a larger `lim`. The server side needs its own ceiling: clamp inside the RPC (`lim := least(greatest(lim, 1), 200)`) and keep Supabase's API **Max Rows** setting at a sane value as the backstop. Both live in the Supabase dashboard, not in this repository.
+The 200-row ceiling is enforced in **two** places: the client cap in `searchLimits.ts` and a server-side clamp in each proxy (`lim` → 1..200 in `/api/search`, a fixed `HARD_LIMIT` in `/api/refine`). The server clamp is the real boundary — a caller invoking the endpoint directly cannot exceed it. Keep the RPC's own `lim := least(greatest(lim, 1), 200)` clamp and Supabase's API **Max Rows** setting as the backstop. The RPC clamp and Max Rows live in the Supabase dashboard, not in this repository.
 - **Export** — PDF via jsPDF + jspdf-autotable; CSV via Blob download with formula-injection guard
 - **Security headers** — applied globally in `hooks.server.ts` (+ `ui/_headers` for static assets, project root as adapter-cloudflare v8 requires):
-  - **CSP** with a per-request **nonce** for inline scripts on route HTML (`script-src 'self' 'nonce-<n>' 'strict-dynamic'`) plus `img-src`/`connect-src` allowlists for the R2 photo CDN and Supabase origin
+  - **CSP** with a per-request **nonce** for inline scripts on route HTML (`script-src 'self' 'nonce-<n>' 'strict-dynamic'`) plus `img-src`/`connect-src` allowlists for the R2 photo CDN and Supabase origin. The policy lives **only** in `vite.config.ts` (`csp.mode: 'auto'`) — SvelteKit injects the nonce and sends the matching header itself. Setting it again in `hooks.server.ts` or `_headers` creates a second enforced policy whose nonce never matches, which bricks hydration.
   - `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Strict-Transport-Security`, `Permissions-Policy`
   - `Cross-Origin-Opener-Policy: same-origin` + `Cross-Origin-Resource-Policy: same-origin` (cross-origin isolation)
+- **Public portal, gated admin** — path classification lives in `#lib/server/gate.ts` (unit-tested) and is applied in `hooks.server.ts`. Search, profiles, notices, dispatch, stats and health are open; only `/admin`, `/api/admin/*`, `/api/usage` and `/sandbox` need a session. Gated API paths answer **403**, gated pages **302 → /admin**. The data APIs rate-limit per IP inside their own handlers instead of requiring a login.
 - **Admin auth** — HMAC-SHA256 signed, expiring session cookie (`HttpOnly`/`SameSite=Strict`); login uses constant-time comparison + a fixed 250ms delay on every attempt (timing side-channel + brute-force throttling); best-effort in-isolate rate limiter (defence-in-depth — pair with a Cloudflare Rate Limiting rule on `/api/admin`)
 - **Admin contacts lookup** — `/api/admin/contacts?reg=` returns base record + DG contact details only to a valid session (same cookie + rate limit); single SQL join via the management API (account PAT), reg allowlisted before interpolation, PII excluded from logs (reg-number audit line only); `/admin` CONTACTS tab renders it, never cached (`no-store`)
 - **Responsive** — single component, CSS toggles between table and cards at 768px
@@ -594,7 +695,7 @@ Job permissions: `actions: write`, `contents: write` (release upload).
 | `RELEASE_PASSWORD` | Password for the encrypted release zip |
 
 **Quality gates:**
-- `.github/workflows/ui.yml` runs on push/PR touching `ui/` — ESLint + brand-color gate (`check:colors`) + svelte-check + the 24 unit tests + a build with placeholder PUBLIC env vars (real values live in the Cloudflare Pages dashboard) + `npm audit --audit-level=high`. A second job (`e2e`) typechecks the specs (`check:e2e`) and runs the 4 Playwright suites in `ui/e2e/` on chromium. Auto-deploys from `main` build `ui/`.
+- `.github/workflows/ui.yml` runs on push/PR touching `ui/` — ESLint + brand-color gate (`check:colors`) + svelte-check + the 66 unit tests + a build with placeholder PUBLIC env vars (real values live in the Cloudflare Pages dashboard) + `npm audit --audit-level=high`. A second job (`e2e`) typechecks the specs (`check:e2e`) and runs the 7 Playwright suites in `ui/e2e/` on chromium. Auto-deploys from `main` build `ui/`.
 - `.github/workflows/python.yml` runs on push/PR touching `tgpc/`, `tests/`, `scripts/`, or `pyproject.toml` — `ruff check`, `ruff format --check` (pinned 0.16.6, matching pre-commit), the full pytest suite, and a `pip-audit` dependency vulnerability scan. Data freshness deliberately does **not** gate pushes: it is an operational condition, so `ui/e2e/smoke.spec.ts` asserts only the health *contract* (shape, not age) — freshness is the operator's job via the daily manual `make scrape`. (The former weekly k6 `load.yml` was removed 2026-09: agent-created, unread results. The 6-hourly `health.yml` freshness poll was removed 2026-10 for the same reason: manual scrape cadence made it pure noise.)
 
 **Dependency updates:**
@@ -608,11 +709,11 @@ Dependabot was removed (2026-09) in favour of manual bumps. CVE coverage comes f
 python3 -m pytest tests/ -v
 ```
 
-173 tests across 12 files:
+195 tests across 13 files:
 
 | File | Tests | What's tested |
 |---|---|---|
-| `test_scraper.py` | 14 | `_request` timeouts + clean pass-through, WAF/blocked detection (`BlockedError`), `extract_basic_records` (no table, bad rows, fallback table), `extract_detailed_info` (no records, full parse with photo/education/validity, legacy headers, missing tables), opt-in TLS certificate pinning |
+| `test_scraper.py` | 24 | `_request` timeouts + clean pass-through, WAF/blocked detection (`BlockedError`), `extract_basic_records` (no table, bad rows, fallback table), `extract_detailed_info` (no records, full parse with photo/education/validity, legacy headers, missing tables), TLS verification (chain + hostname, opt-in fingerprint pin), source-host rules (apex default, `TGPC_BASE_URL` override, TGPC photo-host allowlist) |
 | `test_manager_update.py` | 7 | Safety guard (90% threshold), dedup/sort/GITHUB_OUTPUT, deterministic detail ordering, source-unavailable skip, +3 regressions covering `sync_to_*` return values |
 | `test_manager_enrichment.py` | 3 | Enrichment saves first pending record, raises DataIntegrityError on registration mismatch, resolves records with `serial_number = None` (M2 regression) |
 | `test_manager_sync.py` | 17 | Every `sync_to_*` destination's contract: fail-closed on missing credentials, True on success, False on transport/API failure. Release test uses real pyzipper and verifies encryption at upload time; email test asserts the Resend request shape |
@@ -621,19 +722,20 @@ python3 -m pytest tests/ -v
 | `test_inactive_sweep.py` | 6 | JSONL parsing (good/bad lines), checkpoint save/load roundtrip, resume skipping completed batches, partial-run slicing |
 | `test_bugfix_regressions.py` | 18 | Restore-to-temp validation, backup rotation, release return codes, `--force` overrides, DetailError vs absence |
 | `test_security_audit_regressions.py` | 27 | Audit remediations: DG PII RLS posture, DG artifacts kept out of the public R2 bucket, report-email HTML escaping, rclone temp paths, photo redirect validation, backup restore validation, DG Storage bucket publicity gate |
-| `test_details_dg.py` | 37 | DG caption/detail parsing, captcha handling, and the RLS/Storage posture of the DG pipeline |
-| `test_dg_dashboard.py` | 12 | Local DG monitor: status merging, checkpoint-derived counts, zombie-PID detection, log tailing, IST formatting |
+| `test_details_dg.py` | 47 | DG caption/detail parsing, captcha handling, and the RLS/Storage posture of the DG pipeline |
+| `test_dg_dashboard.py` | 19 | Local DG monitor: status merging, checkpoint-derived counts, zombie-PID detection, log tailing, IST formatting |
 | `test_merge_refresh.py` | 3 | Post-scrape merged-column refresh: fill/newer-wins/skip rules, changed-columns-only upserts, fail-closed credentials |
+| `test_backfill_missing.py` | 5 | Blank-only backfill contract: fills an empty column from the source, never overwrites an existing value, never blanks a column, never patches a record whose identity differs |
 
 All tests use mocking (no real HTTP or Supabase calls). The `supabase` module is mocked globally before imports.
 
 ### Frontend
 
-**Unit tests:** `ui/test:unit` runs `node --experimental-strip-types --test 'src/**/*.test.ts'` — 28 tests: 18 covering signed-cookie session creation/verification, constant-time comparison, and the `isAuthed` fail-closed path (no secret), 6 search-limit invariants in `searchLimits.test.ts` (every query path keeps its row cap), and 4 clamping cases for the list-sizing arithmetic in `fitToViewport.test.ts`. No test framework beyond Node's built-in runner.
+**Unit tests:** `ui/test:unit` runs `node --experimental-strip-types --test 'src/**/*.test.ts'` — 66 tests across 9 files: 18 in `auth.test.ts` (signed-cookie session creation/verification, constant-time comparison, the `isAuthed` fail-closed path with no secret), 9 in `searchUrl.test.ts` (URL ↔ search-state roundtrip), 8 in `recent.test.ts` (recently-viewed records), 8 in `searchLimits.test.ts` (every query path keeps its row cap), 6 in `exporters.test.ts` (CSV formula-injection guard), 5 each in `contacts.test.ts` and `gate.test.ts`, 4 in `fitToViewport.test.ts` (list-sizing arithmetic), 3 in `rateLimit.test.ts`. No test framework beyond Node's built-in runner.
 
-**E2E tests:** `ui/test:e2e` runs the Playwright specs in `ui/e2e/` (chromium): smoke (shell + search flow + API locking), axe a11y (zero serious/critical violations, color-contrast excluded), a contrast-regression gate against `contrast-baseline.json`, and mobile layout fingerprints at the iPhone-SE viewport. `ui/test:e2e:update-baseline` refreshes the contrast baseline after intentional palette changes; `check:e2e` typechecks the specs. CI runs these in the `ui.yml` `e2e` job.
+**E2E tests:** `ui/test:e2e` runs the Playwright specs in `ui/e2e/` (chromium): smoke (shell + search flow + API locking), axe a11y (zero serious/critical violations, color-contrast excluded), a contrast-regression gate against `contrast-baseline.json`, mobile layout fingerprints at the iPhone-SE viewport, the admin drawer, and the URL-state roundtrip. `ui/test:e2e:update-baseline` refreshes the contrast baseline after intentional palette changes; `check:e2e` typechecks the specs. CI runs these in the `ui.yml` `e2e` job.
 
-The site is login-first, so the suite is too: `e2e/auth.setup.ts` logs in once via `E2E_ADMIN_SECRET` (CI repo secret, same value as Pages `ADMIN_SECRET`) into `e2e/.auth.json` (gitignored), and every flow spec runs on that session. Without the secret, flow specs skip on gated targets while `e2e/gate.spec.ts` still asserts the unauthenticated contract (302 → /admin, 403 APIs) with a fresh context. Local `vite dev` stays open, so everything runs there except the gate specs and the credential-dependent API tests.
+The site is a public portal, so most specs run unauthenticated; the admin surface is login-first, so the suite authenticates for it: `e2e/auth.setup.ts` logs in once via `E2E_ADMIN_SECRET` (CI repo secret, same value as Pages `ADMIN_SECRET`) into `e2e/.auth.json` (gitignored), and the admin-flow specs run on that session. Without the secret, those specs skip on gated targets while `e2e/gate.spec.ts` still asserts the unauthenticated contract (302 → /admin, 403 APIs) with a fresh context. Local `vite dev` stays open, so everything runs there except the gate specs and the credential-dependent API tests.
 
 ---
 

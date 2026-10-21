@@ -51,19 +51,38 @@ def _is_blocked(content: str) -> bool:
     return any(marker in lowered for marker in BLOCKED_MARKERS)
 
 
+# The source serves the same content on the apex host and the "www." host.
+# The apex is the default (its certificate covers the apex name, enabling
+# full TLS hostname verification), but photos and redirects may still point
+# at either name, so both count as the same origin for SSRF purposes.
+TGPC_HOSTS = frozenset(
+    {
+        "pharmacycouncil.telangana.gov.in",
+        "www.pharmacycouncil.telangana.gov.in",
+    }
+)
+
+
+def _is_tgpc_host(hostname: str) -> bool:
+    """True if the hostname is one of the TGPC source hosts."""
+    return hostname.lower() in TGPC_HOSTS
+
+
 class _TGPCTLSAdapter(HTTPAdapter):
     """HTTPS adapter used only for the TGPC host.
 
-    Validates the server certificate *chain* (`CERT_REQUIRED`) so MITM
-    against a tampered cert is still detected, but skips the hostname
-    match (`check_hostname = False`) because the TGPC certificate is
-    issued for a different name (CODE_REVIEW.md C4).
+    Full certificate validation: chain verification **and** the hostname
+    match are both enforced. The TGPC certificate was previously issued for
+    a different name, which forced ``check_hostname = False``
+    (CODE_REVIEW.md C4) — that exception is no longer needed: the live
+    certificate carries a correct CN/SAN for
+    ``pharmacycouncil.telangana.gov.in`` (Let's Encrypt, verified 2026-10).
 
     Pass ``cert_fingerprint`` (SHA-256, hex) to additionally pin the exact
-    peer certificate. urllib3 then enforces the fingerprint in place of the
-    relaxed hostname match, restoring an explicit identity check without
-    depending on the source fixing its certificate (audit F5/F10). Unset by
-    default, so scrape behaviour is unchanged unless configured.
+    peer certificate. urllib3 then enforces the fingerprint *in addition to*
+    the hostname match, giving defence in depth against a compromised CA
+    (audit F5/F10). Unset by default, so scrape behaviour is unchanged
+    unless configured.
     """
 
     def __init__(self, *args, cert_fingerprint: Optional[str] = None, **kwargs):
@@ -72,13 +91,20 @@ class _TGPCTLSAdapter(HTTPAdapter):
 
     def _tls_pool_kwargs(self, kwargs):
         ctx = create_urllib3_context()
-        ctx.check_hostname = False
+        # Chain + hostname verification stay ON (the default).
+        ctx.check_hostname = True
         ctx.verify_mode = ssl.CERT_REQUIRED
         kwargs["ssl_context"] = ctx
-        kwargs["assert_hostname"] = False
+        # urllib3 treats assert_hostname as the *expected* hostname string
+        # (it is passed to ssl.match_hostname), not as a boolean switch —
+        # setting it to True raises "AttributeError: 'bool' object has no
+        # attribute 'strip'" at connect time. Leaving it unset keeps the
+        # default: match against the hostname we connected to.
+        kwargs.pop("assert_hostname", None)
         if self._cert_fingerprint:
-            # Setting assert_fingerprint makes urllib3 skip the hostname match
-            # and require the peer certificate to match this exact digest.
+            # Pinning the exact peer certificate *and* matching the hostname
+            # means the server must present the right cert for the right
+            # name — no single control has to be trusted alone.
             kwargs["assert_fingerprint"] = self._cert_fingerprint
         return kwargs
 
@@ -168,10 +194,11 @@ class Scraper:
 
         # Browser-like session with connection pooling.
         #
-        # TLS policy (CODE_REVIEW.md C4): certificate *chain* validation stays
-        # enabled for every request. Only the hostname match is relaxed, and
-        # only for the TGPC host, whose certificate is issued for a different
-        # name. Every other host (including photo CDNs) is fully verified.
+        # TLS policy: full verification (chain + hostname) for every request,
+        # including the TGPC host — the certificate carries a correct
+        # CN/SAN as of 2026-10, so the hostname exception that CODE_REVIEW.md
+        # C4 required is gone. The optional TGPC_TLS_CERT_SHA256 pin adds
+        # defence in depth on top.
         self.session = requests.Session()
         tgpc_tls = _TGPCTLSAdapter(
             pool_connections=10,
@@ -179,8 +206,15 @@ class Scraper:
             max_retries=3,
             cert_fingerprint=self.config.tls_cert_sha256,
         )
-        self.session.mount("https://www.pharmacycouncil.telangana.gov.in", tgpc_tls)
-        self.session.mount("https://pharmacycouncil.telangana.gov.in", tgpc_tls)
+        # Mount the TGPC host(s) on the fully-verifying adapter. requests
+        # picks the longest matching prefix, so the host-specific mounts win
+        # over the catch-all "https://" mount below.
+        for host in ("www.pharmacycouncil.telangana.gov.in", "pharmacycouncil.telangana.gov.in"):
+            self.session.mount(f"https://{host}", tgpc_tls)
+        # Honour a TGPC_BASE_URL override on a different host.
+        base_host = urlparse(self.config.base_url).hostname
+        if base_host and base_host not in ("www.pharmacycouncil.telangana.gov.in", "pharmacycouncil.telangana.gov.in"):
+            self.session.mount(f"https://{base_host}", tgpc_tls)
 
         # Fully verifying adapter for every other host
         adapter = requests.adapters.HTTPAdapter(
@@ -407,10 +441,9 @@ class Scraper:
                     try:
                         photo_url = src if src.startswith("http") else f"{self.config.base_url}{src}"
                         parsed = urlparse(photo_url)
-                        base_parsed = urlparse(self.config.base_url)
                         if parsed.scheme not in ("http", "https"):
                             raise ValueError(f"Unsupported scheme in photo URL: {parsed.scheme}")
-                        if parsed.hostname and parsed.hostname != base_parsed.hostname:
+                        if parsed.hostname and not _is_tgpc_host(parsed.hostname):
                             raise ValueError(f"External host in photo URL: {parsed.hostname}")
                         if parsed.path and ".." in parsed.path.split("/"):
                             raise ValueError(f"Path traversal in photo URL: {parsed.path}")
@@ -424,7 +457,7 @@ class Scraper:
                             hop = urlparse(current_url)
                             if hop.scheme not in ("http", "https"):
                                 raise ValueError(f"Unsupported scheme in photo redirect: {hop.scheme}")
-                            if hop.hostname and hop.hostname != base_parsed.hostname:
+                            if hop.hostname and not _is_tgpc_host(hop.hostname):
                                 raise ValueError(f"External host in photo redirect: {hop.hostname}")
                             if hop.path and ".." in hop.path.split("/"):
                                 raise ValueError(f"Path traversal in photo redirect: {hop.path}")

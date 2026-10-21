@@ -30,6 +30,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
+from urllib.parse import urlparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -446,8 +447,12 @@ class DgFetcher:
         self.min_delay = min_delay
         self.session = requests.Session()
         adapter = _TGPCTLSAdapter(pool_connections=5, pool_maxsize=5, max_retries=3)
-        self.session.mount("https://www.pharmacycouncil.telangana.gov.in", adapter)
-        self.session.mount("https://pharmacycouncil.telangana.gov.in", adapter)
+        for host in ("www.pharmacycouncil.telangana.gov.in", "pharmacycouncil.telangana.gov.in"):
+            self.session.mount(f"https://{host}", adapter)
+        # Honour a TGPC_BASE_URL override on a different host.
+        base_host = urlparse(self.config.base_url).hostname
+        if base_host and base_host not in ("www.pharmacycouncil.telangana.gov.in", "pharmacycouncil.telangana.gov.in"):
+            self.session.mount(f"https://{base_host}", adapter)
         self.session.headers.update(
             {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "

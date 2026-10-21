@@ -75,7 +75,7 @@ The blast radius matters here: this handler uses `SUPABASE_PAT` to POST arbitrar
 
 **Fix:** Invert the check — `if (!adminSecret) return 500`. Then compare in constant time. Longer term, this endpoint should not hold a PAT at all; have the pipeline write a usage snapshot to R2 and serve that.
 
-### C4. TLS verification disabled on the scraper session, which also downloads photos
+### C4. TLS verification disabled on the scraper session, which also downloads photos *(Fixed 2026-10-21)*
 
 `tgpc/scraper.py:102-104`
 
@@ -88,6 +88,30 @@ self.session.verify = False  # Site cert doesn't match hostname
 The stated reason is a hostname mismatch on the TGPC certificate, which is a real constraint. But `verify = False` disables chain validation *and* hostname checking for every request on the session, and that same session is used to fetch photo URLs taken from scraped `img src` attributes. An active network attacker can serve arbitrary content that then flows into the WebP conversion and R2 upload path.
 
 **Fix:** Keep chain verification and disable only the hostname check for that one host, e.g. a `requests` adapter with a custom `ssl.SSLContext` where `check_hostname = False` but `verify_mode = CERT_REQUIRED`, scoped to `pharmacycouncil.telangana.gov.in`. Photo downloads should use a separate, fully verifying session.
+
+**Resolution (2026-10-21):** stronger than the original fix. The source's
+certificate now carries a correct CN/SAN for the **apex** host
+`pharmacycouncil.telangana.gov.in` (Let's Encrypt, valid to 2026-12-17), so
+`Config.base_url` was switched to the apex and the hostname exception was
+removed entirely. The scraper now performs **full** verification — chain *and*
+hostname — for the TGPC host and every other host. `TGPC_TLS_CERT_SHA256`
+remains available as an *additional* fingerprint pin (defence in depth against
+a compromised CA) rather than a replacement for the hostname check.
+
+The apex and `www.` hosts serve the same endpoints; only the apex has a
+matching certificate. Photo/redirect URLs may still name either host, so
+`TGPC_HOSTS` treats both as the same origin for the SSRF guard. Verified
+live: 90,998 records extracted and a detail record enriched (photo + WebP +
+education) with strict verification on.
+
+**Why the apex (evidence, 2026-10-21):** the bulk listing and detail pages
+are **byte-identical** across the two hosts once the per-session
+`jsessionid` is normalised, and the source returns the same 200/length for
+an apex URL carrying a `www.` `Referer` — so the source does not treat the
+hostnames differently (no separate rate limit, session affinity, or content
+split). The apex therefore costs nothing and removes the MITM gap. A
+`www.` URL without a relaxed adapter fails with `SSLCertVerificationError`,
+which is precisely why the default changed.
 
 ---
 

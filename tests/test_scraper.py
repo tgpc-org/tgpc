@@ -1,12 +1,14 @@
 import os
+import ssl
 import sys
 import unittest
 from unittest.mock import MagicMock, call, patch
+from urllib.parse import urlparse
 
 # Mock supabase before importing tgpc package modules
 sys.modules["supabase"] = MagicMock()
 
-from tgpc.scraper import Scraper, _is_blocked, _TGPCTLSAdapter, BLOCKED_MARKERS
+from tgpc.scraper import Scraper, _is_blocked, _is_tgpc_host, _TGPCTLSAdapter, BLOCKED_MARKERS
 from tgpc.utils import BlockedError, Config
 
 
@@ -296,23 +298,34 @@ class ScraperParsingTests(unittest.TestCase):
 
 
 class TlsPinningTests(unittest.TestCase):
-    """Opt-in certificate pinning for the TGPC host (audit F5/F10)."""
+    """Certificate verification for the TGPC host (C4, audit F5/F10)."""
 
     def _pool_kwargs(self, adapter):
         adapter.init_poolmanager(1, 1)
         return adapter.poolmanager.connection_pool_kw
 
+    def test_hostname_verification_is_enforced(self):
+        # The TGPC certificate now carries a correct CN/SAN, so the C4
+        # hostname exception is no longer used: the match stays ON.
+        kwargs = self._pool_kwargs(_TGPCTLSAdapter())
+        self.assertTrue(kwargs["ssl_context"].check_hostname)
+        self.assertEqual(kwargs["ssl_context"].verify_mode, ssl.CERT_REQUIRED)
+        # assert_hostname must be absent (urllib3 expects a hostname string
+        # there, not a boolean) so the default host match applies.
+        self.assertNotIn("assert_hostname", kwargs)
+
     def test_fingerprint_is_asserted_when_configured(self):
         adapter = _TGPCTLSAdapter(cert_fingerprint="ab" * 32)
         kwargs = self._pool_kwargs(adapter)
         self.assertEqual(kwargs.get("assert_fingerprint"), "ab" * 32)
-        # Hostname match stays relaxed; the fingerprint takes over the check.
-        self.assertIs(kwargs.get("assert_hostname"), False)
+        # Pinning adds a layer; it does not replace the hostname match.
+        self.assertTrue(kwargs["ssl_context"].check_hostname)
+        self.assertNotIn("assert_hostname", kwargs)
 
     def test_no_fingerprint_by_default(self):
         kwargs = self._pool_kwargs(_TGPCTLSAdapter())
         self.assertNotIn("assert_fingerprint", kwargs)
-        self.assertIs(kwargs.get("assert_hostname"), False)
+        self.assertTrue(kwargs["ssl_context"].check_hostname)
 
     def test_config_loads_fingerprint_from_env(self):
         with patch.dict(os.environ, {"TGPC_TLS_CERT_SHA256": "ab" * 32}):
@@ -321,6 +334,84 @@ class TlsPinningTests(unittest.TestCase):
     def test_config_blanks_fingerprint_when_unset(self):
         with patch.dict(os.environ, {"TGPC_TLS_CERT_SHA256": "  "}):
             self.assertIsNone(Config.load().tls_cert_sha256)
+
+
+class SourceHostTests(unittest.TestCase):
+    """The source base URL must be the host whose certificate validates.
+
+    The source's certificate carries a correct CN/SAN for the apex name
+    `pharmacycouncil.telangana.gov.in` but NOT for the `www.` variant.
+    Strict hostname verification therefore only works against the apex, so
+    that is the default (CODE_REVIEW.md C4, resolved 2026-10).
+
+    Verified live 2026-10-21: both hosts serve byte-identical payloads
+    (bulk listing and detail pages match after normalising the per-session
+    `jsessionid`), and the source does not care which host the `Referer`
+    names. So the apex is strictly better — same content, valid cert.
+    """
+
+    def test_default_base_url_is_the_apex_host(self):
+        self.assertEqual(
+            Config().base_url,
+            "https://pharmacycouncil.telangana.gov.in",
+        )
+
+    def test_default_base_url_has_no_www_prefix(self):
+        self.assertNotIn("://www.", Config().base_url)
+
+    def test_www_host_is_not_used_by_default(self):
+        # Guard against a silent reversion to the www. host: that name has
+        # no matching certificate, so it can only be reached by relaxing
+        # hostname verification — the exact gap C4 asked us to close.
+        self.assertNotIn("www.", Config().base_url)
+
+    def test_scraper_mounts_the_base_host_on_the_verifying_adapter(self):
+        # The TGPC host must be mounted on the fully-verifying adapter, and
+        # the generic "https://" catch-all must not shadow it.
+        scraper = Scraper()
+        base_host = urlparse(scraper.config.base_url).hostname
+        # requests keys adapters by URL prefix, not bare hostname.
+        adapter = scraper.session.adapters[f"https://{base_host}"]
+        self.assertIsInstance(adapter, _TGPCTLSAdapter)
+        # The pool kwargs are built lazily; init the pool to read them.
+        adapter.init_poolmanager(1, 1)
+        kwargs = adapter.poolmanager.connection_pool_kw
+        self.assertTrue(kwargs["ssl_context"].check_hostname)
+        self.assertEqual(kwargs["ssl_context"].verify_mode, ssl.CERT_REQUIRED)
+
+    def test_www_host_adapter_is_also_verifying(self):
+        # Photos and redirects may still name the www. host, so it is
+        # mounted too — and it must not be a relaxed adapter.
+        scraper = Scraper()
+        adapter = scraper.session.adapters["https://www.pharmacycouncil.telangana.gov.in"]
+        self.assertIsInstance(adapter, _TGPCTLSAdapter)
+        adapter.init_poolmanager(1, 1)
+        kwargs = adapter.poolmanager.connection_pool_kw
+        self.assertTrue(kwargs["ssl_context"].check_hostname)
+        self.assertEqual(kwargs["ssl_context"].verify_mode, ssl.CERT_REQUIRED)
+
+    def test_base_url_is_overridable_by_env(self):
+        with patch.dict(os.environ, {"TGPC_BASE_URL": "https://example.test/"}):
+            # Trailing slash is stripped so path joins never double up.
+            self.assertEqual(Config.load().base_url, "https://example.test")
+
+    def test_blank_base_url_env_falls_back_to_default(self):
+        with patch.dict(os.environ, {"TGPC_BASE_URL": "   "}):
+            self.assertEqual(Config.load().base_url, Config().base_url)
+
+    def test_tgpc_host_helper_accepts_both_source_hosts(self):
+        self.assertTrue(_is_tgpc_host("pharmacycouncil.telangana.gov.in"))
+        self.assertTrue(_is_tgpc_host("www.pharmacycouncil.telangana.gov.in"))
+        self.assertTrue(_is_tgpc_host("WWW.PharmacyCouncil.Telangana.gov.in"))
+
+    def test_tgpc_host_helper_rejects_other_hosts(self):
+        for host in (
+            "evil.test",
+            "pharmacycouncil.telangana.gov.in.evil.test",
+            "localhost",
+            "169.254.169.254",
+        ):
+            self.assertFalse(_is_tgpc_host(host))
 
 
 if __name__ == "__main__":

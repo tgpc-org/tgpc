@@ -20,8 +20,8 @@ cd ui && npm run lint    # ESLint (0 errors required)
 cd ui && npm run check:colors  # Brand-color gate (0 offenders)
 
 # Tests
-python3 -m pytest tests/ -v   # Python tests (177 tests)
-cd ui && npm run test:unit    # Frontend unit tests (28 tests)
+python3 -m pytest tests/ -v   # Python tests (195 tests)
+cd ui && npm run test:unit    # Frontend unit tests (66 tests)
 ```
 
 ## Architecture
@@ -29,7 +29,7 @@ cd ui && npm run test:unit    # Frontend unit tests (28 tests)
 ```
 tgpc/
 ├── tgpc/           # Python pipeline
-│   ├── __main__.py # CLI entry: python3 -m tgpc {update, sync, enrich, retry-photos, quota, creds}
+│   ├── __main__.py # CLI entry: python3 -m tgpc {update, sync, enrich, retry-photos, fetch-dg, validate-dg, quota, creds}
 │   ├── scraper.py  # Scraper, RateLimiter, PharmacistRecord
 │   ├── manager.py  # Manager facade: restore, update orchestration, photo pipeline
 │   ├── storage.py  # R2Client, FileManager, BackupManager, validate_rph_backup
@@ -37,15 +37,25 @@ tgpc/
 │   ├── enrichment.py  # Enrichment bodies (range, new-records, sequential processor)
 │   ├── progress.py # ProgressBar, Phase, heartbeat (TTY + CI output)
 │   ├── quota.py    # Free-tier quota report (Supabase, R2, Resend, GDrive)
+│   ├── details_dg.py  # DG getdetailsdg captcha flow → PII contacts
+│   ├── merge_refresh.py  # Post-scrape recompute of DG-merged rph columns
 │   ├── inactive_sweep.py  # Detect inactive→active reactivations (resumable)
 │   └── enrich_actives.py  # Parallel enrichment of reactivated records
 ├── ui/             # SvelteKit frontend
 │   └── src/
-│       ├── routes/ # Pages: /, /notice, /dispatch, /admin
-│       └── lib/    # Shared code, Supabase client, types
+│       ├── routes/ # Pages: /, /notice, /dispatch, /admin + /api/* proxies
+│       └── lib/    # Shared code, types, server-only auth/gate/rateLimit
 ├── tests/          # Python test suite
 └── data/           # Data files (gitignored)
 ```
+
+## Frontend data access
+
+The browser holds **no** database key. Every read goes through a rate-limited
+server proxy that queries Supabase with the service key server-side:
+`/api/search`, `/api/refine`, `/api/record`, `/api/stats`. The site is a
+public portal; only `/admin`, `/api/admin/*`, `/api/usage` and `/sandbox`
+need a session (gate logic in `ui/src/lib/server/gate.ts`).
 
 ## Sync Destinations
 
