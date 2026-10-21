@@ -15,7 +15,13 @@ as $function$
   select json_build_object(
     'total',      (select count(*) from rph),
     'active',     (select count(*) from rph where status = 'Active'),
-    'inactive',   (select count(*) from rph where status is distinct from 'Active'),
+    -- Explicit, not "everything that isn't Active": a record whose status is
+    -- empty/NULL was never enriched (e.g. a delisted registration the source
+    -- no longer serves), and reporting it as Inactive is a lie about a
+    -- pharmacist's standing on a public portal.
+    'inactive',   (select count(*) from rph where status = 'Inactive'),
+    'unknown',    (select count(*) from rph
+                   where status is null or status not in ('Active', 'Inactive')),
     'categories', (select json_object_agg(category, cnt)
                    from (select category, count(*) as cnt from rph group by category) sub)
   );

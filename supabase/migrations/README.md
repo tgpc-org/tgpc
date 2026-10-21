@@ -9,8 +9,8 @@ drifted from `ARCHITECTURE.md` in two ways:
 
 | Drift found | Detail |
 |---|---|
-| `search_pharmacists` had no `lim` clamp | Documented as `lim := least(greatest(lim,1),200)`; the deployed function used `LIMIT lim` verbatim. Supabase's Max Rows was the only backstop. |
-| `rph` carried PII columns | `dob`, `mobile_no`, `email_id`, `home_address` are on the publicly-policied table (36.6k mobiles, 36.6k emails, 35.2k addresses). `rph_dg_contacts` is the documented PII home; `rph` was never meant to hold it. |
+| `search_pharmacists` had no `lim` clamp | Documented as `lim := least(greatest(lim,1),200)`; the deployed function used `LIMIT lim` verbatim. Supabase's Max Rows was the only backstop. An empty `q` also matched every row (`ILIKE '%'`). |
+| Leftover write grants on `rph` / `metadata` | Reads were deliberately closed by migration `20261007125739` (`revoke_anon_reads_layer2`), and the DG PII columns on `rph` were merged deliberately with `GRANT ALL (col) TO service_role` only. But `anon`/`authenticated` still carry the table-level INSERT/UPDATE/DELETE/TRUNCATE grants Supabase applies at creation. RLS denies the row writes; TRUNCATE is not RLS-protected. |
 
 | File | Purpose | Changes production? |
 |---|---|---|

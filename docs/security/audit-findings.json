@@ -255,12 +255,12 @@
     {
       "id": "F11",
       "verdict": "mitigated-pending-apply",
-      "title": "DG PII columns and write grants on the anon-policied rph table",
-      "summary": "public.rph carries dob, mobile_no, email_id and home_address (36,632 / 36,625 / 36,632 / 35,249 non-empty rows) and is the table with a permissive `for select to anon using (true)` policy. anon currently holds no SELECT *grant*, so the publishable key cannot read it today. But anon and authenticated hold INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES and TRIGGER on every column: RLS blocks the row-level writes only because no permissive write policy exists, and TRUNCATE is not RLS-protected at all.",
-      "severity": "HIGH",
-      "impact": "One `GRANT SELECT ON rph TO anon` (or a Supabase default-grant restore) exposes ~36k mobile numbers, emails and home addresses. The documented PII home, rph_dg_contacts, is correctly locked down; rph was never supposed to hold this data.",
-      "evidence": "information_schema.column_privileges: anon select_cols=0, update_cols=20, insert_cols=20 on rph; role_table_grants: anon has DELETE/INSERT/REFERENCES/TRIGGER/TRUNCATE/UPDATE. pg_policies: rph anon SELECT using(true); metadata had 5 duplicate SELECT policies.",
-      "remediation": "supabase/migrations/20260101000003_security_hardening.sql — revoke INSERT/UPDATE/DELETE/TRUNCATE/REFERENCES/TRIGGER and SELECT from anon/authenticated on rph, revoke all on rph_dg_contacts and the owned sequence, keep metadata read-only. The app uses the service key for every read (verified: no anonKey in ui/src), so service_role retains full access and behaviour is unchanged.",
+      "title": "Leftover table-level write grants for anon/authenticated on rph and metadata",
+      "summary": "anon and authenticated hold INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES and TRIGGER on public.rph and public.metadata. RLS blocks the row-level writes only because no permissive write policy exists, and TRUNCATE is not RLS-protected at all. Context: the DG PII columns on rph (dob/mobile_no/email_id/home_address, ~36k each) were merged deliberately (migrations 20261007130122 and siblings, with `GRANT ALL (col) TO service_role` only), and SELECT for anon/authenticated was deliberately revoked on rph AND metadata by 20261007125739 (revoke_anon_reads_layer2). So reads are already closed; the write grants were simply left behind by Supabase's creation-time default.",
+      "severity": "MEDIUM",
+      "impact": "Latent, not exploitable through PostgREST today: RLS denies INSERT/UPDATE/DELETE and TRUNCATE is not exposed over the API. It becomes real the moment a write policy is added for any reason. Least privilege says a browser-reachable role should not carry write privileges on the registry.",
+      "evidence": "role_table_grants: anon/authenticated have DELETE/INSERT/REFERENCES/TRIGGER/TRUNCATE/UPDATE on rph and metadata; SELECT was absent on both. supabase_migrations.schema_migrations 20261007125739 = `REVOKE SELECT ON public.rph FROM anon, authenticated; REVOKE SELECT ON public.metadata FROM anon, authenticated;`.",
+      "remediation": "supabase/migrations/20260101000003_security_hardening.sql — revoke INSERT/UPDATE/DELETE/TRUNCATE/REFERENCES/TRIGGER from anon/authenticated on rph and metadata, revoke all on rph_dg_contacts and the owned sequence, and deliberately NOT re-grant SELECT. The app uses the service key for every read (no anonKey in ui/src), so service_role is unaffected.",
       "references": [
         "DPDP Act 2023 (India) — personal data",
         "CWE-284: Improper Access Control"

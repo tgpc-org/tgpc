@@ -6,11 +6,15 @@
 -- home_address). Row Level Security blocked the row-level writes only because
 -- no permissive write policy exists; TRUNCATE is not RLS-protected at all.
 --
--- Today `anon` holds no SELECT grant, so the public key cannot read the table
--- (verified: 0 SELECT column privileges). But the combination
---   permissive anon SELECT policy  +  a table that carries 36k mobiles/emails
--- is one `GRANT SELECT` away from a PII leak. This migration makes the
--- intended posture explicit instead of accidental.
+-- Context from the migration history, so the story is not overstated:
+--   * The PII merge was deliberate (20261007130122 merge_dob_column and
+--     siblings added the columns with `GRANT ALL (col) TO service_role` only).
+--   * The anon SELECT revoke was deliberate (20261007125739
+--     revoke_anon_reads_layer2 revoked SELECT on rph *and* metadata).
+--   * What was left behind was the table-level write grant that Supabase
+--     applies at creation. RLS blocks it today, but a single future write
+--     policy would make the publishable key able to modify — or TRUNCATE —
+--     the registry. Least privilege says close it.
 --
 -- The deployed app does not use the anon key at all — every read goes through
 -- the server proxies on the service role (Layer 2). service_role retains full
@@ -34,9 +38,10 @@ revoke all on sequence public.pharmacists_id_seq from anon, authenticated;
 revoke insert, update, delete, truncate, references, trigger
   on public.metadata from anon, authenticated;
 
--- metadata holds no PII; keep it readable so a client-side status check still
--- works if the publishable key is ever reintroduced.
-grant select on public.metadata to anon, authenticated;
+-- Do NOT grant SELECT back here. Migration 20261007125739
+-- (revoke_anon_reads_layer2) deliberately revoked SELECT on `rph` *and*
+-- `metadata` from anon/authenticated; the app reads both through the service
+-- key. Re-granting would undo that decision for no benefit.
 
 -- ---------------------------------------------------------------------------
 -- rph_dg_contacts: captcha-gated PII. Service role only — no grants at all.
@@ -45,8 +50,10 @@ revoke all on public.rph_dg_contacts from anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Verify after applying:
---   select grantee, privilege_type from information_schema.role_table_grants
---   where table_schema='public' and table_name in ('rph','rph_dg_contacts')
+--   select table_name, grantee, privilege_type
+--   from information_schema.role_table_grants
+--   where table_schema='public'
+--     and table_name in ('rph','metadata','rph_dg_contacts')
 --     and grantee in ('anon','authenticated');
--- Expect: metadata SELECT only. Nothing on rph or rph_dg_contacts.
+-- Expect: ZERO rows. postgres and service_role keep their grants.
 -- ---------------------------------------------------------------------------
