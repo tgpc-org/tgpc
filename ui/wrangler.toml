@@ -4,6 +4,22 @@ compatibility_flags = ["nodejs_compat"]
 
 pages_build_output_dir = ".svelte-kit/cloudflare"
 
+# Preview deployments (every branch except `main`) get their public config from
+# here. This project is wrangler-managed, and plain-text variables set in the
+# dashboard do NOT reach a wrangler-configured deployment - measured on the dev
+# preview 2026-10-22: the dashboard listed PUBLIC_R2_PHOTO_BASE and
+# PUBLIC_SUPABASE_URL for preview, the build still died with
+# `env_invalid: PUBLIC_R2_PHOTO_BASE` and the deployed worker rendered
+# PUBLIC_SUPABASE_URL as "". Production is unaffected only because its
+# variables are stored as secrets, which are injected.
+#
+# These are public values (a CDN base and a project URL), safe to version. The
+# secrets preview would need (service keys) are deliberately absent: preview
+# runs against public endpoints and must never carry production credentials.
+[env.preview.vars]
+PUBLIC_R2_PHOTO_BASE = "https://pub-4591c8c5282040459ade2ed1e5e3d5be.r2.dev/photos"
+PUBLIC_SUPABASE_URL = "https://vhgpyvzgmvhijqgsapnk.supabase.co"
+
 [[r2_buckets]]
 binding = "DISPATCH"
 bucket_name = "tgpc"
