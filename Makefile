@@ -1,13 +1,44 @@
-.PHONY: scrape sync quota help dg-start dg-stop dg-resume dg-watch clean-data clean-ui clean
+.PHONY: scrape sync quota logs help dg-start dg-stop dg-resume dg-watch clean-data clean-ui clean
 
 # Use the repo venv when present (survives Homebrew Python upgrades).
 PY := $(shell test -x .venv/bin/python && echo .venv/bin/python || echo python3)
 
+# Every long run keeps its full output under data/logs/ (gitignored), so two
+# runs can be diffed later instead of reconstructed from terminal scrollback.
+#
+# /bin/sh is dash on the VM, where `set -o pipefail` does not exist, so the
+# recipes run under bash. pipefail matters: a bare `cmd | tee` reports tee's
+# status, so a crashed scrape would look successful and the log would hide it.
+SHELL := /bin/bash
+
+LOG_DIR := data/logs
+KEEP_LOGS ?= 30
+
+# $(1) = log prefix, $(2) = command to run. Only the newest $(KEEP_LOGS) logs
+# per prefix are kept, so this cannot grow without bound. The PID in the name
+# stops two runs in the same second from overwriting each other.
+define RUN_LOGGED
+mkdir -p $(LOG_DIR); \
+log="$(LOG_DIR)/$(1)-$$(date +%Y%m%d-%H%M%S)-$$$$.log"; \
+echo "log → $$log"; \
+set -o pipefail; \
+{ $(2) 2>&1 | tee "$$log"; }; status=$$?; \
+ln -sfn "$$(basename "$$log")" "$(LOG_DIR)/latest-$(1).log"; \
+ls -1t $(LOG_DIR)/$(1)-*.log 2>/dev/null | tail -n +$$(( $(KEEP_LOGS) + 1 )) | while read -r f; do rm -f "$$f"; done; \
+exit $$status
+endef
+
 scrape:  # Scrape TGPC → sync all destinations → enrich new records
-	$(PY) -m tgpc update
+	@$(call RUN_LOGGED,scrape,$(PY) -m tgpc update)
 
 sync:  # Full manual sync of rph.json to all cloud destinations
-	$(PY) -m tgpc sync
+	@$(call RUN_LOGGED,sync,$(PY) -m tgpc sync)
+
+logs:  # Show the newest scrape log (FOLLOW=1 to tail it)
+	@last=$$(ls -1t $(LOG_DIR)/scrape-*.log 2>/dev/null | head -1); \
+	if [ -z "$$last" ]; then echo "no run logs yet — run 'make scrape'"; exit 1; fi; \
+	echo "== $$last =="; \
+	if [ -n "$(FOLLOW)" ]; then tail -f "$$last"; else tail -n 60 "$$last"; fi
 
 quota:  # Show free quota usage for all services
 	$(PY) -m tgpc quota
