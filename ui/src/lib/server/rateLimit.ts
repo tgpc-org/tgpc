@@ -17,10 +17,12 @@
 //
 // Why not the edge: a Cloudflare Rate Limiting rule needs a zone. This project
 // is served from `tgpc.pages.dev`, the account owns no zones, and Pages
-// Functions do not support the Workers Rate Limiting binding. Why not KV: an
-// `event.platform` binding is unreachable in production (adapter-cloudflare v8
-// does not pass `platform`), so the Supabase service key is the only shared
-// store that actually resolves. See audit F13.
+// Functions do not support the Workers Rate Limiting binding. Why not KV:
+// Workers KV has no atomic read-modify-write, so a counter built on it would
+// race - two requests can read the same value and both write the same +1. (A
+// KV binding can be read now that bindings resolve through `$app/env`, see
+// audit F13; it is the missing atomicity, not reachability, that rules it
+// out.) The Supabase service key is the shared store that does both.
 //
 // Availability beats strictness: if the shared counter errors we fall back to
 // the local verdict rather than failing the request.

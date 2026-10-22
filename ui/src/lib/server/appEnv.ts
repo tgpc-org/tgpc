@@ -11,6 +11,11 @@
  * platformProxy and if a future adapter restores it), then $app/env.
  * First non-empty value wins; null when unconfigured (callers fail closed).
  *
+ * Native bindings are not strings, so they do not go through `envVal`:
+ * `dispatchBucket()` performs the same lookup for the `DISPATCH` R2 bucket,
+ * which is declared private and non-static in `src/env.ts` precisely so the
+ * object is exported by reference instead of serialised.
+ *
  * NOTE: this module statically imports `$app/env/*`, so it must never be
  * imported by `node:test` unit tests (no Vite resolver there) — same rule as
  * `health/+server.ts`. `$lib/server/auth.ts` carries its own dynamic-import
