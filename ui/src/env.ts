@@ -6,6 +6,12 @@ import { defineEnvVars } from '@sveltejs/kit/env';
 // fails closed.
 const str = { schema: (input: string | undefined) => input ?? '' };
 
+// A binding is not a string, so it cannot use the `str` schema above.
+// SvelteKit only serialises vars marked `static` (that is where devalue runs);
+// a private, non-static var is exported by reference, so the object survives
+// intact. The validator is a passthrough that returns undefined when the
+// binding is absent — no issue is raised, so local dev and preview builds
+// without the binding still start.
 export const variables = defineEnvVars({
 	PUBLIC_R2_PHOTO_BASE: { public: true, static: true },
 	PUBLIC_SUPABASE_URL: { public: true, ...str },
@@ -22,5 +28,11 @@ export const variables = defineEnvVars({
 	R2_SECRET_ACCESS_KEY: str,
 	TGPC_R2_DG_BUCKET: str,
 	GITHUB_TOKEN: str,
-	GITHUB_PAT: str
+	GITHUB_PAT: str,
+
+	// R2 binding from wrangler.toml (audit F13). Read via dispatchBucket().
+	DISPATCH: {
+		schema: (input: string | undefined) =>
+			input as unknown as App.DispatchBucket | undefined
+	}
 });

@@ -58,24 +58,57 @@ const FALLBACK_FILES = [
   'DL31122025.pdf',
 ];
 
-export async function GET({ platform }) {
-  try {
-    const bucket: any = platform?.env?.DISPATCH;
-    if (bucket && typeof bucket.list === 'function') {
-      const listing = await bucket.list({ prefix: 'dispatch/' });
-      const files = listing.objects.map((obj: any) => ({
-        name: obj.key.replace('dispatch/', ''),
-        size: obj.size
-      }));
-      if (files.length > 0) {
-        return Response.json(files, { headers: { 'Cache-Control': 'public, max-age=60' } });
-      }
-    }
-  } catch {}
+import { dispatchBucket } from '#lib/server/appEnv.js';
+import { DISPATCH_PREFIX, dispatchNameFromKey } from '#lib/dispatchNames.js';
 
-  // R2 binding unavailable: return the last-known file list instead of 503
-  // so the dispatch page stays usable, but flag every entry stale and omit
-  // fabricated sizes (CODE_REVIEW.md M3).
+const CACHE = { 'Cache-Control': 'public, max-age=60' };
+const PAGE_SIZE = 1000;
+/** 20k entries: far above the 221 real files, but still a bounded loop. */
+const MAX_PAGES = 20;
+
+type DispatchFile = { name: string; size?: number };
+
+/**
+ * Every dispatch PDF the bucket holds, oldest listing API page included.
+ * Keys that are not dispatch PDFs are dropped here so the listing can never
+ * advertise a file the download route would reject.
+ */
+async function listFromBucket(bucket: App.DispatchBucket): Promise<DispatchFile[]> {
+  const files: DispatchFile[] = [];
+  let cursor: string | undefined;
+
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const listing = await bucket.list({ prefix: DISPATCH_PREFIX, limit: PAGE_SIZE, cursor });
+    for (const obj of listing.objects) {
+      const name = dispatchNameFromKey(obj.key);
+      if (!name) continue;
+      files.push(typeof obj.size === 'number' ? { name, size: obj.size } : { name });
+    }
+    if (!listing.truncated || !listing.cursor) break;
+    cursor = listing.cursor;
+  }
+
+  return files.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function GET({ platform }) {
+  const bucket = dispatchBucket(platform);
+
+  if (bucket) {
+    try {
+      // Once the binding is reachable R2 is the source of truth: return what
+      // it actually holds, even zero files. Reporting the hardcoded names in
+      // that case is what made the F13 outage invisible.
+      return Response.json(await listFromBucket(bucket), { headers: CACHE });
+    } catch {
+      // Listing failed: fall through to the flagged last-known list.
+    }
+  }
+
+  // Binding missing (local dev without --r2) or the listing call failed:
+  // return the last-known file list instead of 503 so the page stays usable,
+  // but flag every entry stale and omit sizes, because those files cannot be
+  // served (CODE_REVIEW.md M3).
   const files = FALLBACK_FILES.map((n) => ({ name: n, stale: true }));
-  return Response.json(files, { headers: { 'Cache-Control': 'public, max-age=60' } });
+  return Response.json(files, { headers: CACHE });
 }

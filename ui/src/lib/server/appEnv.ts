@@ -38,3 +38,24 @@ export function envVal(
 	}
 	return null;
 }
+
+/**
+ * The `DISPATCH` R2 bucket, or null when the binding is not attached.
+ *
+ * Bindings are NOT readable through `event.platform` in production (the
+ * adapter passes only `getClientAddress` to `server.respond`), so the binding
+ * is declared in `src/env.ts` and reached through `$app/env/private`. The
+ * platform read stays first so local `wrangler pages dev` keeps working if a
+ * future adapter restores it.
+ */
+export function dispatchBucket(
+	platform: App.Platform | undefined
+): App.DispatchBucket | null {
+	const fromPlatform = platform?.env?.DISPATCH;
+	if (fromPlatform && typeof fromPlatform.list === 'function') return fromPlatform;
+
+	const fromEnv = privMap.DISPATCH as unknown as App.DispatchBucket | undefined;
+	if (fromEnv && typeof fromEnv.list === 'function') return fromEnv;
+
+	return null;
+}
