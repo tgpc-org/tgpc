@@ -389,6 +389,32 @@ def save_checkpoint_atomic(path: Path, state: Dict) -> None:
     tmp.replace(path)
 
 
+# `--no-resume` keeps a timestamped backup before wiping resume state. Backups
+# are large (the checkpoint held 8 MB at 91k records) and were previously
+# never pruned, so a handful of runs filled data/ and six of them ended up
+# committed to git. Keep the newest few, delete the rest.
+CHECKPOINT_BACKUP_KEEP = 3
+
+
+def prune_checkpoint_backups(path: Path, keep: int = CHECKPOINT_BACKUP_KEEP) -> List[Path]:
+    """Delete all but the newest `keep` `<name>.bak-<stamp>` backups of `path`.
+
+    Names are `%Y%m%dT%H%M%S`, so lexicographic order is chronological. Files
+    that do not match the pattern, or that cannot be removed, are left alone.
+    Returns the paths actually deleted.
+    """
+    backups = sorted(path.parent.glob(f"{path.name}.bak-*"))
+    removed: List[Path] = []
+    for old in backups[:-keep] if keep > 0 else backups:
+        try:
+            old.unlink()
+        except OSError as exc:  # pragma: no cover - permission/race only
+            logger.warning(f"could not prune {old.name}: {exc}")
+            continue
+        removed.append(old)
+    return removed
+
+
 def append_jsonl(path: Path, obj: Dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "a", encoding="utf-8") as f:
@@ -992,6 +1018,7 @@ def run_fetch(
         bak = checkpoint_path.with_name(f"{checkpoint_path.name}.bak-{stamp}")
         bak.write_bytes(checkpoint_path.read_bytes())
         logger.warning(f"Ignoring existing checkpoint (backed up to {bak.name})")
+        prune_checkpoint_backups(checkpoint_path)
     if resume:
         _heal_jsonl(out_jsonl)
         _heal_jsonl(history_path)

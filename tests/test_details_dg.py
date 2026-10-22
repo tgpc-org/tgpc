@@ -16,6 +16,7 @@ from tgpc.details_dg import (  # noqa: E402
     normalize_gender,
     normalize_token,
     parse_dg_html,
+    prune_checkpoint_backups,
     run_fetch,
     save_checkpoint_atomic,
     valid_email,
@@ -167,6 +168,32 @@ class ValidatorTests(unittest.TestCase):
 
 
 class CheckpointTests(unittest.TestCase):
+    def test_prune_keeps_newest_backups(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cp = Path(tmp) / "cp.json"
+            cp.write_text("{}")
+            stamps = ["20261009T113223", "20261009T134614", "20261012T175124", "20261012T193025", "20261012T193047"]
+            for stamp in stamps:
+                (Path(tmp) / f"cp.json.bak-{stamp}").write_text("{}")
+            # Unrelated files must survive.
+            (Path(tmp) / "cp.json.bak").write_text("{}")
+            (Path(tmp) / "other.json").write_text("{}")
+
+            removed = prune_checkpoint_backups(cp)
+
+            self.assertEqual([p.name for p in removed], [f"cp.json.bak-{s}" for s in stamps[:2]])
+            left = sorted(p.name for p in Path(tmp).glob("cp.json.bak-*"))
+            self.assertEqual(left, [f"cp.json.bak-{s}" for s in stamps[2:]])
+            self.assertTrue((Path(tmp) / "cp.json.bak").exists())
+            self.assertTrue((Path(tmp) / "other.json").exists())
+
+    def test_prune_noop_when_at_or_below_limit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cp = Path(tmp) / "cp.json"
+            cp.write_text("{}")
+            (Path(tmp) / "cp.json.bak-20261012T193047").write_text("{}")
+            self.assertEqual(prune_checkpoint_backups(cp), [])
+
     def test_roundtrip_and_resume_skip(self):
         with tempfile.TemporaryDirectory() as tmp:
             cp = Path(tmp) / "cp.json"

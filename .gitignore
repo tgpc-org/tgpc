@@ -52,8 +52,14 @@ data/dg_fetch.pid
 data/dg_ids_dash.txt
 data/dg_stop
 data/logs/
+# VM address + server pid persisted by scripts/dg_dashboard.py (local state)
+data/dg_vm.conf
+data/*.pid
 *.backup
 *.bak
+# Timestamped checkpoint backups (<name>.bak-<YYYYmmddTHHMMSS>); `*.bak`
+# does not match these, and six 8 MB ones had been committed by accident.
+*.bak-*
 *.tmp
 *.log
 debug_*.html
