@@ -12,8 +12,17 @@ const str = { schema: (input: string | undefined) => input ?? '' };
 // intact. The validator is a passthrough that returns undefined when the
 // binding is absent — no issue is raised, so local dev and preview builds
 // without the binding still start.
+// Public values are resolved at RUNTIME, never inlined at build time. A
+// `static` var is validated *during the build*, so any environment that lacks
+// it fails the entire build instead of the one page that needs it. That is
+// exactly what happened to the `dev` preview branch: every preview build since
+// the Kit 3 migration died with `env_invalid: PUBLIC_R2_PHOTO_BASE - Value is
+// missing`, even though the deployment carries the value at runtime. Serving a
+// page with a missing CDN base (r2.ts already degrades to '') is a far better
+// failure than refusing to deploy at all. Keep this in line with
+// PUBLIC_SUPABASE_URL.
 export const variables = defineEnvVars({
-	PUBLIC_R2_PHOTO_BASE: { public: true, static: true },
+	PUBLIC_R2_PHOTO_BASE: { public: true, ...str },
 	PUBLIC_SUPABASE_URL: { public: true, ...str },
 	SUPABASE_URL: str,
 	SUPABASE_SECRET_KEY: str,
