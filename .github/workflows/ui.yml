@@ -13,14 +13,11 @@ jobs:
     defaults:
       run:
         working-directory: ui
-    # Placeholder PUBLIC vars: real values are configured in the Cloudflare
-    # Pages dashboard / local .env. They must be present at job level because
-    # `svelte-kit sync` bakes them into the $env/static/public typings that
-    # svelte-check validates against.
-    env:
-      PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
-      PUBLIC_SUPABASE_PUBLISHABLE_KEY: placeholder-key
-      PUBLIC_R2_PHOTO_BASE: https://placeholder.r2.dev/photos
+    # No PUBLIC_* placeholders here on purpose. Every public variable is
+    # declared non-static in src/env.ts, so values are resolved at runtime and
+    # the build needs none of them. Keep it that way: placeholders made CI go
+    # green while every Cloudflare preview build died on a missing var, because
+    # CI supplied what the real build environment lacked.
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7

@@ -619,7 +619,16 @@ top-level `[[r2_buckets]]` from applying, so `DISPATCH` is redeclared under
 | `TGPC_R2_DG_BUCKET` | private | Private DG bucket name (the app must never push PII to the public bucket) |
 
 `PUBLIC_SUPABASE_PUBLISHABLE_KEY` is no longer read by the app — the browser
-holds no database key at all.
+holds no database key at all. It was removed from the Pages project and from
+`ui/.env` on 2026-10-22 (kept implied nowhere, so it cannot come back by
+accident). `@supabase/supabase-js` stays a dependency: `/api/health` still uses
+it server-side.
+
+CI deliberately defines **no** `PUBLIC_*` placeholders. Every public variable
+is non-static, so the build needs no values; supplying placeholders is what let
+CI stay green while every Cloudflare preview build failed on a missing
+`PUBLIC_R2_PHOTO_BASE`. A variable declared `static` again will now fail CI the
+same way it fails a preview build.
 
 ---
 
@@ -635,7 +644,7 @@ Built with SvelteKit 3 + Tailwind CSS v4 + TypeScript.
 | Styling | Tailwind CSS v4 |
 | Database | Supabase via server-side proxies (service key, RLS read-only for anon) |
 | Hosting | Cloudflare Pages (build: `ui/.svelte-kit/cloudflare`) |
-| Env vars | Public: `PUBLIC_SUPABASE_URL`, `PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `PUBLIC_R2_PHOTO_BASE` — declared non-static, so they resolve per request instead of failing the build. Server-side (Pages dashboard, stored as secrets): `ADMIN_SECRET` (preferred) or `QUOTA_SECRET` for the admin session; `ADMIN_LINK_PHARMACIST_URL` / `ADMIN_LINK_EMAIL_VERIFY_URL` for the two credential-bearing admin links (no token fallbacks exist in code). Preview deployments read their public values from `[env.preview.vars]` in `ui/wrangler.toml` (with `DISPATCH` redeclared under `[env.preview].r2_buckets`) |
+| Env vars | Public: `PUBLIC_SUPABASE_URL`, `PUBLIC_R2_PHOTO_BASE` — declared non-static, so they resolve per request instead of failing the build (CI provides no placeholder values, so a regression here fails CI). Server-side (Pages dashboard, stored as secrets): `ADMIN_SECRET` (preferred) or `QUOTA_SECRET` for the admin session; `ADMIN_LINK_PHARMACIST_URL` / `ADMIN_LINK_EMAIL_VERIFY_URL` for the two credential-bearing admin links (no token fallbacks exist in code). Preview deployments read their public values from `[env.preview.vars]` in `ui/wrangler.toml` (with `DISPATCH` redeclared under `[env.preview].r2_buckets`) |
 
 ### Routes
 
