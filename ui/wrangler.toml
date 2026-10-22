@@ -20,6 +20,15 @@ pages_build_output_dir = ".svelte-kit/cloudflare"
 PUBLIC_R2_PHOTO_BASE = "https://pub-4591c8c5282040459ade2ed1e5e3d5be.r2.dev/photos"
 PUBLIC_SUPABASE_URL = "https://vhgpyvzgmvhijqgsapnk.supabase.co"
 
+# Binding inheritance is not automatic: the moment an [env.preview] block
+# exists, the top-level [[r2_buckets]] stops applying to it. Omitting this made
+# the preview dispatch page fall back to the stale list (220 entries, no sizes,
+# every download 404) while production stayed healthy - measured 2026-10-22 on
+# deployment c2cf9b07. Redeclare it here, and keep the two in sync.
+[[env.preview.r2_buckets]]
+binding = "DISPATCH"
+bucket_name = "tgpc"
+
 [[r2_buckets]]
 binding = "DISPATCH"
 bucket_name = "tgpc"
