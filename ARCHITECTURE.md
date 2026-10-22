@@ -132,7 +132,7 @@ tgpc/
 │   │   ├── .well-known/strix-verify.txt
 │   │   └── _headers               # Security headers for Pages-served static assets (no CSP here — nonce comes from hooks)
 │   ├── playwright.config.ts       # Playwright: desktop + mobile (iPhone-SE) projects; baseURL = PROD_URL ?? tgpc.pages.dev
-│   ├── wrangler.toml              # R2 DISPATCH bucket binding
+│   ├── wrangler.toml              # Pages config: R2 DISPATCH binding + preview vars
 │   ├── vite.config.ts             # SvelteKit plugin + adapter-cloudflare + the single CSP definition
 │   ├── scripts/check-colors.mjs   # Brand-color gate (0 offenders required)
 │   ├── e2e/                       # Playwright specs (chromium; CI `e2e` job)
@@ -588,10 +588,28 @@ in `ui/src/env.ts`); `envVal()` in `ui/src/lib/server/appEnv.ts` tries
 unset so every consumer fails closed. `platform.env` alone is empty on
 adapter-cloudflare v8 — reading it directly is the bug fixed in `8ee00ca`.
 
+Public variables are declared **non-static** on purpose. A `static` var is
+validated *at build time*, so any environment that lacks it fails the whole
+deploy — that is how every `dev` preview build died from 2026-10-01 until
+`d15bc20`. Non-static values are validated per request and shipped to the
+browser in the page's runtime env payload; a missing one degrades to `''`
+(`r2.ts` already guards) instead of blocking the build.
+
+**Where the values live matters for a wrangler-configured Pages project.**
+Plain-text variables set in the dashboard are not injected at all — measured
+2026-10-22: the dashboard listed `PUBLIC_R2_PHOTO_BASE` and
+`PUBLIC_SUPABASE_URL` for preview, yet the preview build failed with
+`env_invalid: PUBLIC_R2_PHOTO_BASE` and the deployed worker rendered
+`PUBLIC_SUPABASE_URL` as `""`. Production works only because its variables are
+stored as **secrets**. Preview therefore gets its public values from
+`[env.preview.vars]` in `ui/wrangler.toml`. Creating that block also stops the
+top-level `[[r2_buckets]]` from applying, so `DISPATCH` is redeclared under
+`[env.preview]` — the two declarations must stay in sync.
+
 | Variable | Scope | Purpose |
 |---|---|---|
-| `PUBLIC_SUPABASE_URL` | public | Supabase project URL (health check) |
-| `PUBLIC_R2_PHOTO_BASE` | public | R2 public photo/notice/dispatch base URL |
+| `PUBLIC_SUPABASE_URL` | public | Supabase project URL (health check); runtime-resolved |
+| `PUBLIC_R2_PHOTO_BASE` | public | R2 public photo/notice/dispatch base URL; runtime-resolved, never `static` |
 | `SUPABASE_URL` / `SUPABASE_SECRET_KEY` | private | Service-role access for the data proxies |
 | `SUPABASE_PAT` | private | Account PAT for `/api/usage` and the admin contacts join |
 | `ADMIN_SECRET` (preferred) / `QUOTA_SECRET` | private | Signs the admin session cookie; absent = nobody is authorized |
@@ -617,7 +635,7 @@ Built with SvelteKit 3 + Tailwind CSS v4 + TypeScript.
 | Styling | Tailwind CSS v4 |
 | Database | Supabase via server-side proxies (service key, RLS read-only for anon) |
 | Hosting | Cloudflare Pages (build: `ui/.svelte-kit/cloudflare`) |
-| Env vars | Public: `PUBLIC_SUPABASE_URL`, `PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `PUBLIC_R2_PHOTO_BASE`. Server-side (Pages dashboard): `ADMIN_SECRET` (preferred) or `QUOTA_SECRET` for the admin session; `ADMIN_LINK_PHARMACIST_URL` / `ADMIN_LINK_EMAIL_VERIFY_URL` for the two credential-bearing admin links (no token fallbacks exist in code) |
+| Env vars | Public: `PUBLIC_SUPABASE_URL`, `PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `PUBLIC_R2_PHOTO_BASE` — declared non-static, so they resolve per request instead of failing the build. Server-side (Pages dashboard, stored as secrets): `ADMIN_SECRET` (preferred) or `QUOTA_SECRET` for the admin session; `ADMIN_LINK_PHARMACIST_URL` / `ADMIN_LINK_EMAIL_VERIFY_URL` for the two credential-bearing admin links (no token fallbacks exist in code). Preview deployments read their public values from `[env.preview.vars]` in `ui/wrangler.toml` (with `DISPATCH` redeclared under `[env.preview].r2_buckets`) |
 
 ### Routes
 
