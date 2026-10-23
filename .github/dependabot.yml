@@ -29,6 +29,13 @@ updates:
       prefix: npm
     labels:
       - dependencies
+    # @types/node tracks the runtime in ui/.node-version (Node 24), not the
+    # newest release. Typechecking against Node 26 types would bless APIs the
+    # Worker does not have - Dependabot proposed exactly that (22 -> 26) on its
+    # first run, so the major line is pinned to the runtime.
+    ignore:
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     groups:
       npm-minor-patch:
         patterns: ["*"]
