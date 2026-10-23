@@ -6,12 +6,16 @@ import type { RequestHandler } from './$types';
 /**
  * Stats move only when the pipeline syncs (a few times a day at most), yet
  * every open tab polls this endpoint every 60 s — the site's highest-volume
- * database path. Cache the payload at the edge for 30 s so N visitors cost
- * one pair of Postgres queries per PoP per half-minute instead of two per
- * visitor per minute. Worst-case drift is poll (60 s) + cache (30 s) ≈ 90 s,
- * which is well inside what the strip already tolerates.
+ * database path. Cache the payload at the edge so N visitors cost one pair of
+ * Postgres queries per PoP per window instead of two per visitor per minute.
+ *
+ * 120 s, not 30: a TTL below the poll interval would expire between a single
+ * visitor's polls, so idle-but-open tabs (the common case) would still miss
+ * every time and only concurrent visitors would collapse. At 120 s roughly
+ * every second or third poll is a HIT. Worst-case drift is poll (60 s) +
+ * cache (120 s) ≈ 3 min, against data that changes twice a day.
  */
-const TTL_SECONDS = 30;
+const TTL_SECONDS = 120;
 
 /**
  * Public stats + last-sync payload. Reads with the service key server-side;

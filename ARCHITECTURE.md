@@ -669,7 +669,7 @@ Built with SvelteKit 3 + Tailwind CSS v4 + TypeScript.
 | `/api/search` | Public ranked search proxy → `search_pharmacists` RPC; `lim` clamped to 1..200 server-side; rate-limited per IP |
 | `/api/refine` | Public refined-search proxy; allowlisted enums + sanitized text, one capped PostgREST query; rate-limited per IP |
 | `/api/record` | Public single-record proxy (eleven safe columns); rate-limited per IP |
-| `/api/stats` | Public stats + last-sync payload (service key server-side); polled every 60s, not realtime; edge-cached 30s |
+| `/api/stats` | Public stats + last-sync payload (service key server-side); polled every 60s, not realtime; edge-cached 120s |
 | `/api/health` | Connectivity + staleness health check (Supabase latency, last_sync freshness; 503 when down); rate-limited per IP (30/min on the shared tier — each call costs two PostgREST queries) |
 | `/api/notice` | JSON — notice data from `static/notice.json` |
 
@@ -711,7 +711,7 @@ pins the wiring.
 ### Key Features
 
 - **Shell** — sticky header (brand lockup · live status pill · theme toggle), a single horizontally scrollable stats strip (total + 6 category tiles + last-sync/active/inactive meta), and a primary tab nav with a measured green slider. Footer is in-flow on phones and fixed on `sm+`, so lists are sized to the footer by the shared `fitToViewport` action instead of hardcoded `100vh - Npx` offsets
-- **Stats strip** — total + per-category counts from the Supabase stats RPC, fetched server-side via `/api/stats`, cached in localStorage. `/api/stats` is also edge-cached for 30 s (two Postgres reads per PoP per half-minute, however many tabs are open) — the limiter still runs before the cache, so a HIT costs the caller one unit of its per-IP budget
+- **Stats strip** — total + per-category counts from the Supabase stats RPC, fetched server-side via `/api/stats`, cached in localStorage. `/api/stats` is also edge-cached for 120 s (one pair of Postgres reads per PoP per window, however many tabs are open) — the limiter still runs before the cache, so a HIT costs the caller one unit of its per-IP budget
 - **Freshness** — stats + last-sync polled every 60s from `/api/stats` instead of a Supabase Realtime channel (the channel needed the anon database key the browser no longer holds)
 - **Search** — server-side search through `/api/search` (min 3 chars, debounced 300ms) → `search_pharmacists` RPC (capped at `MAX_SEARCH_RESULTS` — 200 rows per query), ranked by prefix priority then numeric. Result refiners (RPC/name/father/gender/status/valid-till) go through `/api/refine`, which re-validates every filter server-side and returns one capped, allowlisted result set; results render in a single scrollable list sized by the `fitToViewport` action (`content-visibility: auto` on rows), with sortable headers (RPC / name / category / valid-till / status, `aria-sort`-tracked) that fall back to the server's relevance rank. When a result set comes back full, the header says so and asks for a narrower query — `isTruncated()` in `ui/src/lib/searchLimits.ts` drives that hint, and `searchLimits.test.ts` fails if any query path drops its limit or asks for more than the cap
 - **Shareable state** — the search query, refiners and sort order are mirrored to the URL (`searchUrl.ts`), so a link, a refresh and back/forward all restore the same result set
