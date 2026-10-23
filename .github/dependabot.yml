@@ -1,0 +1,74 @@
+# Automated dependency updates.
+#
+# Dependabot was removed in 2026-09 in favour of manual bumps. That worked
+# while the only pressure was the two audit gates (`npm audit --audit-level=high`
+# in ui.yml, `pip-audit` in python.yml), but those only fail *after* an advisory
+# is published - the most expensive moment to upgrade, and the moment nobody is
+# scheduled to do it. It is back with the noisy parts turned down:
+#
+#   * one grouped PR per ecosystem for minor + patch updates, once a week;
+#   * a low open-PR cap per ecosystem;
+#   * major bumps arrive as individual PRs, because those are the ones that
+#     need a real read of the changelog (Svelte 6, Vite 9, Wrangler 5, ...).
+#
+# Both audit gates still run on every Dependabot PR, so a grouped bump that
+# pulls in something vulnerable fails CI before it can be merged.
+version: 2
+
+updates:
+  # SvelteKit 3 + Vite 8 + Tailwind 4 + Wrangler, resolved from ui/package.json.
+  - package-ecosystem: npm
+    directory: /ui
+    schedule:
+      interval: weekly
+      day: monday
+      time: "05:00"
+      timezone: Asia/Kolkata
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: npm
+    labels:
+      - dependencies
+    groups:
+      npm-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  # Python pipeline dependencies from pyproject.toml. The pinned dev tools
+  # (ruff, pytest) live in the workflow, not the manifest, so they are not
+  # managed here.
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "05:00"
+      timezone: Asia/Kolkata
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: pip
+    labels:
+      - dependencies
+    groups:
+      pip-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  # actions/checkout, setup-node, setup-python, ... referenced by every
+  # workflow in .github/workflows/.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "05:00"
+      timezone: Asia/Kolkata
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: ci
+    labels:
+      - dependencies
+    groups:
+      actions-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
