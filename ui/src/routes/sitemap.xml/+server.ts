@@ -1,17 +1,24 @@
-// Sitemap for crawlers — static index pages only (search results and
-// pharmacist profiles are dynamic / data-driven and intentionally excluded).
-export async function GET() {
-	const urls = ['/', '/notice', '/dispatch'];
-	const body =
-		`<?xml version="1.0" encoding="UTF-8"?>\n` +
-		`<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n` +
-		urls.map((p) => `  <url><loc>https://tgpc.pages.dev${p}</loc><changefreq>daily</changefreq></url>`).join('\n') +
-		`\n</urlset>\n`;
+// Sitemap index. Profiles are the reason this site exists and they are only
+// reachable through the client-rendered search box, so the sitemap is the one
+// way a crawler can discover them; each chunk lives at /sitemap/<n>.xml.
+import { error } from '@sveltejs/kit';
+import type { RequestHandler } from './$types';
+import { chunkCount, sitemapIndexXml } from '#lib/sitemap.js';
+import { activeRecordTotal } from '#lib/server/sitemapData.js';
+import { edgeCached } from '#lib/server/edgeCache.js';
 
-	return new Response(body, {
-		headers: {
-			'Content-Type': 'application/xml; charset=utf-8',
-			'Cache-Control': 'public, max-age=86400'
+/** Rebuilt twice a day: the registry syncs twice a day at most. */
+const TTL_SECONDS = 6 * 60 * 60;
+
+export const GET: RequestHandler = async ({ platform, url }) => {
+	return edgeCached(url.origin + '/sitemap.xml', TTL_SECONDS, async () => {
+		const total = await activeRecordTotal(platform);
+		if (total === null) {
+			error(503, 'Sitemap temporarily unavailable');
 		}
+
+		return new Response(sitemapIndexXml(chunkCount(total)), {
+			headers: { 'Content-Type': 'application/xml; charset=utf-8' }
+		});
 	});
-}
+};

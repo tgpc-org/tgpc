@@ -26,6 +26,7 @@ const OPEN_EXACT = new Set([
 	'/api/health'
 ]);
 
+
 const OPEN_ASSETS = new Set([
 	'/favicon.ico',
 	'/favicon.svg',
@@ -45,6 +46,9 @@ export type GateDecision =
 
 export function gatePath(pathname: string): GateDecision {
 	if (OPEN_EXACT.has(pathname) || isOpenAsset(pathname)) return { kind: 'open' };
+	// Sitemap chunks (/sitemap/<n>.xml): public XML, no registry data beyond
+	// registration numbers; the route 404s anything out of range.
+	if (pathname.startsWith('/sitemap/')) return { kind: 'open' };
 	if (pathname.startsWith('/api/')) {
 		// /api/dispatch has a [name] file sub-route, so the whole subtree
 		// is public; every other /api/ path is denied unless allowlisted.

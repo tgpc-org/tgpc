@@ -23,7 +23,15 @@ describe('gatePath', () => {
 	});
 
 	it('leaves the public portal open without a session', () => {
-		for (const p of ['/', '/notice', '/dispatch', '/sitemap.xml', '/rph/TS000097']) {
+		for (const p of [
+			'/',
+			'/notice',
+			'/dispatch',
+			'/sitemap.xml',
+			'/sitemap/1.xml',
+			'/sitemap/8.xml',
+			'/rph/TS000097'
+		]) {
 			assert.equal(gatePath(p).kind, 'open');
 		}
 		for (const p of [
@@ -53,5 +61,8 @@ describe('gatePath', () => {
 		assert.equal(gatePath('/api/admin-evil').kind, 'api-deny');
 		assert.equal(gatePath('/api/stats-evil').kind, 'api-deny');
 		assert.equal(gatePath('/notice.json').kind, 'page-login');
+		// The whole /sitemap/ subtree is public; the route 404s bad chunk numbers.
+		assert.equal(gatePath('/sitemap/').kind, 'open');
+		assert.equal(gatePath('/sitemap/x.xml').kind, 'open');
 	});
 });

@@ -2,6 +2,7 @@ import type { Handle } from '@sveltejs/kit/hooks';
 import { dev } from '$app/env';
 import { isAuthed } from '#lib/server/auth.js';
 import { gatePath } from '#lib/server/gate.js';
+import { edgeCache } from '#lib/server/edgeCache.js';
 
 // Public-portal gate: search, profiles, notices, dispatch lists, stats and
 // health are reachable without a session (data APIs rate-limit per IP in
@@ -31,12 +32,6 @@ import { gatePath } from '#lib/server/gate.js';
 const PROFILE_PATH = /^\/rph\/[^/]+\/?$/;
 /** Cache API TTL for a rendered profile page (seconds). */
 const PROFILE_TTL_SECONDS = 3600;
-
-/** `caches.default` in the Workers runtime, or null in `vite dev` / Node. */
-function edgeCache(): Cache | null {
-	const store = (globalThis as unknown as { caches?: { default?: Cache } }).caches;
-	return store?.default ?? null;
-}
 
 export const handle: Handle = async ({ event, resolve }) => {
 	if (!dev) {
