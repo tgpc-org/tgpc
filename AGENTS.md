@@ -49,6 +49,8 @@ red/green may also appear as alpha tints: `rgba(239,68,68,a)` /
 - Unit tests: `cd ui && npm run test:unit`
 - Python tests: `pytest tests/ --cov --cov-fail-under=65` from the repo root
   (coverage gate over `tgpc/`; CI fails below 65%).
+- Python types: `mypy` from the repo root (config in `pyproject.toml`, checks
+  `tgpc/`; must stay at 0 errors).
 - Data pipeline: `make` targets (see `Makefile`); run via `cd tgpc` as needed.
 - Run logs: `make scrape` / `make sync` tee full output to `data/logs/`
   (gitignored, newest 30 kept); `make logs` shows the latest scrape.

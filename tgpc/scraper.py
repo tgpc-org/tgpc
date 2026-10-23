@@ -385,7 +385,7 @@ class Scraper:
         logger.info(f"Extracted {len(records)} records")
         return records
 
-    def extract_detailed_info(self, reg_no: str, img_dir: Path = None) -> Optional[PharmacistRecord]:
+    def extract_detailed_info(self, reg_no: str, img_dir: Optional[Path] = None) -> Optional[PharmacistRecord]:
         try:
             logger.info(f"Enriching {reg_no}...")
             step(f"searching {reg_no}")
@@ -424,7 +424,14 @@ class Scraper:
                     img = info_table.find("img")
 
             if img and img.get("src") and img_dir:
-                src = img["src"]
+                src = img.get("src")
+                if not isinstance(src, str):
+                    # bs4 types __getitem__ as str | AttributeValueList. A photo
+                    # src is one string, so anything else is malformed markup —
+                    # skip the photo (as every other photo failure does) rather
+                    # than fail the whole record.
+                    logger.warning(f"Skipping photo for {reg_no}: unexpected src type {type(src).__name__}")
+                    src = ""
                 import base64
                 from io import BytesIO
 
@@ -486,7 +493,10 @@ class Scraper:
                         from PIL import Image, ImageOps
 
                         Image.MAX_IMAGE_PIXELS = 25_000_000
-                        im = Image.open(BytesIO(image_bytes))
+                        # Image.open returns ImageFile (a subclass); the EXIF and
+                        # mode conversions below widen it to Image, so declare
+                        # the wider type up front.
+                        im: Image.Image = Image.open(BytesIO(image_bytes))
 
                         # Animated? Grab first frame only
                         if getattr(im, "is_animated", False):
@@ -530,7 +540,7 @@ class Scraper:
                         else:
                             if w > 413 or h > 531:
                                 ratio = min(413 / w, 531 / h)
-                                im = im.resize((int(w * ratio), int(h * ratio)), Image.LANCZOS)
+                                im = im.resize((int(w * ratio), int(h * ratio)), Image.Resampling.LANCZOS)
                             photo_path = img_dir / f"{reg_no}.webp"
                             im.save(photo_path, "WEBP", quality=85)
                             logger.info(f"Saved photo as WebP: {photo_path.name}")

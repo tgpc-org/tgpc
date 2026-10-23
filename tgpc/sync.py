@@ -132,7 +132,7 @@ def delete_supabase_orphans(supabase, local_ids: set) -> bool:
     on every run forever.
     """
     try:
-        orphans = []
+        orphans: list[str] = []
         page = 1000
         start = 0
         while True:

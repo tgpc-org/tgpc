@@ -20,9 +20,15 @@ jobs:
           cache: pip
           cache-dependency-path: pyproject.toml
       # Pinned to match .pre-commit-config.yaml (astral-sh/ruff-pre-commit v0.16.6)
-      - run: pip install -e . pytest pytest-cov==7.1.0 ruff==0.16.6
+      - run: pip install -e . pytest pytest-cov==7.1.0 ruff==0.16.6 mypy==2.4.0
       - run: ruff check .
       - run: ruff format --check .
+      # Type check the installed package. Config (and the boto3/pyzipper
+      # stub exemptions) lives in pyproject.toml; this is not --strict, so it
+      # only fails on genuinely wrong code. Deliberately not a pre-commit hook:
+      # mypy needs the project's own venv to resolve third-party imports, and
+      # a self-contained hook env would only report hundreds of missing stubs.
+      - run: mypy
       # Coverage gate: the suite sits at 67% of tgpc/ today, so 65 is the
       # floor — low enough that ordinary refactors don't trip it, high enough
       # that a new untested module (the size of one of the smaller ones) does.

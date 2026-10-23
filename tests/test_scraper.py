@@ -296,6 +296,68 @@ class ScraperParsingTests(unittest.TestCase):
 
         self.assertIsNone(record)
 
+    def test_extract_detailed_info_resizes_and_saves_photo_as_webp(self):
+        """Photo pipeline end-to-end: base64 data URI -> downscale -> WebP on disk.
+
+        The resize path is the only place `Image.Resampling.LANCZOS` is used and
+        the `img_dir` branch is skipped entirely by the other parsing tests, so
+        nothing else pins "413x531 max, WebP, saved under the reg number".
+        """
+        import base64
+        import io
+        import tempfile
+        from pathlib import Path
+
+        from PIL import Image
+
+        source = io.BytesIO()
+        Image.new("RGB", (900, 1200), (10, 200, 100)).save(source, "JPEG", quality=90)
+        data_uri = "data:image/jpeg;base64," + base64.b64encode(source.getvalue()).decode()
+        html = f"""
+        <html><body>
+            <table>
+                <tr><th>Registration No</th><th>Name</th><th>Photo</th></tr>
+                <tr><td>RPH999</td><td>Photo Person</td>
+                    <td><img id="imgPhotoMain" src="{data_uri}" /></td></tr>
+            </table>
+        </body></html>
+        """
+
+        scraper = Scraper()
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(scraper, "_request", return_value=make_response(html)):
+                record = scraper.extract_detailed_info("RPH999", img_dir=Path(tmp))
+
+            self.assertIsNotNone(record)
+            self.assertEqual(record.name, "Photo Person")
+            saved = Path(tmp) / "RPH999.webp"
+            self.assertTrue(saved.exists(), "photo was not written")
+            with Image.open(saved) as image:
+                self.assertEqual(image.format, "WEBP")
+                width, height = image.size
+            self.assertLessEqual(width, 413)
+            self.assertLessEqual(height, 531)
+            self.assertEqual((width, height), (398, 531))
+
+    def test_extract_detailed_info_skips_photo_when_img_dir_is_missing(self):
+        """No img_dir means no photo work — the record still parses."""
+        html = """
+        <html><body>
+            <table>
+                <tr><th>Registration No</th><th>Name</th><th>Photo</th></tr>
+                <tr><td>RPH555</td><td>No Dir Person</td>
+                    <td><img id="imgPhotoMain" src="data:image/jpeg;base64,QUJDREVGRw==" /></td></tr>
+            </table>
+        </body></html>
+        """
+
+        scraper = Scraper()
+        with patch.object(scraper, "_request", return_value=make_response(html)):
+            record = scraper.extract_detailed_info("RPH555")
+
+        self.assertIsNotNone(record)
+        self.assertEqual(record.registration_number, "RPH555")
+
 
 class TlsPinningTests(unittest.TestCase):
     """Certificate verification for the TGPC host (C4, audit F5/F10)."""

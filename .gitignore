@@ -104,6 +104,7 @@ node_modules/
 htmlcov/
 .pytest_cache/
 .ruff_cache/
+.mypy_cache/
 tgpc-creds.sh
 .claude/
 test-results/

@@ -29,7 +29,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union, cast
 from urllib.parse import urlparse
 
 import requests
@@ -755,7 +755,10 @@ def build_supabase_payload(parsed: Dict[str, str], fetched_at: str, serial: obje
     """Map a validated parsed DG row to rph_dg_contacts columns (+migration file)."""
     payload: Dict[str, object] = {"registration_number": parsed.get("registration_number", "")}
     try:
-        payload["serial_number"] = int(serial) if serial is not None else None
+        # `serial` arrives from scraped rows (str or int) and from JSON (object).
+        # Declaring the accepted input types keeps the int() call checked while
+        # still letting the except below handle anything unexpected.
+        payload["serial_number"] = int(cast(Union[int, str], serial)) if serial is not None else None
     except (TypeError, ValueError):
         payload["serial_number"] = None
     for col in DG_COLUMNS:
@@ -771,12 +774,15 @@ def upsert_dg_batch(payloads: List[Dict[str, object]]) -> Tuple[int, str]:
     if not url or not key:
         return 0, "missing SUPABASE_URL/SECRET_KEY"
     try:
-        from supabase import create_client  # type: ignore
+        from supabase import create_client
     except ImportError as e:
         return 0, f"supabase lib missing: {e}"
     try:
         sb = create_client(url, key)
-        sb.table(DG_TABLE).upsert(payloads, on_conflict="registration_number").execute()
+        # Values are str/int/None by construction (build_supabase_payload), but
+        # the dict is typed Dict[str, object], which the client's recursive JSON
+        # type cannot verify — cast at the boundary rather than loosen the dict.
+        sb.table(DG_TABLE).upsert(cast(Any, payloads), on_conflict="registration_number").execute()
         return len(payloads), ""
     except Exception as e:
         return 0, str(e)[:200]
@@ -942,10 +948,12 @@ def sync_cloud_snapshot(out_jsonl: Path, raw_dir: Path, regs: List[str]) -> Dict
     raw_files = [(raw_dir / f"{reg}.json", f"dg-raw/{reg}.json") for reg in regs if (raw_dir / f"{reg}.json").exists()]
     raw_ok = True
     if raw_files:
-        with ThreadPoolExecutor(max_workers=8) as executor:
-            futures = [executor.submit(push_file_to_r2, p, k) for p, k in raw_files]
-            for fut in futures:
-                if not fut.result():
+        # Own names, not a second `executor`/`futures`: rebinding the earlier
+        # names would infer a Future[elem] from the jsonl pushes above.
+        with ThreadPoolExecutor(max_workers=8) as raw_pool:
+            raw_futures = [raw_pool.submit(push_file_to_r2, p, k) for p, k in raw_files]
+            for raw_fut in raw_futures:
+                if not raw_fut.result():
                     raw_ok = False
     results["r2_raws"] = raw_ok
     return results

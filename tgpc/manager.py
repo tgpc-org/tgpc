@@ -14,7 +14,7 @@ import re
 import subprocess  # noqa: F401  (patch target: tgpc.manager.subprocess used by tgpc.sync)
 import requests
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Optional
 from collections import Counter
 
 from supabase import create_client  # noqa: F401  (patch target: tgpc.manager.create_client)
@@ -694,7 +694,7 @@ class Manager:
     # Enrichment — bodies in tgpc/enrichment.py
     # ------------------------------------------------------------------
 
-    def run_enrichment(self, start: int = 1, stop: int = None):
+    def run_enrichment(self, start: int = 1, stop: Optional[int] = None):
         """Run enrichment for serial number range.
 
         Args:

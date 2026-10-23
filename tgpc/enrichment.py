@@ -11,6 +11,7 @@ tgpc.manager.create_client and tgpc.manager.Scraper.
 import os
 import re
 from pathlib import Path
+from typing import Optional
 
 from tgpc.progress import ProgressBar, step
 from tgpc.storage import DataIntegrityError
@@ -20,7 +21,7 @@ from tgpc.utils import setup_logging
 logger = setup_logging("tgpc.enrichment")
 
 
-def run_enrichment(manager, start: int = 1, stop: int = None):
+def run_enrichment(manager, start: int = 1, stop: Optional[int] = None):
     """
     Run enrichment for serial number range.
 
@@ -164,7 +165,7 @@ def enrich_new_records(manager, force: bool = False):
         records = manager.file_manager.load()
         logger.info(f"Force mode: checking {len(records)} records for enrichment needs")
     else:
-        regs = getattr(manager, "_last_new_regs", set())
+        regs: set[str] = getattr(manager, "_last_new_regs", set())
         # Safety cap: require --force if >1000 new records
         if len(regs) > 1000 and not force:
             logger.error(

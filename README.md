@@ -33,7 +33,7 @@ search UI with per-record profile pages.
 | Files | Cloudflare R2 (photos, dispatch PDFs) |
 | Hosting | Cloudflare Pages (push to `main` deploys) |
 | Pipeline | Python 3.12 (CI), requests + BeautifulSoup + supabase-py |
-| Tests | `pytest` (210), `node:test` (107), Playwright e2e |
+| Tests | `pytest` (212), `node:test` (107), Playwright e2e |
 
 ## Repository layout
 
@@ -95,6 +95,7 @@ npm run test:e2e       # Playwright against production (PROD_URL to override)
 
 # Python (from the repo root)
 ruff check . && ruff format --check .
+mypy                                      # type check tgpc/, config in pyproject.toml
 pytest tests/ --cov --cov-fail-under=65   # coverage gate, see pyproject.toml
 ```
 

@@ -23,7 +23,7 @@ had gone stale).
 - **Do not commit or push unless explicitly asked.**
 - **Gates before claiming done:** `cd ui && npm run check` (0 errors),
   `npm run lint`, `npm run test:unit`, `npm run check:e2e`; from the repo
-  root `ruff check .`, `ruff format --check .`, `pytest tests/`.
+  root `ruff check .`, `ruff format --check .`, `mypy`, `pytest tests/`.
 - **No data keys in the browser.** Every read goes through a rate-limited
   `/api/*` proxy; SSR loaders must use SvelteKit's load `fetch`, never the
   global one (a relative URL throws on Workers — see `ARCHITECTURE.md`,
