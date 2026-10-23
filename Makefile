@@ -1,4 +1,4 @@
-.PHONY: scrape sync quota logs help dg-start dg-stop dg-resume dg-watch clean-data clean-ui clean
+.PHONY: check scrape sync quota logs help dg-start dg-stop dg-resume dg-watch clean-data clean-ui clean
 
 # Use the repo venv when present (survives Homebrew Python upgrades).
 PY := $(shell test -x .venv/bin/python && echo .venv/bin/python || echo python3)
@@ -27,6 +27,60 @@ ln -sfn "$$(basename "$$log")" "$(LOG_DIR)/latest-$(1).log"; \
 ls -1t $(LOG_DIR)/$(1)-*.log 2>/dev/null | tail -n +$$(( $(KEEP_LOGS) + 1 )) | while read -r f; do rm -f "$$f"; done; \
 exit $$status
 endef
+
+# Every gate AGENTS.md lists, in one command. Deliberately NOT chained with
+# `&&`: the usual reason to run this locally is "what exactly did I break?",
+# and stopping at the first failure would hide the other seven. Each gate
+# prints its own ok/FAIL line, a failure shows the tail of its output, and the
+# target exits non-zero if any of them failed. The two dependency audits
+# (`npm audit`, `pip-audit`) stay in CI — they need the network and only fail
+# once an advisory exists.
+check:  # Run every quality gate (UI + Python); exits non-zero if any gate fails
+	@if [ ! -d ui/node_modules ]; then \
+		echo "check: ui/node_modules is missing — run 'cd ui && npm ci' first"; exit 1; \
+	fi
+	@if [ ! -x .venv/bin/python ]; then \
+		echo "check: .venv is missing — run:"; \
+		echo "  python3 -m venv .venv && .venv/bin/pip install -e . ruff mypy pytest pytest-cov"; \
+		exit 1; \
+	fi
+	@start=$$(date +%s); failed=""; \
+	note=""; \
+	pinned() { grep -oE "$$1==[0-9.]+" .github/workflows/python.yml | head -1 | cut -d= -f3; }; \
+	drift() { \
+		want=$$(pinned "$$1"); \
+		have=$$(eval "$$2 $$3" 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1); \
+		if [ -n "$$want" ] && [ -n "$$have" ] && [ "$$want" != "$$have" ]; then \
+			note="$$note  note: local $$1 $$have != the CI pin $$want in .github/workflows/python.yml\n"; \
+		fi; \
+	}; \
+	drift ruff "$(PY)" "-m ruff --version"; \
+	drift mypy "$(PY)" "-m mypy --version"; \
+	run() { \
+		name="$$1"; dir="$$2"; cmd="$$3"; \
+		printf '  %-20s' "$$name"; \
+		if out=$$(cd "$$dir" && eval "$$cmd" 2>&1); then \
+			printf 'ok\n'; \
+		else \
+			printf 'FAIL\n'; \
+			printf '%s\n' "$$out" | tail -n 30 | sed 's/^/      /'; \
+			failed="$$failed $$name"; \
+		fi; \
+	}; \
+	echo "tgpc quality gates"; \
+	printf "$$note"; \
+	run "ui svelte-check"  ui "npm run check"; \
+	run "ui eslint"        ui "npm run lint"; \
+	run "ui brand colors"  ui "npm run check:colors"; \
+	run "ui unit tests"    ui "npm run test:unit"; \
+	run "ui e2e typecheck" ui "npm run check:e2e"; \
+	run "py ruff"          .  "$(PY) -m ruff check . && $(PY) -m ruff format --check ."; \
+	run "py mypy"          .  "$(PY) -m mypy"; \
+	run "py pytest"        .  "$(PY) -m pytest tests/ -q --cov --cov-fail-under=75"; \
+	if [ -n "$$failed" ]; then \
+		echo; echo "FAILED:$$failed"; exit 1; \
+	fi; \
+	echo; echo "all 8 gates passed in $$(( $$(date +%s) - start ))s"
 
 scrape:  # Scrape TGPC → sync all destinations → enrich new records
 	@$(call RUN_LOGGED,scrape,$(PY) -m tgpc update)

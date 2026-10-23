@@ -73,11 +73,15 @@ needs no secrets; the `/api/*` proxies read `SUPABASE_URL` and
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -e .   # floors from pyproject.toml
 uv sync                # or: the exact graph from uv.lock
+make check             # every quality gate (needs the dev tools below)
 make scrape            # scrape → sync every destination → enrich new records
 make sync              # re-sync data/rph.json without scraping
 make quota             # free-tier usage for Supabase / R2 / Resend / Drive
 make logs              # newest run log (FOLLOW=1 to tail it)
 ```
+
+`make check` also needs the dev tools, which are not runtime dependencies:
+`.venv/bin/pip install ruff mypy pytest pytest-cov`.
 
 Credentials come from environment variables, then the macOS Keychain, then a
 local file (see `tgpc/utils.py`). Data artifacts live under `data/` and are
@@ -86,6 +90,8 @@ gitignored — the repository holds code only.
 ## Checks
 
 ```bash
+make check             # all eight gates below, UI + Python, in one command
+
 # Frontend (from ui/)
 npm run check          # svelte-check, must stay at 0 errors
 npm run lint           # eslint

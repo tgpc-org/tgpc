@@ -41,6 +41,11 @@ red/green may also appear as alpha tints: `rgba(239,68,68,a)` /
 
 ## Commands
 
+- All gates at once: `make check` — runs every gate below (5 UI + ruff +
+  mypy + pytest-with-coverage) and exits non-zero if any fails. It runs *all*
+  of them rather than stopping at the first, so one run tells you everything
+  you broke. Needs `ui/node_modules` and a `.venv` with `ruff`, `mypy`,
+  `pytest`, `pytest-cov`.
 - Frontend dev: `cd ui && npm run dev`
 - Type check: `cd ui && npm run check` (svelte-check, must stay at 0 errors)
 - JS/Svelte lint: `cd ui && npm run lint` (eslint, 0 errors; `require-each-key`
@@ -58,6 +63,8 @@ red/green may also appear as alpha tints: `rgba(239,68,68,a)` /
 ## Workflow
 
 - Do not commit or push unless explicitly asked.
+- Before claiming a change is clean, run `make check` (all eight gates in one
+  command) rather than a subset — the gates it skips are the ones that break.
 - When verifying UI changes, the page must load 200 and `svelte-check` must not introduce new errors.
 
 ## Email Format (standing rule)
