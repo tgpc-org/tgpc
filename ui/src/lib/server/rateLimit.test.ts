@@ -11,6 +11,7 @@ import { describe, it } from 'node:test';
 import {
   rateLimited,
   rateLimitedSearch,
+  rateLimitedStrict,
   resetRateLimits,
   trackedKeyCount,
   type SharedCounter
@@ -117,8 +118,7 @@ describe('shared counter (credential paths)', () => {
   });
 });
 
-describe('rateLimitedSearch', () => {
-  it('allows a high budget before blocking', async () => {
+describe('rateLimitedSearch', () => {  it('allows a high budget before blocking', async () => {
     resetRateLimits();
     const key = 'test-search-' + Math.random();
     for (let i = 0; i < 120; i++) assert.equal(await rateLimitedSearch(key), false);
@@ -145,6 +145,44 @@ describe('rateLimitedSearch', () => {
     const fake = fakeCall(() => true);
     for (let i = 0; i < 120; i++) await rateLimitedSearch(key, { shared: SHARED, call: fake.call });
     assert.equal(await rateLimitedSearch(key, { shared: SHARED, call: fake.call }), false);
+  });
+});
+
+describe('rateLimitedStrict', () => {
+  it('consults the shared counter on every call and honours its budget', async () => {
+    resetRateLimits();
+    const key = 'strict-' + Math.random();
+    const fake = fakeCall((body) => Number(body.p_max) > 2);
+
+    // The fake RPC allows everything while p_max is 3, so every call must be
+    // allowed and every call must reach the counter (no local-only fast path).
+    for (let i = 0; i < 5; i++) {
+      assert.equal(await rateLimitedStrict(key, 3, { shared: SHARED, call: fake.call }), false);
+    }
+    assert.equal(fake.calls, 5);
+    assert.equal(fake.seen[0].p_max, 3);
+  });
+
+  it('blocks as soon as the shared counter denies, even with local budget left', async () => {
+    resetRateLimits();
+    const key = 'strict-deny-' + Math.random();
+    const fake = fakeCall(() => false);
+    assert.equal(await rateLimitedStrict(key, 60, { shared: SHARED, call: fake.call }), true);
+  });
+
+  it('falls back to the local budget when the shared counter errors', async () => {
+    resetRateLimits();
+    const key = 'strict-down-' + Math.random();
+    const call = (async () => {
+      throw new Error('supabase down');
+    }) as unknown as typeof fetch;
+
+    for (let i = 0; i < 3; i++) {
+      assert.equal(await rateLimitedStrict(key, 3, { shared: SHARED, call }), false);
+    }
+    // Local window (max 3) is spent and the shared verdict is unavailable:
+    // block rather than fail open or 500.
+    assert.equal(await rateLimitedStrict(key, 3, { shared: SHARED, call }), true);
   });
 });
 

@@ -63,6 +63,7 @@ const FALLBACK_FILES = [
 ];
 
 import { dispatchBucket } from '#lib/server/appEnv.js';
+import { rateLimitedStrict } from '#lib/server/rateLimitShared.js';
 import { DISPATCH_PREFIX, dispatchNameFromKey } from '#lib/dispatchNames.js';
 
 const CACHE = { 'Cache-Control': 'public, max-age=60' };
@@ -95,7 +96,17 @@ async function listFromBucket(bucket: App.DispatchBucket): Promise<DispatchFile[
   return files.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-export async function GET({ platform }) {
+export async function GET({ platform, getClientAddress }) {
+  // Every call is an R2 LIST (up to MAX_PAGES pages) or a 1.3 MB object read,
+  // and this route is public. Cap per-IP use; Cloudflare may cache the listing
+  // for 60s, but the download path must assume it is not cached.
+  if (await rateLimitedStrict('dispatch:' + getClientAddress(), platform, 60)) {
+    return new Response('Too Many Requests', {
+      status: 429,
+      headers: { 'Retry-After': '60' }
+    });
+  }
+
   const bucket = dispatchBucket(platform);
 
   if (bucket) {

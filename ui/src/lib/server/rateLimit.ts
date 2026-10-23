@@ -194,6 +194,27 @@ export function rateLimitedSearch(
   return limited(key, MAX_SEARCH_ATTEMPTS, WINDOW_MS, options);
 }
 
+/**
+ * Read-endpoint limiter with an explicit budget that the shared counter
+ * enforces on every call.
+ *
+ * `rateLimitedSearch` only reaches the shared tier once an isolate's local
+ * budget is spent — and this deployment spreads requests over many
+ * short-lived isolates, so a scraper sending one request at a time never
+ * exhausts any single one (measured: 130 sequential requests to one endpoint
+ * all returned 200). For endpoints where that is unacceptable (health and
+ * dispatch hit Postgres/R2 per request) the shared counter must see every
+ * call. The SQL cost is one RPC per request, which is cheaper than the work
+ * the endpoint already does.
+ */
+export function rateLimitedStrict(
+  key: string,
+  max: number,
+  options: RateLimitOptions = {}
+): Promise<boolean> {
+  return limited(key, max, WINDOW_MS, { ...options, requireShared: true });
+}
+
 /** Test seam: forget every local window. */
 export function resetRateLimits(): void {
   buckets.clear();

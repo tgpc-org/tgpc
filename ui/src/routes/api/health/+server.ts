@@ -1,17 +1,30 @@
 import { PUBLIC_SUPABASE_URL } from '$app/env/public';
 import { SUPABASE_SECRET_KEY } from '$app/env/private';
 import { createClient } from '@supabase/supabase-js';
+import { rateLimitedStrict } from '#lib/server/rateLimitShared.js';
+import type { RequestHandler } from './$types';
 
-export async function GET() {
-  // NOTE: $env/dynamic/public, not import.meta.env — the latter is the Vite
-  // build-time env and is empty for these keys in production, which made
-  // health permanently report "Missing Supabase credentials" (503).
-  // Layer 2: service key via $env/dynamic/private (server-only secret),
-  // never the anonymous key — health must keep working after anonymous
+export const GET: RequestHandler = async ({ platform, getClientAddress }) => {
+  // Each call costs two PostgREST queries, so an unauthenticated caller could
+  // use this as a cheap database load generator. Monitors poll once a minute
+  // at most; the read tier (120/min per IP) leaves plenty of headroom.
+  if (await rateLimitedStrict('health:' + getClientAddress(), platform, 30)) {
+    return new Response('Too Many Requests', {
+      status: 429,
+      headers: { 'Retry-After': '60' }
+    });
+  }
+
+  // Credentials come from $app/env (SvelteKit 3): the adapter wires these
+  // names to the Worker bindings declared in src/env.ts. `import.meta.env` is
+  // the Vite build-time env and is empty for them in production — reading it
+  // here made health report "Missing Supabase credentials" (503) forever.
+  // The service key is server-only; health must keep working after anonymous
   // database access is revoked.
   const supabaseUrl = PUBLIC_SUPABASE_URL;
 
   const supabaseKey = SUPABASE_SECRET_KEY;
+
 
   interface CheckResult {
     status: 'ok' | 'down' | 'stale';

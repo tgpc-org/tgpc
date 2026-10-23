@@ -1,8 +1,18 @@
 import type { RequestHandler } from './$types';
 import { dispatchBucket } from '#lib/server/appEnv.js';
+import { rateLimitedStrict } from '#lib/server/rateLimitShared.js';
 import { DISPATCH_PREFIX, isDispatchName } from '#lib/dispatchNames.js';
 
-export const GET: RequestHandler = async ({ params, platform }) => {
+export const GET: RequestHandler = async ({ params, platform, getClientAddress }) => {
+	// Shares the listing route's per-IP budget ('dispatch:'): one scraper
+	// walking the bucket should not get a fresh allowance per path.
+	if (await rateLimitedStrict('dispatch:' + getClientAddress(), platform, 60)) {
+		return new Response('Too Many Requests', {
+			status: 429,
+			headers: { 'Retry-After': '60' }
+		});
+	}
+
 	const name = params.name;
 
 	// Strict validation: a bare dispatch PDF name only — no path separators,

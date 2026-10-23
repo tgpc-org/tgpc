@@ -16,6 +16,7 @@ import { envVal } from './appEnv.js';
 import {
 	rateLimited as rateLimitedCore,
 	rateLimitedSearch as rateLimitedSearchCore,
+	rateLimitedStrict as rateLimitedStrictCore,
 	type SharedCounter
 } from './rateLimit.js';
 
@@ -40,4 +41,17 @@ export function rateLimitedSearch(
 	platform?: App.Platform
 ): Promise<boolean> {
 	return rateLimitedSearchCore(key, { shared: sharedCounter(platform) });
+}
+
+/**
+ * Read-endpoint limiter whose budget the shared counter enforces on every
+ * call (see `rateLimitedStrict` in rateLimit.ts for why the local window is
+ * not enough on this deployment).
+ */
+export function rateLimitedStrict(
+	key: string,
+	platform: App.Platform | undefined,
+	max: number
+): Promise<boolean> {
+	return rateLimitedStrictCore(key, max, { shared: sharedCounter(platform) });
 }

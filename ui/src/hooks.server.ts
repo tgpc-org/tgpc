@@ -27,6 +27,17 @@ import { gatePath } from '#lib/server/gate.js';
 // creates a second enforced policy whose nonce never matches the rendered
 // scripts, which bricks hydration (all inline scripts blocked).
 
+/** Public profile page: /rph/<registration_number> */
+const PROFILE_PATH = /^\/rph\/[^/]+\/?$/;
+/** Cache API TTL for a rendered profile page (seconds). */
+const PROFILE_TTL_SECONDS = 3600;
+
+/** `caches.default` in the Workers runtime, or null in `vite dev` / Node. */
+function edgeCache(): Cache | null {
+	const store = (globalThis as unknown as { caches?: { default?: Cache } }).caches;
+	return store?.default ?? null;
+}
+
 export const handle: Handle = async ({ event, resolve }) => {
 	if (!dev) {
 		const decision = gatePath(event.url.pathname);
@@ -35,6 +46,29 @@ export const handle: Handle = async ({ event, resolve }) => {
 				return new Response('Unauthorized', { status: 403 });
 			}
 			return Response.redirect(new URL('/admin', event.url), 302);
+		}
+	}
+
+	// Profile pages are public, identical for every visitor (the layout renders
+	// no user state) and change only when the pipeline syncs. Cache the rendered
+	// page in the Workers Cache API (available on *.pages.dev, per data centre)
+	// so repeat views skip both the Supabase read and the render.
+	//
+	// Only 200 GETs are stored, and only after the security headers below are
+	// applied, so a HIT serves exactly what a MISS serves — including the
+	// per-render CSP nonce, which is cached together with the body it signs.
+	const cacheKey =
+		!dev && event.request.method === 'GET' && PROFILE_PATH.test(event.url.pathname)
+			? event.url.origin + event.url.pathname
+			: null;
+	const cache = cacheKey ? edgeCache() : null;
+
+	if (cacheKey && cache) {
+		const hit = await cache.match(cacheKey);
+		if (hit) {
+			const response = new Response(hit.body, hit);
+			response.headers.set('X-Cache', 'HIT');
+			return response;
 		}
 	}
 
@@ -55,6 +89,18 @@ export const handle: Handle = async ({ event, resolve }) => {
 
 	for (const [key, value] of Object.entries(staticHeaders)) {
 		response.headers.set(key, value);
+	}
+
+	if (cacheKey && cache && response.status === 200 && !response.headers.has('set-cookie')) {
+		response.headers.set('Cache-Control', `public, max-age=0, s-maxage=${PROFILE_TTL_SECONDS}`);
+		response.headers.set('X-Cache', 'MISS');
+		try {
+			// Await rather than waitUntil: adapter-cloudflare v8 does not pass
+			// the execution context through `platform` in production.
+			await cache.put(cacheKey, response.clone());
+		} catch {
+			// Caching is best-effort; a failed put must never fail the request.
+		}
 	}
 
 	return response;
