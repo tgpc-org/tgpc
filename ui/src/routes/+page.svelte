@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { PharmacistRecord, CategoryFilter } from '#lib/types.js';
-  import { searchRecords, searchWithRefiners, getRecord, type AdvancedFilters } from '#lib/api.js';
+  import { searchRecords, searchWithRefiners, getRecord, type AdvancedFilters, type ApiFailure } from '#lib/api.js';
   import { parseDDMonYYYY, formatDDMonYYYY } from '#lib/dates.js';
   import { PUBLIC_R2_PHOTO_BASE } from '$app/env/public';
   import { CATEGORIES as CAT_NAMES, CATEGORY_COLORS } from '#lib/colors.js';
@@ -36,6 +36,9 @@
   let loading = $state(false);
   let searched = $state(false);
   let results = $state<PharmacistRecord[]>([]);
+  // A failed request is not an empty result — it gets its own state so the UI
+  // never claims "No results" when the service simply didn't answer.
+  let searchError = $state<ApiFailure | null>(null);
   let refinersOpen = $state(false);
 
   // Fixed widths keep the loading skeleton stable between renders (it used to
@@ -148,15 +151,19 @@
     try {
       // Refiners filter server-side so results are never silently truncated
       // to the fetched slice; plain queries keep the ranked RPC path.
-      // Never throws outward — a failed fetch shows empty, not an error page.
-      let res: PharmacistRecord[] = [];
-      try {
-        res = useRefiners ? await searchWithRefiners(query, advFilters) : await searchRecords(query);
-      } catch {
-        res = [];
-      }
+      // Neither call throws: failures come back as a tagged outcome, so a
+      // dead request is never rendered as "nothing matched".
+      const outcome = useRefiners
+        ? await searchWithRefiners(query, advFilters)
+        : await searchRecords(query);
       if (mySeq !== searchSeq) return; // superseded by newer keystroke
-      results = res;
+      if (outcome.kind === 'ok') {
+        results = outcome.records;
+        searchError = null;
+      } else {
+        results = [];
+        searchError = outcome;
+      }
       category = 'all';
     } finally {
       // Only the latest request clears loading. A superseded request does
@@ -187,6 +194,7 @@
     if (query.trim() === '' && searched && !hasAnyRefiner()) {
       searched = false;
       results = [];
+      searchError = null;
       category = 'all';
     }
   });
@@ -195,6 +203,7 @@
     query = '';
     category = 'all';
     results = [];
+    searchError = null;
     searched = false;
     sortKey = 'rank';
     sortDir = 1;
@@ -204,6 +213,25 @@
   function clearAdvanced() {
     advFilters = { valid_till: '' };
   }
+
+  // Copy for the failure state. One source, so the results block and the
+  // screen-reader announcement can't disagree.
+  let searchErrorText = $derived.by(() => {
+    const failure = searchError;
+    if (!failure) return null;
+    if (failure.kind === 'rate-limited') {
+      return {
+        title: 'Too many searches',
+        detail: failure.retryAfterSeconds
+          ? `Please wait ${failure.retryAfterSeconds} seconds, then try again.`
+          : 'Please wait a minute, then try again.'
+      };
+    }
+    return {
+      title: 'Search is unavailable',
+      detail: 'The registry service did not answer. Your search was not lost — try again in a moment.'
+    };
+  });
 
   // ---- Filtering + sorting (client-side over the fetched slice) -----------
   // A full page of results means the fetch stopped at MAX_SEARCH_RESULTS, so
@@ -357,6 +385,7 @@
   let announcement = $state('');
   $effect(() => {
     if (loading) announcement = 'Searching…';
+    else if (searchErrorText) announcement = `${searchErrorText.title}. ${searchErrorText.detail}`;
     else if (searched) announcement = `${sorted.length} result${sorted.length === 1 ? '' : 's'}${capped ? ` (first ${MAX_SEARCH_RESULTS} shown)` : ''}`;
   });
 
@@ -366,6 +395,8 @@
   let drawerRecord = $state<PharmacistRecord | null>(null);
   let drawerLoading = $state(false);
   let drawerError = $state<string | null>(null);
+  // The drawer heading names the case: "Not found" is only true for a 404.
+  let drawerErrorHeading = $state('');
 
   let drawerPhoto = $derived(drawerRecord
     ? drawerRecord.photo_url || `${PUBLIC_R2_PHOTO_BASE}/${drawerRecord.registration_number}.webp`
@@ -392,19 +423,37 @@
     drawerOpen = true;
     drawerLoading = true;
     drawerError = null;
+    drawerErrorHeading = '';
     drawerRecord = null;
+    // getRecord never throws — it reports the case, so the drawer can say
+    // "not found" only when the server said 404 and not for a 429/502.
     try {
-      const rec = await getRecord(clean);
+      const outcome = await getRecord(clean);
       if (mySeq !== drawerSeq) return; // user clicked another profile meanwhile
-      if (!rec) { drawerError = `No record found for ${clean}`; }
-      else {
-        drawerRecord = rec;
-        recordViewed({ registration_number: rec.registration_number, name: rec.name, category: rec.category });
-        recentVersion++;
+      switch (outcome.kind) {
+        case 'ok':
+          drawerRecord = outcome.record;
+          recordViewed({ registration_number: outcome.record.registration_number, name: outcome.record.name, category: outcome.record.category });
+          recentVersion++;
+          break;
+        case 'invalid':
+          drawerErrorHeading = 'Not found';
+          drawerError = 'Enter a valid registration number, for example TG083814.';
+          break;
+        case 'not-found':
+          drawerErrorHeading = 'Not found';
+          drawerError = `No record found for ${clean}`;
+          break;
+        case 'rate-limited':
+          drawerErrorHeading = 'Too many requests';
+          drawerError = outcome.retryAfterSeconds
+            ? `Please wait ${outcome.retryAfterSeconds} seconds, then try again.`
+            : 'Please wait a minute, then try again.';
+          break;
+        default:
+          drawerErrorHeading = 'Unavailable';
+          drawerError = 'This profile could not be loaded — the registry service did not answer. Try again in a moment.';
       }
-    } catch {
-      if (mySeq !== drawerSeq) return;
-      drawerError = 'Failed to load profile';
     } finally {
       if (mySeq === drawerSeq) drawerLoading = false;
     }
@@ -474,8 +523,9 @@
     </div>
   {/if}
 
-  <!-- Result count, category chips, exports -->
-  {#if searched}
+  <!-- Result count, category chips, exports. Hidden while an error is shown:
+       "0 results" plus dead filters would restate the failure as an absence. -->
+  {#if searched && !searchError}
     <div class="flex flex-wrap items-center gap-1 min-w-0 w-full sm:w-auto sm:flex-1" transition:fly={{ y: 6, duration: prefersReducedMotion() ? 0 : 200, opacity: 0 }}>
       <span class="text-[0.75rem] tabular-nums flex-shrink-0" style="color:var(--t-muted)">{sorted.length.toLocaleString()} results</span>
       {#if capped}
@@ -523,7 +573,21 @@
         {#if results.length > 0}
           <Refiners bind:filters={advFilters} bind:open={refinersOpen} active={refinersActive} onclear={clearAdvanced} />
         {/if}
-        {#if filtered.length === 0}
+        {#if searchErrorText}
+          <!-- A failed request is not an empty result: "No results" here would
+               claim the records don't exist. Brand red is only the rule/accent
+               (the copy is ink) so the text stays AA at this size. -->
+          <div class="py-10 px-4 text-center space-y-3 rounded-xl border" style="border-color:rgba(239,68,68,0.28);background:rgba(239,68,68,0.06)">
+            <div class="mx-auto h-1 w-10 rounded-full" style="background:rgba(239,68,68,0.55)" aria-hidden="true"></div>
+            <p class="text-[0.95rem] font-semibold" style="color:var(--t-ink)">{searchErrorText.title}</p>
+            <p class="text-[0.8rem]" style="color:var(--t-muted)">{searchErrorText.detail}</p>
+            <button type="button" onclick={() => void doSearch()}
+              class="rounded-full border px-3 py-1.5 text-[0.75rem] font-semibold transition-colors hover:bg-[rgba(0,204,102,0.14)]"
+              style="border-color:rgba(0,204,102,0.35);color:var(--t-ink)">
+              Try again
+            </button>
+          </div>
+        {:else if filtered.length === 0}
           <!-- Actionable empty state: say what to try next instead of a bare
                "No results". -->
           <div class="py-10 text-center space-y-3">
@@ -563,5 +627,5 @@
     </div>
   {/if}
 
-  <ProfileSidebar open={drawerOpen} record={drawerRecord} photo={drawerPhoto} loading={drawerLoading} error={drawerError} onClose={closeDrawer} />
+  <ProfileSidebar open={drawerOpen} record={drawerRecord} photo={drawerPhoto} loading={drawerLoading} error={drawerError} errorHeading={drawerErrorHeading} onClose={closeDrawer} />
 </div>

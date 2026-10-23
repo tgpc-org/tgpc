@@ -692,6 +692,14 @@ Each proxy re-validates its input server-side (the client's `validateQuery()`
 is a UX nicety, not the security boundary) and clamps the row ceiling to a
 fixed literal, so no caller — browser or direct — can exceed it.
 
+Browser calls also distinguish a **transport failure** from an **empty
+answer**: `getRecord()` returns a tagged `RecordLookup`
+(`ok | invalid | not-found | rate-limited | unavailable`) and both search
+calls return `{ kind: 'ok', records } | ApiFailure`. The UI can therefore say
+"No record found" only when the server actually answered 404, and shows a
+retry block instead of "No results" when the request itself failed —
+`api.test.ts` pins every status mapping (404/400/429 + `Retry-After`/5xx/throw).
+
 ### Key Features
 
 - **Shell** — sticky header (brand lockup · live status pill · theme toggle), a single horizontally scrollable stats strip (total + 6 category tiles + last-sync/active/inactive meta), and a primary tab nav with a measured green slider. Footer is in-flow on phones and fixed on `sm+`, so lists are sized to the footer by the shared `fitToViewport` action instead of hardcoded `100vh - Npx` offsets

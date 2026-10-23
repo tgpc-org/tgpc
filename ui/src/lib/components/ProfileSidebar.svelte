@@ -18,12 +18,14 @@ let flyFrom = $derived(
       : { x: 0, y: 1500, duration: 240 }
 );
 
-  let { open = false, record = null as PharmacistRecord | null, photo = '', loading = false, error = null as string | null, onClose = () => {} }: {
+  let { open = false, record = null as PharmacistRecord | null, photo = '', loading = false, error = null as string | null, errorHeading = 'Not found', onClose = () => {} }: {
     open?: boolean;
     record?: PharmacistRecord | null;
     photo?: string;
     loading?: boolean;
     error?: string | null;
+    /** Drawer title while an error is shown — "Not found" only fits a 404. */
+    errorHeading?: string;
     onClose?: () => void;
   } = $props();
 
@@ -144,7 +146,7 @@ let flyFrom = $derived(
       <div class="shrink-0 mx-auto mt-2 h-1 w-9 rounded-full" style="background:var(--t-border-soft)" aria-hidden="true"></div>
     {/if}
     <div data-print-omit class="sticky top-0 z-10 flex items-center justify-between gap-2 bg-[var(--t-bg)] border-b border-[var(--t-border)] px-4 py-3">
-      <span class="text-sm font-semibold text-[var(--t-ink)] truncate">{loading ? 'Loading…' : error ? 'Not found' : 'Profile'}</span>
+      <span class="text-sm font-semibold text-[var(--t-ink)] truncate">{loading ? 'Loading…' : error ? (errorHeading || 'Not found') : 'Profile'}</span>
       <button bind:this={closeBtn} onclick={onClose} aria-label="Close" class="w-8 h-8 flex items-center justify-center rounded-full border border-[var(--t-border)] text-[var(--t-muted)] hover:bg-[var(--t-surface-3)] transition-colors">
         <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
       </button>
@@ -158,7 +160,12 @@ let flyFrom = $derived(
           {/each}
         </div>
       {:else if error}
-        <p class="text-sm text-[#ef4444] py-8 text-center">{error}</p>
+        <!-- Failure copy stays in ink: brand red fails AA as small text, so it
+             is only the rule above the message. -->
+        <div class="py-8 px-3 text-center space-y-2">
+          <div class="mx-auto h-1 w-10 rounded-full" style="background:rgba(239,68,68,0.55)" aria-hidden="true"></div>
+          <p class="text-sm font-semibold" style="color:var(--t-ink)">{error}</p>
+        </div>
       {:else if record}
         <!-- Single Module -->
         <div class="bg-[var(--t-bg)] border border-[var(--t-border)] rounded-xl p-3 space-y-3">
