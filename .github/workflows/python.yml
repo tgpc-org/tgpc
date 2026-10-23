@@ -24,10 +24,14 @@ jobs:
       # CI installs from the floors in pyproject.toml (above) so the declared
       # minimum versions are what gets tested; the lock is for reproducible
       # local installs. This only stops it drifting silently out of sync.
+      # uv lives in its own venv: installing it into the project env would put
+      # it in `pip freeze`, and the audit below would then scan a tool we never
+      # ship (it did, and failed the run on a uv advisory).
       - name: Verify uv.lock is in sync with pyproject.toml
         run: |
-          pip install uv==0.11.26
-          uv lock --check
+          python -m venv /tmp/uv-venv
+          /tmp/uv-venv/bin/pip install --quiet uv==0.13.4
+          /tmp/uv-venv/bin/uv lock --check
       - run: ruff check .
       - run: ruff format --check .
       # Type check the installed package. Config (and the boto3/pyzipper
