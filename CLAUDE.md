@@ -1,96 +1,47 @@
-# CLAUDE.md — Quick Context for Claude Code
-<!-- DG pipeline: see DG_PIPELINE.md (getdetailsdg captcha capture; fetch-dg CLI; dashboard :8765) -->
+# CLAUDE.md — entry point for Claude Code
 
-## Project
+TGPC RPh Index: public search portal for the Telangana State Pharmacy Council
+pharmacist registry — SvelteKit 3 frontend (`ui/`), Python pipeline (`tgpc/`),
+Supabase, Cloudflare Pages.
 
-TGPC RPh Index — public search portal for the Telangana State Pharmacy Council pharmacist registry. SvelteKit 3 + Tailwind v4 + Supabase frontend (`ui/`), Python scraping/sync pipeline (`tgpc/`). Pushes to `main` auto-deploy to Cloudflare Pages (`tgpc.pages.dev`).
+**Read these first, and treat them as the source of truth.** This file
+deliberately does not restate them: duplicated instructions drift (this file
+used to carry its own command list, palette table and test counts — the counts
+had gone stale).
 
-## Key Commands
+1. `AGENTS.md` — working rules: mandatory brand colors, commands, workflow,
+   email format.
+2. `ARCHITECTURE.md` — full technical context: routes, data access, caching,
+   rate limits, pipeline phases, CI.
 
-```bash
-# Python pipeline
-make scrape              # Scrape → sync all destinations → enrich
-make sync                # Full manual sync of rph.json
-make quota               # Show free quota usage for all services
+## Non-negotiables
 
-# Frontend (from ui/)
-cd ui && npm run dev     # Dev server
-cd ui && npm run check   # Type check (must stay at 0 errors)
-cd ui && npm run lint    # ESLint (0 errors required)
-cd ui && npm run check:colors  # Brand-color gate (0 offenders)
+- **Brand colors only.** Use `TGPC` from `ui/src/lib/colors.ts`; never invent
+  hex values. `cd ui && npm run check:colors` must stay at 0 offenders. Full
+  palette and the contrast rule (brand hues are fills/tints/borders, small
+  text uses ink tokens): `ui/src/lib/BrandColors.md`.
+- **Do not commit or push unless explicitly asked.**
+- **Gates before claiming done:** `cd ui && npm run check` (0 errors),
+  `npm run lint`, `npm run test:unit`, `npm run check:e2e`; from the repo
+  root `ruff check .`, `ruff format --check .`, `pytest tests/`.
+- **No data keys in the browser.** Every read goes through a rate-limited
+  `/api/*` proxy; SSR loaders must use SvelteKit's load `fetch`, never the
+  global one (a relative URL throws on Workers — see `ARCHITECTURE.md`,
+  "Data access").
 
-# Tests
-python3 -m pytest tests/ -v   # Python tests (195 tests)
-cd ui && npm run test:unit    # Frontend unit tests (66 tests)
-```
+## Where things live
 
-## Architecture
+| Area | Path |
+|---|---|
+| Search page, profile drawer, result exports | `ui/src/routes/+page.svelte` |
+| SSR profile pages `/rph/<RPC>` | `ui/src/routes/rph/[registration_number]/` |
+| Public API proxies (search, refine, record, stats, dispatch, health) | `ui/src/routes/api/` |
+| Server-only helpers (auth, gate, rate limits, records, edge cache) | `ui/src/lib/server/` |
+| Scrape → enrich → sync pipeline | `tgpc/` (`python3 -m tgpc update`) |
+| Schema, RLS, RPC SQL | `supabase/migrations/` |
 
-```
-tgpc/
-├── tgpc/           # Python pipeline
-│   ├── __main__.py # CLI entry: python3 -m tgpc {update, sync, enrich, retry-photos, fetch-dg, validate-dg, quota, creds}
-│   ├── scraper.py  # Scraper, RateLimiter, PharmacistRecord
-│   ├── manager.py  # Manager facade: restore, update orchestration, photo pipeline
-│   ├── storage.py  # R2Client, FileManager, BackupManager, validate_rph_backup
-│   ├── sync.py     # Sync destination bodies (Supabase, R2, GDrive, Release, Email)
-│   ├── enrichment.py  # Enrichment bodies (range, new-records, sequential processor)
-│   ├── progress.py # ProgressBar, Phase, heartbeat (TTY + CI output)
-│   ├── quota.py    # Free-tier quota report (Supabase, R2, Resend, GDrive)
-│   ├── details_dg.py  # DG getdetailsdg captcha flow → PII contacts
-│   ├── merge_refresh.py  # Post-scrape recompute of DG-merged rph columns
-│   ├── inactive_sweep.py  # Detect inactive→active reactivations (resumable)
-│   └── enrich_actives.py  # Parallel enrichment of reactivated records
-├── ui/             # SvelteKit frontend
-│   └── src/
-│       ├── routes/ # Pages: /, /notice, /dispatch, /admin + /api/* proxies
-│       └── lib/    # Shared code, types, server-only auth/gate/rateLimit
-├── tests/          # Python test suite
-└── data/           # Data files (gitignored)
-```
+## Task-specific docs
 
-## Frontend data access
-
-The browser holds **no** database key. Every read goes through a rate-limited
-server proxy that queries Supabase with the service key server-side:
-`/api/search`, `/api/refine`, `/api/record`, `/api/stats`. The site is a
-public portal; only `/admin`, `/api/admin/*`, `/api/usage` and `/sandbox`
-need a session (gate logic in `ui/src/lib/server/gate.ts`).
-
-## Sync Destinations
-
-The pipeline syncs `rph.json` to:
-1. Supabase (Postgres table `rph`)
-2. Supabase Storage
-3. Cloudflare R2
-4. Google Drive (via rclone)
-5. GitHub Release (encrypted zip)
-6. Email notification (via Resend)
-
-## Brand Colors (MANDATORY)
-
-Use only TGPC brand colors in UI code:
-
-| Token | Hex | Usage |
-|---|---|---|
-| tgpc green | `#00cc66` | Primary, active states |
-| tgpc red | `#ef4444` | Destructive, inactive |
-| tgpc grey | `#9ca3af` | Secondary text |
-| tgpc blue | `#2563eb` | Links, RPC numbers |
-
-Prefer `TGPC` export from `ui/src/lib/colors.ts`. See `AGENTS.md` for full guidelines.
-
-## Pre-commit Hooks
-
-- Python: `ruff check --fix` + `ruff-format`
-- UI: ESLint, svelte-check, brand-color gate
-
-## Data
-
-~89,000 pharmacist records across 6 categories: BPharm, DPharm, MPharm, PharmD, QC, QP.
-
-## See Also
-
-- `AGENTS.md` — Brand colors and workflow rules
-- `ARCHITECTURE.md` — Full technical documentation
-- `ui/src/lib/BrandColors.md` — Color palette reference
+- DG contact pipeline: `DG_PIPELINE.md`, `VPS_DG_FETCH.md`
+- Security findings + resolution log: `docs/security/`
+- Historical review items: `CODE_REVIEW.md`
