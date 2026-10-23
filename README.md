@@ -71,7 +71,8 @@ needs no secrets; the `/api/*` proxies read `SUPABASE_URL` and
 ### Pipeline
 
 ```bash
-python3 -m venv .venv && .venv/bin/pip install -e .
+python3 -m venv .venv && .venv/bin/pip install -e .   # floors from pyproject.toml
+uv sync                # or: the exact graph from uv.lock
 make scrape            # scrape → sync every destination → enrich new records
 make sync              # re-sync data/rph.json without scraping
 make quota             # free-tier usage for Supabase / R2 / Resend / Drive

@@ -28,7 +28,7 @@ tgpc/
 ├── .husky/                         # Husky pre-commit hook → triggers pre-commit (ruff)
 ├── .pre-commit-config.yaml         # ruff lint + ruff-format only
 ├── pyproject.toml                  # Package: tgpc-data-extraction v2.0.0, min-version deps (requires-python >=3.10)
-├── uv.lock                         # Locked dependency graph (uv lock) — reproducible installs
+├── uv.lock                         # Locked dependency graph (uv lock) — reproducible local installs; CI checks it is in sync
 ├── supabase/migrations/            # Version-controlled schema, RLS, RPC + hardening SQL
 ├── docs/security/                  # Security audit findings (JSON, with resolution log)
 ├── Makefile                        # scrape / sync / quota + DG run-control targets (dg-start/stop/resume/watch)
@@ -397,9 +397,13 @@ dependencies = [
 ```
 
 Deps are floor-pinned (min versions, not exact) in `pyproject.toml`, and
-`uv.lock` pins the full resolved graph (51 packages) so CI and a fresh clone
-install exactly the same versions. Regenerate with `uv lock`; install with
-`uv sync`. `requires-python` is `>=3.10` (3.9 is EOL and Pillow requires 3.10).
+`uv.lock` pins the full resolved graph (51 packages) for a reproducible local
+install — regenerate with `uv lock`, install with `uv sync`. CI deliberately
+does **not** install from the lock: plain `pip install -e .` resolves the
+floors, so the minimum versions the project declares are the ones actually
+tested, and a `uv lock --check` step keeps the lock from drifting out of sync
+with `pyproject.toml` instead. `requires-python` is `>=3.10` (3.9 is EOL and
+Pillow requires 3.10).
 CVE patching is handled by manual bumps (e.g. commit 51ad6c6) plus the
 `pip-audit` / `npm audit --audit-level=high` gates in CI.
 

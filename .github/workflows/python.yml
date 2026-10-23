@@ -21,6 +21,13 @@ jobs:
           cache-dependency-path: pyproject.toml
       # Pinned to match .pre-commit-config.yaml (astral-sh/ruff-pre-commit v0.16.6)
       - run: pip install -e . pytest pytest-cov==7.1.0 ruff==0.16.6 mypy==2.4.0
+      # CI installs from the floors in pyproject.toml (above) so the declared
+      # minimum versions are what gets tested; the lock is for reproducible
+      # local installs. This only stops it drifting silently out of sync.
+      - name: Verify uv.lock is in sync with pyproject.toml
+        run: |
+          pip install uv==0.11.26
+          uv lock --check
       - run: ruff check .
       - run: ruff format --check .
       # Type check the installed package. Config (and the boto3/pyzipper
