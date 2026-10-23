@@ -1,6 +1,17 @@
 import { envVal } from '#lib/server/appEnv.js';
+import { edgeCached } from '#lib/server/edgeCache.js';
 import { rateLimitedSearch } from '#lib/server/rateLimitShared.js';
 import type { RequestHandler } from './$types';
+
+/**
+ * Stats move only when the pipeline syncs (a few times a day at most), yet
+ * every open tab polls this endpoint every 60 s — the site's highest-volume
+ * database path. Cache the payload at the edge for 30 s so N visitors cost
+ * one pair of Postgres queries per PoP per half-minute instead of two per
+ * visitor per minute. Worst-case drift is poll (60 s) + cache (30 s) ≈ 90 s,
+ * which is well inside what the strip already tolerates.
+ */
+const TTL_SECONDS = 30;
 
 /**
  * Public stats + last-sync payload. Reads with the service key server-side;
@@ -9,8 +20,10 @@ import type { RequestHandler } from './$types';
  * required.
  */
 export const GET: RequestHandler = async (event) => {
-  const { platform } = event;
+  const { platform, url } = event;
 
+  // The limiter runs before the cache: a HIT still costs the caller one unit
+  // of its per-IP budget, so caching cannot be used to hammer the endpoint.
   if (await rateLimitedSearch('stats:' + event.getClientAddress(), platform)) {
     return new Response('Too Many Requests', {
       status: 429,
@@ -18,6 +31,10 @@ export const GET: RequestHandler = async (event) => {
     });
   }
 
+  return edgeCached(url.origin + '/api/stats', TTL_SECONDS, () => buildStats(platform));
+};
+
+async function buildStats(platform: App.Platform | undefined): Promise<Response> {
   const surl = envVal(platform, 'SUPABASE_URL');
   const serviceKey = envVal(platform, 'SUPABASE_SECRET_KEY');
   if (!surl || !serviceKey) {
@@ -65,4 +82,4 @@ export const GET: RequestHandler = async (event) => {
   } catch {
     return new Response('Upstream error', { status: 502 });
   }
-};
+}
