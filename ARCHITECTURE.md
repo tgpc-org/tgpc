@@ -20,7 +20,7 @@ The project consists of:
 ```
 tgpc/
 ├── .github/workflows/rphsync.yml   # Manual CI: single job, scrapes + syncs to all destinations + email
-├── .github/workflows/python.yml    # ruff + mypy + pytest (coverage gate 65%) + pip-audit
+├── .github/workflows/python.yml    # ruff + mypy + pytest (coverage gate 75%) + pip-audit
 ├── .github/workflows/ui.yml        # eslint + svelte-check + brand-color gate + tests + npm audit
 ├── .github/workflows/uptime.yml    # 30-min /api/health probe → one open `uptime` issue while down
 ├── .github/dependabot.yml          # Grouped weekly npm/pip/actions updates
@@ -771,7 +771,7 @@ Job permissions: `actions: write`, `contents: write` (release upload).
 
 **Quality gates:**
 - `.github/workflows/ui.yml` runs on push/PR touching `ui/` — ESLint + brand-color gate (`check:colors`) + svelte-check + the unit tests + a build + `npm audit --audit-level=high`. It defines **no** `PUBLIC_*` variables on purpose: they are declared non-static in `src/env.ts` and resolved at runtime, so the build needs none of them, and supplying placeholders in CI hid a real preview-build failure. Node comes from `ui/.node-version` (24.22.1 — the same file Cloudflare Pages reads) rather than a floating major, because the v3 build image defaults to Node 22.16.0, below Kit's `>=22.17` floor, and `engines` is ignored there (the default also emitted `EBADENGINE` on every deploy and is in LTS maintenance). A second job (`e2e`) typechecks the specs (`check:e2e`) and runs the 7 Playwright suites in `ui/e2e/` on chromium. Auto-deploys from `main` build `ui/`.
-- `.github/workflows/python.yml` runs on push/PR touching `tgpc/`, `tests/`, `scripts/`, or `pyproject.toml` — `ruff check`, `ruff format --check` (pinned 0.16.6, matching pre-commit), `mypy` over `tgpc/` (pinned 2.4.0), the full pytest suite with the coverage gate (65% of `tgpc/`, `pyproject.toml`), and a `pip-audit` dependency vulnerability scan. Data freshness deliberately does **not** gate pushes: it is an operational condition, so `ui/e2e/smoke.spec.ts` asserts only the health *contract* (shape, not age) — freshness is the operator's job via the daily manual `make scrape`. (The former weekly k6 `load.yml` was removed 2026-09: agent-created, unread results. The 6-hourly `health.yml` freshness poll was removed 2026-10 for the same reason: manual scrape cadence made it pure noise.)
+- `.github/workflows/python.yml` runs on push/PR touching `tgpc/`, `tests/`, `scripts/`, or `pyproject.toml` — `ruff check`, `ruff format --check` (pinned 0.16.6, matching pre-commit), `mypy` over `tgpc/` (pinned 2.4.0), the full pytest suite with the coverage gate (75% of `tgpc/`, `pyproject.toml`), and a `pip-audit` dependency vulnerability scan. Data freshness deliberately does **not** gate pushes: it is an operational condition, so `ui/e2e/smoke.spec.ts` asserts only the health *contract* (shape, not age) — freshness is the operator's job via the daily manual `make scrape`. (The former weekly k6 `load.yml` was removed 2026-09: agent-created, unread results. The 6-hourly `health.yml` freshness poll was removed 2026-10 for the same reason: manual scrape cadence made it pure noise.)
 
 - `.github/workflows/uptime.yml` probes `/api/health` every 30 minutes (plus on demand, and whenever the monitor itself changes) and keeps exactly one open issue labelled `uptime` while the portal is down: the first failure opens it, later failures comment on it, and the next passing run closes it. Only `down` fails the run; `degraded` — registry `last_sync` older than 48 h — is a workflow warning, because the pipeline is run manually and a stale window between runs is normal. Alarm routing lives in `scripts/uptime_check.py` (`Verdict.alarming`, unit-tested in `tests/test_uptime_check.py`), so the YAML only routes the verdict.
 
@@ -785,15 +785,24 @@ Job permissions: `actions: write`, `contents: write` (release upload).
 ```bash
 python3 -m pytest tests/ -v
 mypy                                         # tgpc/ only, config in pyproject.toml
-pytest tests/ -q --cov --cov-fail-under=65   # what CI runs
+pytest tests/ -q --cov --cov-fail-under=75   # what CI runs
 ```
 
-212 tests across 14 files. Coverage is measured over the installed package
-(`tgpc/`, configured in `pyproject.toml`) and sits at ~67% today; CI fails
-below **65%**. The number is a floor against erosion, not a target — raise it
+262 tests across 16 files. Coverage is measured over the installed package
+(`tgpc/`, configured in `pyproject.toml`) and sits at ~77% today; CI fails
+below **75%**. The number is a floor against erosion, not a target — raise it
 when the suite genuinely improves, never lower it to unblock a change. The
 one-shot helpers in `scripts/` are reported separately (they are exercised by
 hand on the VM/dashboard), so they are not part of the gate.
+
+The gate was 65% until 2026-10. It was raised because the two worst-covered
+modules were closed rather than argued away: the inactive-sweep and
+`enrich_actives` paths are the only code that decides which reactivated
+records reach the table, and they were at 40% and 0%. Both are now covered by
+driving the real entry points with a fake Scraper/Supabase, which is also what
+pins their safety behaviour — a record whose scraped identity disagrees with
+the sweep's basic info is never upserted, and two records with a NULL
+`serial_number` cannot collapse onto one identity.
 
 Types are checked with `mypy` over the same scope (`tgpc/`), at 0 errors. It
 is deliberately **not** `--strict` and not a pre-commit hook: the package is
@@ -816,10 +825,12 @@ Per-file breakdown:
 | `test_manager_sync.py` | 17 | Every `sync_to_*` destination's contract: fail-closed on missing credentials, True on success, False on transport/API failure. Release test uses real pyzipper and verifies encryption at upload time; email test asserts the Resend request shape |
 | `test_manager_photos.py` | 11 | Photo upload→verify→local-delete pipeline, retry/backoff, size-mismatch rejection, batch error isolation (scrape/upsert failures don't abort the batch), `retry_photos` |
 | `test_quota.py` | 8 | Quota reporter helpers (ref parsing, formatting) and every `check_*` fail-closed path on missing credentials |
-| `test_inactive_sweep.py` | 6 | JSONL parsing (good/bad lines), checkpoint save/load roundtrip, resume skipping completed batches, partial-run slicing |
+| `test_inactive_sweep.py` | 19 | JSONL parsing (good/bad lines), checkpoint save/load roundtrip and corrupt-checkpoint fallback, resume skipping completed batches, partial-run slicing, `_sweep_regs` outcome counting + dedupe of already-known actives + per-record error isolation + parallel worker coverage + one-bar offset, batch loop checkpointing, CLI flag wiring |
+| `test_cli.py` | 29 | `python3 -m tgpc` dispatch: which Manager method each subcommand reaches, a failed destination exits 1, `update` delta/removal/no-change paths, `--no-sync` skipping every cloud step, the `fetch-dg` guards (`--no-resume` refuses to wipe a checkpoint, no IDs is a usage error, worker override clamps to 16), WARP ownership (never disconnects a connection it did not open), creds set/list/delete |
+| `test_enrich_actives.py` | 8 | The phase-3 upsert: identity mismatch refused, NULL serials do not collide, photo upload→link→delete and the failed-upload keep, `--limit`/`--workers` paths, missing-from-source counted as failed |
 | `test_bugfix_regressions.py` | 18 | Restore-to-temp validation, backup rotation, release return codes, `--force` overrides, DetailError vs absence |
 | `test_security_audit_regressions.py` | 27 | Audit remediations: DG PII RLS posture, DG artifacts kept out of the public R2 bucket, report-email HTML escaping, rclone temp paths, photo redirect validation, backup restore validation, DG Storage bucket publicity gate |
-| `test_details_dg.py` | 47 | DG caption/detail parsing, captcha handling, and the RLS/Storage posture of the DG pipeline |
+| `test_details_dg.py` | 49 | DG caption/detail parsing, captcha handling, and the RLS/Storage posture of the DG pipeline |
 | `test_dg_dashboard.py` | 19 | Local DG monitor: status merging, checkpoint-derived counts, zombie-PID detection, log tailing, IST formatting |
 | `test_merge_refresh.py` | 3 | Post-scrape merged-column refresh: fill/newer-wins/skip rules, changed-columns-only upserts, fail-closed credentials |
 | `test_backfill_missing.py` | 5 | Blank-only backfill contract: fills an empty column from the source, never overwrites an existing value, never blanks a column, never patches a record whose identity differs |

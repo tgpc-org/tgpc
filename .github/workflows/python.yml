@@ -40,11 +40,12 @@ jobs:
       # mypy needs the project's own venv to resolve third-party imports, and
       # a self-contained hook env would only report hundreds of missing stubs.
       - run: mypy
-      # Coverage gate: the suite sits at 67% of tgpc/ today, so 65 is the
+      # Coverage gate: the suite sits at ~77% of tgpc/ today, so 75 is the
       # floor — low enough that ordinary refactors don't trip it, high enough
-      # that a new untested module (the size of one of the smaller ones) does.
-      # Raise this number when the suite genuinely improves, never lower it.
-      - run: python3 -m pytest tests/ -q --cov --cov-fail-under=65
+      # that a new untested module (the size of one of the smaller ones, ~3.5
+      # points) does. Raise this number when the suite genuinely improves,
+      # never lower it.
+      - run: python3 -m pytest tests/ -q --cov --cov-fail-under=75
 
       # Dependency vulnerability scan (PyPA pip-audit). Fails on any known
       # vulnerable package in the installed environment. Editable installs
