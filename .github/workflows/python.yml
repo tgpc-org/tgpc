@@ -20,10 +20,14 @@ jobs:
           cache: pip
           cache-dependency-path: pyproject.toml
       # Pinned to match .pre-commit-config.yaml (astral-sh/ruff-pre-commit v0.16.6)
-      - run: pip install -e . pytest ruff==0.16.6
+      - run: pip install -e . pytest pytest-cov==7.1.0 ruff==0.16.6
       - run: ruff check .
       - run: ruff format --check .
-      - run: python3 -m pytest tests/ -q
+      # Coverage gate: the suite sits at 67% of tgpc/ today, so 65 is the
+      # floor — low enough that ordinary refactors don't trip it, high enough
+      # that a new untested module (the size of one of the smaller ones) does.
+      # Raise this number when the suite genuinely improves, never lower it.
+      - run: python3 -m pytest tests/ -q --cov --cov-fail-under=65
 
       # Dependency vulnerability scan (PyPA pip-audit). Fails on any known
       # vulnerable package in the installed environment. Editable installs

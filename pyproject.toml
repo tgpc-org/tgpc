@@ -33,6 +33,21 @@ ignore = []
 [tool.ruff.format]
 quote-style = "double"
 
+# Coverage gate. `tgpc/` is the installed package; the one-shot helpers under
+# `scripts/` are run by hand (VM, dashboard) and are reported separately, so
+# holding them to the same bar would only encourage tests that exist to move
+# a number.
+[tool.coverage.run]
+source = ["tgpc"]
+
+[tool.coverage.report]
+# CI passes --cov-fail-under, which is the one number that must not drift.
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+]
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["tgpc*"]

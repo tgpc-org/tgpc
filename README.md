@@ -95,7 +95,7 @@ npm run test:e2e       # Playwright against production (PROD_URL to override)
 
 # Python (from the repo root)
 ruff check . && ruff format --check .
-pytest tests/
+pytest tests/ --cov --cov-fail-under=65   # coverage gate, see pyproject.toml
 ```
 
 CI runs the same gates on every push to `main`/`dev` (`.github/workflows/`),

@@ -99,6 +99,9 @@ node_modules/
 
 # Testing and linting
 .cache/
+.coverage
+.coverage.*
+htmlcov/
 .pytest_cache/
 .ruff_cache/
 tgpc-creds.sh

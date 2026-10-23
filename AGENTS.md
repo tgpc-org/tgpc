@@ -47,6 +47,8 @@ red/green may also appear as alpha tints: `rgba(239,68,68,a)` /
   warnings are accepted debt)
 - Brand-color gate: `cd ui && npm run check:colors` (must stay at 0 offenders)
 - Unit tests: `cd ui && npm run test:unit`
+- Python tests: `pytest tests/ --cov --cov-fail-under=65` from the repo root
+  (coverage gate over `tgpc/`; CI fails below 65%).
 - Data pipeline: `make` targets (see `Makefile`); run via `cd tgpc` as needed.
 - Run logs: `make scrape` / `make sync` tee full output to `data/logs/`
   (gitignored, newest 30 kept); `make logs` shows the latest scrape.

@@ -20,7 +20,7 @@ The project consists of:
 ```
 tgpc/
 ├── .github/workflows/rphsync.yml   # Manual CI: single job, scrapes + syncs to all destinations + email
-├── .github/workflows/python.yml    # ruff + pytest + pip-audit dependency scan
+├── .github/workflows/python.yml    # ruff + pytest (coverage gate 65%) + pip-audit
 ├── .github/workflows/ui.yml        # eslint + svelte-check + brand-color gate + tests + npm audit
 ├── .github/workflows/uptime.yml    # 30-min /api/health probe → one open `uptime` issue while down
 ├── .github/dependabot.yml          # Grouped weekly npm/pip/actions updates
@@ -767,7 +767,7 @@ Job permissions: `actions: write`, `contents: write` (release upload).
 
 **Quality gates:**
 - `.github/workflows/ui.yml` runs on push/PR touching `ui/` — ESLint + brand-color gate (`check:colors`) + svelte-check + the unit tests + a build + `npm audit --audit-level=high`. It defines **no** `PUBLIC_*` variables on purpose: they are declared non-static in `src/env.ts` and resolved at runtime, so the build needs none of them, and supplying placeholders in CI hid a real preview-build failure. Node comes from `ui/.node-version` (24.22.1 — the same file Cloudflare Pages reads) rather than a floating major, because the v3 build image defaults to Node 22.16.0, below Kit's `>=22.17` floor, and `engines` is ignored there (the default also emitted `EBADENGINE` on every deploy and is in LTS maintenance). A second job (`e2e`) typechecks the specs (`check:e2e`) and runs the 7 Playwright suites in `ui/e2e/` on chromium. Auto-deploys from `main` build `ui/`.
-- `.github/workflows/python.yml` runs on push/PR touching `tgpc/`, `tests/`, `scripts/`, or `pyproject.toml` — `ruff check`, `ruff format --check` (pinned 0.16.6, matching pre-commit), the full pytest suite, and a `pip-audit` dependency vulnerability scan. Data freshness deliberately does **not** gate pushes: it is an operational condition, so `ui/e2e/smoke.spec.ts` asserts only the health *contract* (shape, not age) — freshness is the operator's job via the daily manual `make scrape`. (The former weekly k6 `load.yml` was removed 2026-09: agent-created, unread results. The 6-hourly `health.yml` freshness poll was removed 2026-10 for the same reason: manual scrape cadence made it pure noise.)
+- `.github/workflows/python.yml` runs on push/PR touching `tgpc/`, `tests/`, `scripts/`, or `pyproject.toml` — `ruff check`, `ruff format --check` (pinned 0.16.6, matching pre-commit), the full pytest suite with the coverage gate (65% of `tgpc/`, `pyproject.toml`), and a `pip-audit` dependency vulnerability scan. Data freshness deliberately does **not** gate pushes: it is an operational condition, so `ui/e2e/smoke.spec.ts` asserts only the health *contract* (shape, not age) — freshness is the operator's job via the daily manual `make scrape`. (The former weekly k6 `load.yml` was removed 2026-09: agent-created, unread results. The 6-hourly `health.yml` freshness poll was removed 2026-10 for the same reason: manual scrape cadence made it pure noise.)
 
 - `.github/workflows/uptime.yml` probes `/api/health` every 30 minutes (plus on demand, and whenever the monitor itself changes) and keeps exactly one open issue labelled `uptime` while the portal is down: the first failure opens it, later failures comment on it, and the next passing run closes it. Only `down` fails the run; `degraded` — registry `last_sync` older than 48 h — is a workflow warning, because the pipeline is run manually and a stale window between runs is normal. Alarm routing lives in `scripts/uptime_check.py` (`Verdict.alarming`, unit-tested in `tests/test_uptime_check.py`), so the YAML only routes the verdict.
 
@@ -780,9 +780,17 @@ Job permissions: `actions: write`, `contents: write` (release upload).
 
 ```bash
 python3 -m pytest tests/ -v
+pytest tests/ -q --cov --cov-fail-under=65   # what CI runs
 ```
 
-195 tests across 13 files:
+210 tests across 14 files. Coverage is measured over the installed package
+(`tgpc/`, configured in `pyproject.toml`) and sits at ~67% today; CI fails
+below **65%**. The number is a floor against erosion, not a target — raise it
+when the suite genuinely improves, never lower it to unblock a change. The
+one-shot helpers in `scripts/` are reported separately (they are exercised by
+hand on the VM/dashboard), so they are not part of the gate.
+
+Per-file breakdown:
 
 | File | Tests | What's tested |
 |---|---|---|
