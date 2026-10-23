@@ -15,7 +15,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { getRecord, searchRecords, searchWithRefiners } from './api.ts';
+import { getRecord, searchRecords, searchWithRefiners, fetchNotices, fetchDispatchFiles } from './api.ts';
 import type { PharmacistRecord } from './types.ts';
 
 const realFetch = globalThis.fetch;
@@ -132,6 +132,21 @@ test('searchRecords: an empty 200 is ok, a 429 is not', async (t) => {
 
   stubFetch(() => new Response('boom', { status: 500 }));
   assert.deepEqual(await searchRecords('zzzzzz'), { kind: 'unavailable' });
+});
+
+test('fetchNotices and fetchDispatchFiles use the fetch they are handed', async (t) => {
+  t.after(() => { globalThis.fetch = realFetch; });
+  // SSR loaders pass SvelteKit's event.fetch; the global fetch cannot resolve
+  // a relative URL on Workers, so using it here must be impossible.
+  stubFetch(() => { throw new Error('global fetch must not be used'); });
+  const seen: string[] = [];
+  const call = (async (input: RequestInfo | URL) => {
+    seen.push(typeof input === 'string' ? input : String(input));
+    return json([]);
+  }) as typeof fetch;
+  assert.deepEqual(await fetchNotices(call), []);
+  assert.deepEqual(await fetchDispatchFiles(call), []);
+  assert.deepEqual(seen, ['/api/notice', '/api/dispatch']);
 });
 
 test('searchWithRefiners: refiner-only searches report failures too', async (t) => {

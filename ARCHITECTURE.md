@@ -700,6 +700,14 @@ calls return `{ kind: 'ok', records } | ApiFailure`. The UI can therefore say
 retry block instead of "No results" when the request itself failed —
 `api.test.ts` pins every status mapping (404/400/429 + `Retry-After`/5xx/throw).
 
+Universal `load` functions may call these proxies during SSR too, but **only
+with the load `fetch`** (`fetchNotices(event.fetch)`, `+layout.ts`'s
+`fetch('/api/stats')`): a relative URL in the global `fetch` throws on
+Workers. The notice and dispatch loaders used the global one until
+2026-10-23, so SSR served "No notices" / an empty list to every crawler and
+no-JS visitor while hydration quietly filled it in — `ssrLoaders.test.ts`
+pins the wiring.
+
 ### Key Features
 
 - **Shell** — sticky header (brand lockup · live status pill · theme toggle), a single horizontally scrollable stats strip (total + 6 category tiles + last-sync/active/inactive meta), and a primary tab nav with a measured green slider. Footer is in-flow on phones and fixed on `sm+`, so lists are sized to the footer by the shared `fitToViewport` action instead of hardcoded `100vh - Npx` offsets

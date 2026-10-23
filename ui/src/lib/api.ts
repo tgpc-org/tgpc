@@ -195,9 +195,17 @@ export async function getLastSync(): Promise<string> {
   }
 }
 
-export async function fetchNotices(): Promise<Notice[]> {
+/**
+ * Notices list.
+ *
+ * `call` defaults to the global fetch (browser) but MUST be SvelteKit's load
+ * `fetch` when called from a universal `load`: a relative URL in the global
+ * fetch throws in the Workers runtime, which silently rendered /notice as
+ * "No notices" for every SSR request (crawlers and no-JS readers included).
+ */
+export async function fetchNotices(call: typeof fetch = fetch): Promise<Notice[]> {
   try {
-    const resp = await fetch('/api/notice');
+    const resp = await call('/api/notice');
     if (!resp.ok) throw new Error('Failed to load notices');
     const data = await resp.json();
     data.sort((a: Notice, b: Notice) => b.date.localeCompare(a.date));
@@ -207,9 +215,10 @@ export async function fetchNotices(): Promise<Notice[]> {
   }
 }
 
-export async function fetchDispatchFiles(): Promise<DispatchFile[]> {
+/** Dispatch PDF listing. Same `call` contract as `fetchNotices`. */
+export async function fetchDispatchFiles(call: typeof fetch = fetch): Promise<DispatchFile[]> {
   try {
-    const resp = await fetch('/api/dispatch');
+    const resp = await call('/api/dispatch');
     if (!resp.ok) throw new Error('API unavailable');
     return await resp.json();
   } catch {

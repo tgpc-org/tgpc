@@ -75,8 +75,11 @@
   // An empty cached array means a past failed fetch — treat as absent so the
   // page retries instead of skeleton-locking (and never cache empties below).
   const cachedFresh = cached && cached.length > 0 ? cached : null;
+  // SSR data wins: it came from this request, so hydration renders exactly
+  // what the server sent. The cache only fills in when a client-side
+  // navigation's fetch failed (data empty).
   // svelte-ignore state_referenced_locally
-  const initial = cachedFresh || data.files;
+  const initial = data.files.length > 0 ? data.files : (cachedFresh ?? []);
   if (initial.length > 0) {
     build(initial);
     loading = false;
