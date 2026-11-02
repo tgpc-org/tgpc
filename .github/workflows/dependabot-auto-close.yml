@@ -1,0 +1,36 @@
+name: Auto-close failed Dependabot PRs
+
+# True auto-pilot: if a Dependabot PR fails CI, close it automatically so it
+# never sits in the queue waiting for attention. Dependabot opens a fresh PR
+# with newer versions next cycle, so nothing is lost — the failed one just
+# stops being noise. Paired with dependabot-auto-merge.yml (success path).
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  close-failed:
+    if: github.event.workflow_run.conclusion == 'failure'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Close the failed Dependabot PR, if any
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          case "$HEAD_BRANCH" in
+            dependabot/*) ;;
+            *) echo "Not a Dependabot branch ($HEAD_BRANCH) — nothing to do."; exit 0 ;;
+          esac
+          pr_number=$(gh pr list --head "$HEAD_BRANCH" --state open --json number --jq '.[0].number // empty')
+          if [ -z "$pr_number" ]; then
+            echo "No open PR for $HEAD_BRANCH."
+            exit 0
+          fi
+          gh pr close "$pr_number" --comment "CI failed on this Dependabot update. Closing automatically — Dependabot will retry with a newer version next cycle. No action needed."
+          echo "Closed PR #$pr_number"
