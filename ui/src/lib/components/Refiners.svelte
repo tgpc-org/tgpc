@@ -6,13 +6,24 @@
     filters = $bindable({ valid_till: '' } as AdvancedFilters),
     open = $bindable(false),
     active = false,
-    onclear
+    onclear,
+    onchange
   }: {
     filters?: AdvancedFilters;
     open?: boolean;
     active?: boolean;
     onclear: () => void;
+    onchange?: () => void;
   } = $props();
+  // Notify parent when the date picker changes (text inputs and toggle
+  // buttons call onchange directly). Skip the initial run so we don't fire a
+  // search on mount.
+  let validTillInitialized = false;
+  $effect(() => {
+    void filters.valid_till;
+    if (!validTillInitialized) { validTillInitialized = true; return; }
+    onchange?.();
+  });
 </script>
 
 <!-- Result filters — mobile: collapsed behind a toggle; desktop: slim single row -->
@@ -34,41 +45,41 @@
   <div id="refiner-fields" class="{open ? 'flex' : 'hidden'} lg:flex flex-wrap items-end gap-2.5 mt-2.5 lg:mt-0 lg:flex-nowrap">
     <label class="flex min-w-[92px] flex-1 flex-col gap-1">
       <span class="text-[0.65rem] font-semibold uppercase tracking-widest text-[var(--t-muted)]">RPC</span>
-      <input type="text" bind:value={filters.registration_number} placeholder="TG..."
+      <input type="text" bind:value={filters.registration_number} oninput={() => onchange?.()} placeholder="TG..."
         class="h-8 w-full rounded-lg border border-[var(--t-border)] bg-[var(--t-bg)] px-2.5 text-[0.8rem] outline-none transition-all focus:border-[#00cc66] focus:ring-2 focus:ring-[rgba(0,204,102,0.15)]" />
     </label>
     <label class="flex min-w-[122px] flex-1 flex-col gap-1">
       <span class="text-[0.65rem] font-semibold uppercase tracking-widest text-[var(--t-muted)]">Name</span>
-      <input type="text" bind:value={filters.name} placeholder="Name"
+      <input type="text" bind:value={filters.name} oninput={() => onchange?.()} placeholder="Name"
         class="h-8 w-full rounded-lg border border-[var(--t-border)] bg-[var(--t-bg)] px-2.5 text-[0.8rem] outline-none transition-all focus:border-[#00cc66] focus:ring-2 focus:ring-[rgba(0,204,102,0.15)]" />
     </label>
     <label class="flex min-w-[122px] flex-1 flex-col gap-1">
       <span class="text-[0.65rem] font-semibold uppercase tracking-widest text-[var(--t-muted)]">Father Name</span>
-      <input type="text" bind:value={filters.father_name} placeholder="Father"
+      <input type="text" bind:value={filters.father_name} oninput={() => onchange?.()} placeholder="Father"
         class="h-8 w-full rounded-lg border border-[var(--t-border)] bg-[var(--t-bg)] px-2.5 text-[0.8rem] outline-none transition-all focus:border-[#00cc66] focus:ring-2 focus:ring-[rgba(0,204,102,0.15)]" />
     </label>
     <label class="flex min-w-[128px] flex-col gap-1">
       <span class="text-[0.65rem] font-semibold uppercase tracking-widest text-[var(--t-muted)]">Gender</span>
       <div class="flex h-8 rounded-full bg-[var(--t-surface)] p-1">
-        <button onclick={() => (filters.gender = '')} class="flex-1 rounded-full px-2.5 text-[0.75rem] font-semibold transition-all" style="{!filters.gender ? 'background:#00cc66;color:var(--t-ink)' : 'background:transparent;color:var(--t-ink-soft)'}">All</button>
-        <button onclick={() => (filters.gender = 'Male')} class="flex-1 rounded-full px-2.5 text-[0.75rem] font-semibold transition-all" style="{filters.gender === 'Male' ? 'background:#00cc66;color:var(--t-ink)' : 'background:transparent;color:var(--t-ink-soft)'}">Male</button>
-        <button onclick={() => (filters.gender = 'Female')} class="flex-1 rounded-full px-2.5 text-[0.75rem] font-semibold transition-all" style="{filters.gender === 'Female' ? 'background:#00cc66;color:var(--t-ink)' : 'background:transparent;color:var(--t-ink-soft)'}">Female</button>
+        <button onclick={() => { filters.gender = ''; onchange?.(); }} class="flex-1 rounded-full px-2.5 text-[0.75rem] font-semibold transition-all" style="{!filters.gender ? 'background:#00cc66;color:var(--t-ink)' : 'background:transparent;color:var(--t-ink-soft)'}">All</button>
+        <button onclick={() => { filters.gender = 'Male'; onchange?.(); }} class="flex-1 rounded-full px-2.5 text-[0.75rem] font-semibold transition-all" style="{filters.gender === 'Male' ? 'background:#00cc66;color:var(--t-ink)' : 'background:transparent;color:var(--t-ink-soft)'}">Male</button>
+        <button onclick={() => { filters.gender = 'Female'; onchange?.(); }} class="flex-1 rounded-full px-2.5 text-[0.75rem] font-semibold transition-all" style="{filters.gender === 'Female' ? 'background:#00cc66;color:var(--t-ink)' : 'background:transparent;color:var(--t-ink-soft)'}">Female</button>
       </div>
     </label>
     <label class="flex min-w-[168px] flex-col gap-1">
       <span class="text-[0.65rem] font-semibold uppercase tracking-widest text-[var(--t-muted)]">Status</span>
       <div class="flex h-8 rounded-full bg-[var(--t-surface)] p-1">
-        <button onclick={() => (filters.status = '')} class="flex-1 rounded-full px-2.5 text-[0.75rem] font-semibold transition-all" style="{!filters.status ? 'background:#00cc66;color:var(--t-ink)' : 'background:transparent;color:var(--t-ink-soft)'}">All</button>
-        <button onclick={() => (filters.status = 'Active')} class="flex-1 rounded-full px-2.5 text-[0.75rem] font-semibold transition-all" style="{filters.status === 'Active' ? 'background:#00cc66;color:var(--t-ink)' : 'background:transparent;color:var(--t-ink-soft)'}">Active</button>
-        <button onclick={() => (filters.status = 'Inactive')} class="flex-1 rounded-full px-2.5 text-[0.75rem] font-semibold transition-all" style="{filters.status === 'Inactive' ? 'background:#ef4444;color:var(--t-ink)' : 'background:transparent;color:var(--t-ink-soft)'}">Inactive</button>
+        <button onclick={() => { filters.status = ''; onchange?.(); }} class="flex-1 rounded-full px-2.5 text-[0.75rem] font-semibold transition-all" style="{!filters.status ? 'background:#00cc66;color:var(--t-ink)' : 'background:transparent;color:var(--t-ink-soft)'}">All</button>
+        <button onclick={() => { filters.status = 'Active'; onchange?.(); }} class="flex-1 rounded-full px-2.5 text-[0.75rem] font-semibold transition-all" style="{filters.status === 'Active' ? 'background:#00cc66;color:var(--t-ink)' : 'background:transparent;color:var(--t-ink-soft)'}">Active</button>
+        <button onclick={() => { filters.status = 'Inactive'; onchange?.(); }} class="flex-1 rounded-full px-2.5 text-[0.75rem] font-semibold transition-all" style="{filters.status === 'Inactive' ? 'background:#ef4444;color:var(--t-ink)' : 'background:transparent;color:var(--t-ink-soft)'}">Inactive</button>
       </div>
     </label>
     <label class="flex min-w-[138px] flex-col gap-1">
       <span class="text-[0.65rem] font-semibold uppercase tracking-widest text-[var(--t-muted)]">Valid Till</span>
       <DatePicker bind:value={filters.valid_till} placeholder="DD/MM/YYYY" />
     </label>
-    {#if active}
-      <button onclick={onclear} class="h-8 self-end rounded-full border border-[rgba(239,68,68,0.35)] bg-[var(--t-bg)] px-3 text-[0.75rem] font-semibold text-[var(--t-ink)] transition-colors hover:bg-[rgba(239,68,68,0.12)]">Clear</button>
+  {#if active}
+      <button onclick={() => { onclear(); onchange?.(); }} class="h-8 self-end rounded-full border border-[rgba(239,68,68,0.35)] bg-[var(--t-bg)] px-3 text-[0.75rem] font-semibold text-[var(--t-ink)] transition-colors hover:bg-[rgba(239,68,68,0.12)]">Clear</button>
     {/if}
   </div>
 </div>
