@@ -108,7 +108,7 @@ mypy                                      # type check tgpc/, config in pyprojec
 pytest tests/ --cov --cov-fail-under=75   # coverage gate, see pyproject.toml
 ```
 
-CI runs the same gates on every push to `main`/`dev` (`.github/workflows/`),
+CI runs the same gates on every push to `main`/`dev` (`.github/workflows/ci.yml`),
 plus `npm audit` / `pip-audit` dependency scans. Dependabot groups weekly
 minor/patch updates.
 

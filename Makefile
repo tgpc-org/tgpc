@@ -46,12 +46,12 @@ check:  # Run every quality gate (UI + Python); exits non-zero if any gate fails
 	fi
 	@start=$$(date +%s); failed=""; \
 	note=""; \
-	pinned() { grep -oE "$$1==[0-9.]+" .github/workflows/python.yml | head -1 | cut -d= -f3; }; \
+	pinned() { grep -oE "$$1==[0-9.]+" .github/workflows/ci.yml | head -1 | cut -d= -f3; }; \
 	drift() { \
 		want=$$(pinned "$$1"); \
 		have=$$(eval "$$2 $$3" 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1); \
 		if [ -n "$$want" ] && [ -n "$$have" ] && [ "$$want" != "$$have" ]; then \
-			note="$$note  note: local $$1 $$have != the CI pin $$want in .github/workflows/python.yml\n"; \
+			note="$$note  note: local $$1 $$have != the CI pin $$want in .github/workflows/ci.yml\n"; \
 		fi; \
 	}; \
 	drift ruff "$(PY)" "-m ruff --version"; \

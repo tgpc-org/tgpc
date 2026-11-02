@@ -2,7 +2,7 @@
 #
 # Dependabot was removed in 2026-09 in favour of manual bumps. That worked
 # while the only pressure was the two audit gates (`npm audit --audit-level=high`
-# in ui.yml, `pip-audit` in python.yml), but those only fail *after* an advisory
+# in `.github/workflows/ci.yml`, `pip-audit` in the same file), but those only fail *after* an advisory
 # is published - the most expensive moment to upgrade, and the moment nobody is
 # scheduled to do it. It is back with the noisy parts turned down:
 #

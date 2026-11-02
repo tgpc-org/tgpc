@@ -1,0 +1,191 @@
+name: CI
+
+# Both ecosystems in one workflow. They were two files (`python.yml`,
+# `ui.yml`) until 2026-11: two entries in the Actions list that bought nothing,
+# since the path filters already kept either side from running on the other's
+# changes.
+#
+# A single workflow can only carry one `paths:` trigger, so the per-ecosystem
+# decision moved into the `changes` job: it diffs the push (or the PR against
+# its base) and sets `python` / `ui`. No extra action is involved --
+# `fetch-depth: 0` makes the base commit reachable and `git diff --name-only`
+# is the whole implementation.
+#
+# The three jobs mirror the old ones exactly, including the pinned tool
+# versions and the deliberate absence of `PUBLIC_*` placeholders.
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      python: ${{ steps.diff.outputs.python }}
+      ui: ${{ steps.diff.outputs.ui }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: diff
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          SELF: .github/workflows/ci.yml
+        run: |
+          set -eu
+          if [ "$EVENT" = "pull_request" ]; then
+            base="$PR_BASE"
+          else
+            base="$BEFORE"
+          fi
+          # A new branch or a force-push reports an all-zero base that is not in
+          # the objects we fetched. Run everything rather than nothing: a
+          # skipped gate looks exactly like a passing one.
+          if [ -z "$base" ] \
+             || [ "$base" = "0000000000000000000000000000000000000000" ] \
+             || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            echo "base '$base' unusable - running every job"
+            echo "python=true" >> "$GITHUB_OUTPUT"
+            echo "ui=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed=$(git diff --name-only "$base" HEAD)
+          echo "changed files:"
+          printf '%s\n' "$changed"
+          python=false
+          ui=false
+          while IFS= read -r f; do
+            case "$f" in
+              # scripts/** is here because tests/ covers it
+              # (test_dg_dashboard.py); without it a scripts-only change would
+              # skip the pytest run that guards it.
+              tgpc/* | tests/* | scripts/* | pyproject.toml) python=true ;;
+              ui/*) ui=true ;;
+            esac
+          done <<< "$changed"
+          # A change to this file runs every job, so a broken job definition
+          # cannot hide behind a filter that skipped it. Done as a second check
+          # because `case` stops at the first matching arm.
+          case "$changed" in
+            *"$SELF"*) python=true; ui=true ;;
+          esac
+          echo "python=$python" >> "$GITHUB_OUTPUT"
+          echo "ui=$ui" >> "$GITHUB_OUTPUT"
+
+  python:
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      # Pinned to match .pre-commit-config.yaml (astral-sh/ruff-pre-commit v0.16.6)
+      - run: pip install -e . pytest pytest-cov==7.1.0 ruff==0.16.6 mypy==2.4.0
+      # CI installs from the floors in pyproject.toml (above) so the declared
+      # minimum versions are what gets tested; the lock is for reproducible
+      # local installs. This only stops it drifting silently out of sync.
+      # uv lives in its own venv: installing it into the project env would put
+      # it in `pip freeze`, and the audit below would then scan a tool we never
+      # ship (it did, and failed the run on a uv advisory).
+      - name: Verify uv.lock is in sync with pyproject.toml
+        run: |
+          python -m venv /tmp/uv-venv
+          /tmp/uv-venv/bin/pip install --quiet uv==0.13.4
+          /tmp/uv-venv/bin/uv lock --check
+      - run: ruff check .
+      - run: ruff format --check .
+      # Type check the installed package. Config (and the boto3/pyzipper
+      # stub exemptions) lives in pyproject.toml; this is not --strict, so it
+      # only fails on genuinely wrong code. Deliberately not a pre-commit hook:
+      # mypy needs the project's own venv to resolve third-party imports, and
+      # a self-contained hook env would only report hundreds of missing stubs.
+      - run: mypy
+      # Coverage gate: the suite sits at ~77% of tgpc/ today, so 75 is the
+      # floor — low enough that ordinary refactors don't trip it, high enough
+      # that a new untested module (the size of one of the smaller ones, ~3.5
+      # points) does. Raise this number when the suite genuinely improves,
+      # never lower it.
+      - run: python3 -m pytest tests/ -q --cov --cov-fail-under=75
+
+      # Dependency vulnerability scan (PyPA pip-audit). Fails on any known
+      # vulnerable package in the installed environment. Editable installs
+      # (this repo itself) are excluded: the package isn't on PyPI, so the
+      # lookup either warns or hard-fails on transient PyPI errors.
+      - name: Audit Python dependencies
+        run: |
+          pip install pip-audit
+          pip freeze | grep -v "^-e " > /tmp/requirements-audit.txt
+          pip-audit -r /tmp/requirements-audit.txt --progress-spinner off
+
+  ui:
+    needs: changes
+    if: needs.changes.outputs.ui == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ui
+    # No PUBLIC_* placeholders here on purpose. Every public variable is
+    # declared non-static in src/env.ts, so values are resolved at runtime and
+    # the build needs none of them. Keep it that way: placeholders made CI go
+    # green while every Cloudflare preview build died on a missing var, because
+    # CI supplied what the real build environment lacked.
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          # Same file Cloudflare Pages reads for the production build, so CI
+          # and the deployed runtime cannot drift onto different Node versions.
+          node-version-file: ui/.node-version
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run check:colors
+      - run: npm run check
+      - run: npm run test:unit
+      - run: npm run build
+
+      # Dependency vulnerability scan. `--audit-level=high` fails the build on
+      # high/critical advisories without blocking on low/moderate noise.
+      - name: Audit npm dependencies
+        run: npm audit --audit-level=high
+
+  e2e:
+    # Independent of `ui` on purpose: an e2e result is still worth having when
+    # lint or types fail, and the two used to run in parallel.
+    needs: changes
+    if: needs.changes.outputs.ui == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ui
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          # Same file Cloudflare Pages reads for the production build, so CI
+          # and the deployed runtime cannot drift onto different Node versions.
+          node-version-file: ui/.node-version
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - run: npm ci
+      - run: npm run check:e2e
+      - run: npx playwright install --with-deps chromium
+      # Public-portal site: flow specs authenticate with the admin secret
+      # (repo secret E2E_ADMIN_SECRET — same value as Pages ADMIN_SECRET)
+      # for the gated admin surface. Without it, flow specs skip on the
+      # gated target and only the gate-contract specs run.
+      - run: npm run test:e2e
+        env:
+          E2E_ADMIN_SECRET: ${{ secrets.E2E_ADMIN_SECRET }}
