@@ -189,3 +189,25 @@ jobs:
       - run: npm run test:e2e
         env:
           E2E_ADMIN_SECRET: ${{ secrets.E2E_ADMIN_SECRET }}
+
+  gate:
+    # Single required check for branch protection. Always runs, even when
+    # python/ui are skipped, so a skipped job never looks like a missing
+    # check. Fails only if a job that actually ran failed or was cancelled.
+    needs: [changes, python, ui, e2e]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify all jobs
+        run: |
+          for result in \
+            "${{ needs.changes.result }}" \
+            "${{ needs.python.result }}" \
+            "${{ needs.ui.result }}" \
+            "${{ needs.e2e.result }}"; do
+            if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
+              echo "A job failed or was cancelled: $result"
+              exit 1
+            fi
+          done
+          echo "All jobs passed or were skipped"
