@@ -1,15 +1,12 @@
 name: Dependabot auto-merge
 
-# Lands Dependabot PRs automatically once CI is green. Minor and patch updates
-# merge themselves; major updates stay open for a manual review of the
-# changelog. Works together with branch protection on `main`, which requires
-# the `gate` check: `--auto` queues the merge and GitHub executes it only when
-# every required check has passed.
+# Lands Dependabot PRs automatically once CI is green. All updates — major,
+# minor and patch — merge themselves; the `gate` check is the only safety net,
+# so a breaking major bump that fails CI simply stays open as a PR.
 #
-# Why a separate workflow instead of Dependabot's own auto-merge: Dependabot's
-# built-in auto-merge needs the repository setting enabled AND branch
-# protection; this workflow keeps the "only minor/patch" rule explicit and
-# version-controlled alongside the rest of the CI.
+# Works together with branch protection on `main`, which requires the `gate`
+# check: `--auto` queues the merge and GitHub executes it only when every
+# required check has passed.
 
 on:
   pull_request:
@@ -24,17 +21,8 @@ jobs:
     if: github.actor == 'dependabot[bot]'
     runs-on: ubuntu-latest
     steps:
-      - uses: dependabot/fetch-metadata@v2
-        id: metadata
-
-      - name: Auto-merge minor and patch updates
-        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
+      - name: Auto-merge all Dependabot updates
         run: gh pr merge --auto --squash "$PR_URL"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
-
-      - name: Leave major updates for review
-        if: steps.metadata.outputs.update-type == 'version-update:semver-major'
-        run: |
-          echo "Major update (${{ steps.metadata.outputs.dependency-names }}) — leaving for manual review."
