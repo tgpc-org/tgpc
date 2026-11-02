@@ -74,8 +74,11 @@ needs no secrets; the `/api/*` proxies read `SUPABASE_URL` and
 python3 -m venv .venv && .venv/bin/pip install -e .   # floors from pyproject.toml
 uv sync                # or: the exact graph from uv.lock
 make check             # every quality gate (needs the dev tools below)
-make scrape            # scrape → sync every destination → enrich new records
+make scrape            # scrape → sync every destination → enrich → capture new dispatch lists
 make sync              # re-sync data/rph.json without scraping
+make dispatch          # copy newly published council dispatch-list PDFs into R2
+.venv/bin/python -m tgpc dispatch --backup   # also mirror the archive to the Drive backup
+.venv/bin/python -m tgpc dispatch --verify   # assert R2, the mirror and Drive agree (exits 1 on drift)
 make quota             # free-tier usage for Supabase / R2 / Resend / Drive
 make logs              # newest run log (FOLLOW=1 to tail it)
 ```

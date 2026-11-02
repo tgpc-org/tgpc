@@ -1,4 +1,4 @@
-.PHONY: check scrape sync quota logs help dg-start dg-stop dg-resume dg-watch clean-data clean-ui clean
+.PHONY: check scrape sync dispatch quota logs help dg-start dg-stop dg-resume dg-watch clean-data clean-ui clean
 
 # Use the repo venv when present (survives Homebrew Python upgrades).
 PY := $(shell test -x .venv/bin/python && echo .venv/bin/python || echo python3)
@@ -82,11 +82,14 @@ check:  # Run every quality gate (UI + Python); exits non-zero if any gate fails
 	fi; \
 	echo; echo "all 8 gates passed in $$(( $$(date +%s) - start ))s"
 
-scrape:  # Scrape TGPC → sync all destinations → enrich new records
-	@$(call RUN_LOGGED,scrape,$(PY) -m tgpc update)
+scrape:  # Scrape TGPC → sync all destinations → enrich → capture new dispatch lists
+	@$(call RUN_LOGGED,scrape,($(PY) -m tgpc update && $(PY) -m tgpc dispatch))
 
 sync:  # Full manual sync of rph.json to all cloud destinations
 	@$(call RUN_LOGGED,sync,$(PY) -m tgpc sync)
+
+dispatch:  # Copy newly published dispatch-list PDFs from the council into R2
+	@$(call RUN_LOGGED,dispatch,$(PY) -m tgpc dispatch)
 
 logs:  # Show the newest scrape log (FOLLOW=1 to tail it)
 	@last=$$(ls -1t $(LOG_DIR)/scrape-*.log 2>/dev/null | head -1); \

@@ -31,6 +31,8 @@ data/img/
 data/webp/
 data/progress/
 data/update_details.json
+# Local cache of the dispatch archive (R2 -> Drive mirror staging; never in git)
+data/dispatch/
 data/*.jsonl
 data/failed_terminal_regs.json
 data/dg_integrity_review.json

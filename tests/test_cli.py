@@ -95,6 +95,39 @@ class DispatchTests(unittest.TestCase):
             cli.main()
         show.assert_called_once()
 
+    def test_dispatch_passes_its_flags_through(self):
+        import tgpc.dispatch as dispatch_mod
+
+        report = dispatch_mod.SyncReport(
+            published=242, already_present=220, missing=22, uploaded=22, newest="DL16102026.pdf"
+        )
+        with (
+            patch.object(sys, "argv", ["tgpc", "dispatch", "--dry-run", "--force", "--limit", "5", "--write-fallback"]),
+            patch.object(dispatch_mod, "sync_dispatch", return_value=report) as sync,
+            patch.object(cli, "Phase", lambda *a, **kw: contextlib.nullcontext()),
+            contextlib.redirect_stdout(io.StringIO()) as out,
+        ):
+            cli.main()
+
+        sync.assert_called_once_with(dry_run=True, force=True, limit=5, write_fallback=True)
+        self.assertIn("242 published", out.getvalue())
+        self.assertIn("DL16102026.pdf", out.getvalue())
+
+    def test_dispatch_exits_non_zero_when_a_file_failed(self):
+        import tgpc.dispatch as dispatch_mod
+
+        report = dispatch_mod.SyncReport(published=2, missing=2, uploaded=1, failed=1, failed_names=["DL16102026.pdf"])
+        with (
+            patch.object(sys, "argv", ["tgpc", "dispatch"]),
+            patch.object(dispatch_mod, "sync_dispatch", return_value=report),
+            patch.object(cli, "Phase", lambda *a, **kw: contextlib.nullcontext()),
+            contextlib.redirect_stdout(io.StringIO()),
+            contextlib.redirect_stderr(io.StringIO()),
+            self.assertRaises(SystemExit) as ctx,
+        ):
+            cli.main()
+        self.assertEqual(ctx.exception.code, 1)
+
 
 class UpdateFlowTests(unittest.TestCase):
     def _manager(self, status="updated", new=(), modified=(), removed=(), records=()):

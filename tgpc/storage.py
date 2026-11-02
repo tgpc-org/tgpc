@@ -49,6 +49,26 @@ class R2Client:
     def list_objects(self, prefix: str) -> list:
         return self.client.list_objects_v2(Bucket=self.BUCKET, Prefix=prefix).get("Contents", [])
 
+    def list_objects_all(self, prefix: str) -> list:
+        """Every object under `prefix`, following continuation tokens.
+
+        `list_objects` stops at the S3 page size (1,000 keys). Backup pruning
+        cannot tell the difference, but the dispatch bucket is past 200 objects
+        and grows every few days, so a one-shot listing would start reporting
+        already-present files as missing.
+        """
+        contents: list = []
+        token = None
+        while True:
+            kwargs = {"Bucket": self.BUCKET, "Prefix": prefix}
+            if token:
+                kwargs["ContinuationToken"] = token
+            page = self.client.list_objects_v2(**kwargs)
+            contents.extend(page.get("Contents", []))
+            token = page.get("NextContinuationToken")
+            if not page.get("IsTruncated") or not token:
+                return contents
+
     def delete_object(self, key: str) -> None:
         self.client.delete_object(Bucket=self.BUCKET, Key=key)
 

@@ -163,6 +163,29 @@ def main():
     # Retry-photos command
     subparsers.add_parser("retry-photos", help="Retry uploading failed photos from data/webp/ to R2")
 
+    # Dispatch command (council dispatch-list PDFs -> R2)
+    dispatch_parser = subparsers.add_parser("dispatch", help="Sync new dispatch-list PDFs from the council into R2")
+    dispatch_parser.add_argument("--dry-run", action="store_true", help="List what is missing without downloading")
+    dispatch_parser.add_argument(
+        "--force", action="store_true", help="Re-upload every published file, not just the missing ones"
+    )
+    dispatch_parser.add_argument("--limit", type=int, default=None, help="Upload at most N files this run")
+    dispatch_parser.add_argument(
+        "--write-fallback",
+        action="store_true",
+        help="Regenerate the listing route's stale FALLBACK_FILES from the bucket",
+    )
+    dispatch_parser.add_argument(
+        "--backup",
+        action="store_true",
+        help="Mirror every archived PDF to the Drive backup (off-R2 second copy)",
+    )
+    dispatch_parser.add_argument(
+        "--verify",
+        action="store_true",
+        help="Check R2, the local mirror and the Drive backup agree, then exit",
+    )
+
     # Validate-dg command (offline: re-check L1 contacts, no website contact)
     validate_dg_parser = subparsers.add_parser("validate-dg", help="Offline validation pass over dg_contacts.jsonl")
     validate_dg_parser.add_argument("--out", default="data/dg_contacts.jsonl", help="Contacts jsonl to validate")
@@ -428,6 +451,53 @@ def main():
 
         stats = validate_l1(Path(args.out), Path(args.raw_dir), max_list=args.max_list)
         print(json.dumps(stats, indent=2))
+    elif args.command == "dispatch":
+        from tgpc.dispatch import DRIVE_REMOTE, mirror_to_drive, sync_dispatch, verify_archive
+
+        if args.verify:
+            with Phase("Verify dispatch archive", 1, 1):
+                archive = verify_archive()
+            print(
+                f"Dispatch archive: {archive.bucket} in R2, {archive.mirror} mirrored locally, "
+                f"Drive backup {archive.drive}"
+            )
+            for problem in archive.problems:
+                print(f"  {problem}", file=sys.stderr)
+            if archive.problems:
+                raise SystemExit(1)
+            return
+
+        with Phase("Sync dispatch lists", 1, 1):
+            report = sync_dispatch(
+                dry_run=args.dry_run,
+                force=args.force,
+                limit=args.limit,
+                write_fallback=args.write_fallback,
+            )
+        print(
+            f"Dispatch lists: {report.published} published, {report.already_present} already in R2, "
+            f"{report.missing} missing, {report.uploaded} uploaded, {report.failed} failed "
+            f"(newest {report.newest or 'none'})"
+        )
+        if report.unavailable_names:
+            missing = ", ".join(report.unavailable_names)
+            print(f"  linked by the council but not hosted ({len(report.unavailable_names)}): {missing}")
+        if report.extra_in_bucket:
+            extra = ", ".join(report.extra_in_bucket)
+            print(f"  in R2 but not on the source page ({len(report.extra_in_bucket)}): {extra}")
+        if report.failed_names:
+            print(f"  failed: {', '.join(report.failed_names)}", file=sys.stderr)
+            raise SystemExit(1)
+        if args.backup and not args.dry_run:
+            with Phase("Mirror dispatch archive to Drive", 1, 1):
+                mirror = mirror_to_drive()
+            if mirror.rclone == "ok":
+                print(f"Drive backup: {mirror.objects} files ({mirror.downloaded} newly downloaded) -> {DRIVE_REMOTE}")
+            elif mirror.rclone == "missing":
+                print("Drive backup skipped: rclone is not installed", file=sys.stderr)
+            else:
+                print(f"Drive backup failed: {mirror.error}", file=sys.stderr)
+                raise SystemExit(1)
     elif args.command == "quota":
         with Phase("Show service quotas", 1, 1):
             show_quotas()
