@@ -576,7 +576,7 @@
         </div>
       {:else}
         {#if results.length > 0}
-          <Refiners bind:filters={advFilters} bind:open={refinersOpen} active={refinersActive} onclear={clearAdvanced} onchange={() => { refinerVersion++; }} />
+          <Refiners bind:filters={advFilters} bind:open={refinersOpen} active={refinersActive} onclear={clearAdvanced} onchange={() => { setTimeout(() => { refinerVersion++; }, 0); }} />
         {/if}
         {#if searchErrorText}
           <!-- A failed request is not an empty result: "No results" here would
