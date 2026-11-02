@@ -20,9 +20,8 @@ search UI with per-record profile pages.
 - **Notices** and **dispatch lists** from the council, with PDF links.
 - **Sitemap** (`/sitemap.xml`) covering every active registration, so profiles
   are crawlable even though search itself is client-side.
-- **Health + uptime**: `/api/health` reports database latency and data
-  freshness; a scheduled workflow opens one GitHub issue while the site is
-  down and closes it on recovery.
+- **Health**: `/api/health` reports database latency and data freshness. Check
+  it in a browser when you want to know whether the portal is working.
 
 ## Stack
 
@@ -44,7 +43,7 @@ tgpc/
 │       ├── routes/      # pages + /api/* proxies + sitemaps
 │       └── lib/         # shared client code, server-only helpers, tests
 ├── tgpc/                # Python pipeline: scrape → enrich → sync
-├── scripts/             # DG contact fetch tooling, VM/VPS helpers, uptime check
+├── scripts/             # DG contact fetch tooling, VM/VPS helpers
 ├── tests/               # Python test suite
 ├── supabase/migrations/ # Schema, RLS, RPCs, shared rate limiter
 ├── docs/security/       # Audit findings + resolution log
@@ -110,8 +109,8 @@ pytest tests/ --cov --cov-fail-under=75   # coverage gate, see pyproject.toml
 ```
 
 CI runs the same gates on every push to `main`/`dev` (`.github/workflows/`),
-plus `npm audit` / `pip-audit` dependency scans and a 30-minute uptime probe.
-Dependabot groups weekly minor/patch updates.
+plus `npm audit` / `pip-audit` dependency scans. Dependabot groups weekly
+minor/patch updates.
 
 ## Documentation
 
