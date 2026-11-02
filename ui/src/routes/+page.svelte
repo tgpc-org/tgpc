@@ -173,6 +173,8 @@
     }
   }
 
+  let refinerVersion = $state(0);
+
   // Debounced typeahead — 300ms after typing, q>=3 (or refiner-only search).
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
   // URL hydration searches immediately; without this counter the debounce
@@ -181,9 +183,11 @@
   $effect(() => {
     if (suppressDebounce > 0) { suppressDebounce--; return; }
     const q = query.trim();
-    // Force Svelte 5 to track advFilters by reading a serialized snapshot.
-    // hasAnyRefiner() alone did not re-trigger this effect on in-page edits.
-    const _track = JSON.stringify(advFilters);
+    // Track refiner edits via refinerVersion (incremented by the Refiners
+    // onchange callback). Reading it here makes this effect re-run whenever
+    // a refiner changes, even though Svelte 5 did not re-trigger on the
+    // advFilters mutation directly.
+    void refinerVersion;
     const refinersOn = hasAnyRefiner();
     clearTimeout(debounceTimer);
     if (q.length < 3 && !refinersOn) return;
@@ -572,7 +576,7 @@
         </div>
       {:else}
         {#if results.length > 0}
-          <Refiners bind:filters={advFilters} bind:open={refinersOpen} active={refinersActive} onclear={clearAdvanced} onchange={() => { clearTimeout(debounceTimer); void doSearch(); }} />
+          <Refiners bind:filters={advFilters} bind:open={refinersOpen} active={refinersActive} onclear={clearAdvanced} onchange={() => { refinerVersion++; }} />
         {/if}
         {#if searchErrorText}
           <!-- A failed request is not an empty result: "No results" here would
