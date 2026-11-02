@@ -181,9 +181,16 @@
   $effect(() => {
     if (suppressDebounce > 0) { suppressDebounce--; return; }
     const q = query.trim();
-    // hasAnyRefiner() reads every refiner field, so this effect re-runs on
-    // any refiner edit and re-searches (debounced) even with a short query.
-    const refinersOn = hasAnyRefiner();
+    // Read advFilters fields directly (not via hasAnyRefiner()) so Svelte 5
+    // tracks them as dependencies. hasAnyRefiner() alone did not re-trigger
+    // this effect on in-page refiner edits, so the refine fetch never fired.
+    const refinersOn =
+      (advFilters.name ?? '').trim() !== '' ||
+      (advFilters.father_name ?? '').trim() !== '' ||
+      (advFilters.registration_number ?? '').trim() !== '' ||
+      (advFilters.gender ?? '') !== '' ||
+      (advFilters.status ?? '') !== '' ||
+      (advFilters.valid_till ?? '') !== '';
     clearTimeout(debounceTimer);
     if (q.length < 3 && !refinersOn) return;
     debounceTimer = setTimeout(() => { void doSearch(); }, 300);
