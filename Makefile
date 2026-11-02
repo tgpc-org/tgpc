@@ -69,7 +69,7 @@ check:  # Run every quality gate (UI + Python); exits non-zero if any gate fails
 	}; \
 	echo "tgpc quality gates"; \
 	printf "$$note"; \
-	run "ui svelte-check"  ui "npm run check"; \
+	run "ui svelte-check"  ui "npm run prepare --silent && npm run check"; \
 	run "ui eslint"        ui "npm run lint"; \
 	run "ui brand colors"  ui "npm run check:colors"; \
 	run "ui unit tests"    ui "npm run test:unit"; \
