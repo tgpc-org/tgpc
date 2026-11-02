@@ -181,16 +181,10 @@
   $effect(() => {
     if (suppressDebounce > 0) { suppressDebounce--; return; }
     const q = query.trim();
-    // Read advFilters fields directly (not via hasAnyRefiner()) so Svelte 5
-    // tracks them as dependencies. hasAnyRefiner() alone did not re-trigger
-    // this effect on in-page refiner edits, so the refine fetch never fired.
-    const refinersOn =
-      (advFilters.name ?? '').trim() !== '' ||
-      (advFilters.father_name ?? '').trim() !== '' ||
-      (advFilters.registration_number ?? '').trim() !== '' ||
-      (advFilters.gender ?? '') !== '' ||
-      (advFilters.status ?? '') !== '' ||
-      (advFilters.valid_till ?? '') !== '';
+    // Force Svelte 5 to track advFilters by reading a serialized snapshot.
+    // hasAnyRefiner() alone did not re-trigger this effect on in-page edits.
+    const _track = JSON.stringify(advFilters);
+    const refinersOn = hasAnyRefiner();
     clearTimeout(debounceTimer);
     if (q.length < 3 && !refinersOn) return;
     debounceTimer = setTimeout(() => { void doSearch(); }, 300);
