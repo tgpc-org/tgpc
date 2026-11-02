@@ -75,7 +75,7 @@ export const GET: RequestHandler = async (event) => {
   if (hasQ) {
     params.set(
       'or',
-      `registration_number.ilike.%${q}%,name.ilike.%${q}%,father_name.ilike.%${q}%`
+      `(registration_number.ilike.%${q}%,name.ilike.%${q}%,father_name.ilike.%${q}%)`
     );
   }
   if (name !== '') params.set('name', `ilike.*${name}*`);
