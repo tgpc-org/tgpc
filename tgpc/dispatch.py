@@ -16,20 +16,13 @@ The naming rules are load-bearing: `/api/dispatch/[name]` rejects anything that
 is not `DL<6 digits>[A-Z].pdf`, so a file synced under the council's own name
 (`Dispatch list 16-10-2026.pdf`) would sit in the bucket and never be listed.
 
-R2 is the serving copy, not the only copy: `--backup` mirrors the archive to
-`gdrive:tgpc/dispatch` and `--verify` asserts bucket, local mirror and Drive
-agree. The council deletes its own files, so a list captured once has to stay
-readable even if both the source and the bucket lose it.
-
-Run: `python -m tgpc dispatch [--dry-run] [--force] [--write-fallback] [--backup] [--verify]`.
+Run: `python -m tgpc dispatch [--dry-run] [--force] [--write-fallback]`.
 """
 
 from __future__ import annotations
 
 import os
 import re
-import subprocess
-from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
@@ -56,12 +49,6 @@ R2_PREFIX = "dispatch/"
 # The stale-list fallback in the listing route is generated from the bucket, so
 # it is refreshed from the same listing this module already has.
 FALLBACK_TS = Path("ui/src/routes/api/dispatch/+server.ts")
-
-# Off-R2 second copy. The whole point of this archive is that the council can
-# delete a list at any time; a single bucket is one accident away from losing
-# the only copy, so every object is mirrored to Drive as well.
-DRIVE_REMOTE = "gdrive:tgpc/dispatch"
-MIRROR_DIR = Path("data/dispatch")
 
 # Smallest plausible dispatch PDF. A council list is tens of KB; anything under
 # this is an error page or a truncated body, not a dispatch list.
@@ -109,9 +96,7 @@ class SyncReport:
     dry_run: bool = False
     newest: str = ""
     skipped_names: List[str] = field(default_factory=list)
-    extra_in_bucket: List[str] = field(default_factory=list)
     failed_names: List[str] = field(default_factory=list)
-    unavailable_names: List[str] = field(default_factory=list)
 
 
 def dispatch_name(filename: str) -> Optional[str]:
@@ -288,11 +273,11 @@ class DispatchSyncer:
         entries: Sequence[DispatchPdf],
         present: Set[str],
         force: bool = False,
-    ) -> Tuple[List[DispatchPdf], List[str]]:
-        """Split published entries into (to upload, in bucket but unpublished)."""
-        published = {entry.name for entry in entries}
-        to_upload = list(entries) if force else [entry for entry in entries if entry.name not in present]
-        return to_upload, sorted(present - published)
+    ) -> List[DispatchPdf]:
+        """Split published entries into (to upload)."""
+        if force:
+            return list(entries)
+        return [entry for entry in entries if entry.name not in present]
 
 
 def sync_dispatch(
@@ -325,10 +310,9 @@ def sync_dispatch(
         raise RuntimeError("dispatch: the source page listed no dispatch PDFs (layout change or outage?)")
 
     present = syncer.bucket_names()
-    to_upload, extra = syncer.plan(entries, present, force=force)
+    to_upload = syncer.plan(entries, present, force=force)
     report.already_present = len(entries) - len(to_upload)
     report.missing = len(to_upload)
-    report.extra_in_bucket = extra
     report.newest = entries[-1].name if entries else ""
 
     if limit is not None:
@@ -350,19 +334,13 @@ def sync_dispatch(
             report.uploaded += 1
             logger.info(f"dispatch: uploaded {entry.name} ({entry.date.isoformat()})")
         except requests.HTTPError as exc:
-            # The council links files it does not actually host (7 of 241 as of
-            # 2026-11: three 2019-2023 dates and 07-10-2026). That is their
-            # defect and will not be fixed by retrying, so it is reported as
-            # unavailable rather than failed - otherwise every scheduled run
-            # would exit non-zero forever.
             if getattr(exc.response, "status_code", None) == 404:
-                report.unavailable_names.append(entry.name)
                 logger.warning(f"dispatch: {entry.name} linked but not hosted by the council (HTTP 404)")
             else:
                 report.failed += 1
                 report.failed_names.append(entry.name)
                 logger.warning(f"dispatch: {entry.name} failed: {exc}")
-        except Exception as exc:  # one bad file must not abort the batch
+        except Exception as exc:
             report.failed += 1
             report.failed_names.append(entry.name)
             logger.warning(f"dispatch: {entry.name} failed: {exc}")
@@ -375,165 +353,4 @@ def sync_dispatch(
         except Exception as exc:
             logger.warning(f"dispatch: fallback list not updated: {exc}")
 
-    return report
-
-
-@dataclass
-class MirrorReport:
-    """Result of mirroring the bucket's dispatch PDFs to the Drive backup."""
-
-    objects: int = 0
-    downloaded: int = 0
-    rclone: str = "skipped"  # ok | failed | missing | skipped
-    error: str = ""
-
-
-@dataclass
-class ArchiveReport:
-    """R2 vs local mirror vs Drive parity check."""
-
-    bucket: int = 0
-    mirror: int = 0
-    missing_from_mirror: List[str] = field(default_factory=list)
-    gone_from_bucket: List[str] = field(default_factory=list)
-    size_mismatch: List[str] = field(default_factory=list)
-    drive: str = "skipped"  # ok | drift | skipped
-    drive_detail: str = ""
-
-    @property
-    def problems(self) -> List[str]:
-        issues = [f"missing from the local mirror: {n}" for n in self.missing_from_mirror]
-        issues += [f"in the local mirror but gone from the bucket: {n}" for n in self.gone_from_bucket]
-        issues += [f"size mismatch: {n}" for n in self.size_mismatch]
-        if self.drive == "drift":
-            issues.append(f"Drive backup out of sync: {self.drive_detail}")
-        return issues
-
-
-@contextmanager
-def _rclone_config():
-    """Environment overrides so `rclone` can find the Drive remote.
-
-    Locally rclone reads the user's own config. In CI the remote is shipped as
-    a base64 blob in RCLONE_GDRIVE_CONFIG (the same secret `sync_to_gdrive`
-    uses), and rclone only honours that through RCLONE_CONFIG, so the blob has
-    to be decoded to a private temp file for the duration of the call.
-    """
-    encoded = os.environ.get("RCLONE_GDRIVE_CONFIG", "").strip()
-    if not encoded or os.environ.get("RCLONE_CONFIG"):
-        yield {}
-        return
-
-    import base64
-    import tempfile
-
-    with tempfile.NamedTemporaryFile(prefix="rclone-gdrive-", suffix=".conf", delete=False) as tmp:
-        tmp.write(base64.b64decode(encoded))
-    path = Path(tmp.name)
-    try:
-        yield {"RCLONE_CONFIG": str(path)}
-    finally:
-        # Never leave the decoded service-account config behind, even on crash.
-        path.unlink(missing_ok=True)
-
-
-def _rclone(args: Sequence[str], timeout: int = 1800) -> Optional[subprocess.CompletedProcess]:
-    """Run rclone, or return None when it is not installed."""
-    try:
-        with _rclone_config() as env:
-            return subprocess.run(
-                ["rclone", *args], capture_output=True, text=True, timeout=timeout, env={**os.environ, **env}
-            )
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return None
-    except ValueError as exc:  # malformed base64 in RCLONE_GDRIVE_CONFIG
-        return subprocess.CompletedProcess(["rclone", *args], 1, "", f"invalid RCLONE_GDRIVE_CONFIG: {exc}")
-
-
-def _bucket_objects(client: R2Client) -> dict:
-    """Map portal name -> size for every object under the dispatch prefix."""
-    objects = {}
-    for obj in client.list_objects_all(R2_PREFIX):
-        key = str(obj.get("Key", ""))
-        if key.startswith(R2_PREFIX) and "/" not in key[len(R2_PREFIX) :]:
-            objects[key[len(R2_PREFIX) :]] = int(obj.get("Size", -1))
-    return objects
-
-
-def mirror_to_drive(
-    client: Optional[R2Client] = None,
-    mirror_dir: Path = MIRROR_DIR,
-    remote: str = DRIVE_REMOTE,
-) -> MirrorReport:
-    """Copy every archived PDF to the Drive backup, incrementally.
-
-    R2 is the serving copy; this is the copy that survives an R2 accident. The
-    local mirror is only a cache so rclone can skip files already uploaded
-    (`--size-only`: R2 and Drive timestamps never agree).
-    """
-    if client is None:
-        load_credentials()
-        client = r2_client_from_env()
-    mirror_dir.mkdir(parents=True, exist_ok=True)
-
-    objects = _bucket_objects(client)
-    report = MirrorReport(objects=len(objects))
-    for name, size in sorted(objects.items()):
-        local = mirror_dir / name
-        if local.exists() and local.stat().st_size == size:
-            continue
-        client.get_object(f"{R2_PREFIX}{name}", local)
-        report.downloaded += 1
-
-    proc = _rclone(["copy", "--size-only", str(mirror_dir), remote])
-    if proc is None:
-        report.rclone = "missing"
-        report.error = "rclone not installed; Drive backup skipped"
-        return report
-    if proc.returncode != 0:
-        report.rclone = "failed"
-        report.error = (proc.stderr or proc.stdout or "").strip()[-800:]
-        return report
-    report.rclone = "ok"
-    return report
-
-
-def verify_archive(
-    client: Optional[R2Client] = None,
-    mirror_dir: Path = MIRROR_DIR,
-    remote: str = DRIVE_REMOTE,
-    check_drive: bool = True,
-) -> ArchiveReport:
-    """Prove the archive is intact: bucket, local mirror and Drive must agree.
-
-    A file present in the mirror but absent from the bucket is the alarm that
-    matters - it means something deleted archived material.
-    """
-    if client is None:
-        load_credentials()
-        client = r2_client_from_env()
-
-    bucket = _bucket_objects(client)
-    report = ArchiveReport(bucket=len(bucket))
-    local = {}
-    if mirror_dir.exists():
-        for path in mirror_dir.iterdir():
-            if path.is_file() and path.name.lower().endswith(".pdf"):
-                local[path.name] = path.stat().st_size
-    report.mirror = len(local)
-
-    report.missing_from_mirror = sorted(set(bucket) - set(local))
-    report.gone_from_bucket = sorted(set(local) - set(bucket))
-    report.size_mismatch = sorted(name for name in set(bucket) & set(local) if bucket[name] != local[name])
-
-    if check_drive:
-        proc = _rclone(["check", "--size-only", str(mirror_dir), remote])
-        if proc is None:
-            report.drive = "skipped"
-            report.drive_detail = "rclone not installed"
-        elif proc.returncode == 0:
-            report.drive = "ok"
-        else:
-            report.drive = "drift"
-            report.drive_detail = (proc.stderr or proc.stdout or "").strip()[-800:]
     return report
