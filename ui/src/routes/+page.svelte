@@ -146,6 +146,7 @@
     const useRefiners = hasAnyRefiner();
     if (q.length < 3 && !useRefiners) return;
     const mySeq = ++searchSeq;
+    console.log('doSearch start, seq=' + mySeq, 'useRefiners=' + useRefiners, 'q=' + q, 'searchSeq=' + searchSeq);
     loading = true;
     searched = true;
     try {
@@ -158,6 +159,7 @@
         : await searchRecords(query);
       if (mySeq !== searchSeq) return; // superseded by newer keystroke
       if (outcome.kind === 'ok') {
+        console.log('doSearch seq=' + mySeq + ' ok, records=' + outcome.records.length, 'searchSeq now=' + searchSeq, 'mySeq===searchSeq:', mySeq === searchSeq);
         results = outcome.records;
         searchError = null;
       } else {
@@ -181,9 +183,8 @@
   $effect(() => {
     if (suppressDebounce > 0) { suppressDebounce--; return; }
     const q = query.trim();
-    const refinersOn = hasAnyRefiner();
     clearTimeout(debounceTimer);
-    if (q.length < 3 && !refinersOn) return;
+    if (q.length < 3) return;
     debounceTimer = setTimeout(() => { void doSearch(); }, 300);
     return () => clearTimeout(debounceTimer);
   });

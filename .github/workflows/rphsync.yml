@@ -58,8 +58,11 @@ jobs:
           echo "Local rph.json found ($(wc -c < data/rph.json) bytes)"
         fi
 
-    - name: Run tgpc update
-      id: update
+    - name: Run full pipeline with WARP
+      # WARP is required for the council site (ScrapingBee) and Supabase.
+      # Running update + dispatch in ONE step keeps the WARP tunnel alive
+      # for the entire pipeline. Each GitHub Actions step runs in a fresh
+      # shell, so separating them drops the tunnel.
       env:
         SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
         SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
@@ -73,6 +76,19 @@ jobs:
         GITHUB_REPOSITORY: ${{ github.repository }}
         GH_TOKEN: ${{ github.token }}
       run: |
+        set -euo pipefail
+        
+        # Keep WARP alive with periodic pings in background
+        ping_warp() {
+          while true; do
+            warp-cli status 2>/dev/null | grep -q "Connected" || warp-cli connect 2>/dev/null
+            sleep 30
+          done
+        }
+        ping_warp &
+        PING_PID=$!
+        trap 'kill $PING_PID 2>/dev/null' EXIT
+        
         if [[ "${{ github.event.inputs.force_sync }}" == "true" && -f data/rph.json ]]; then
           echo "FORCE SYNC MODE — re-syncing existing data"
           python3 -m tgpc sync
@@ -80,21 +96,10 @@ jobs:
           echo "Starting TGPC data update..."
           python3 -m tgpc update
         fi
-
-    - name: Sync council dispatch lists
-      # Runs on the same schedule as the data sync, and deliberately not
-      # best-effort: the council deletes PDFs from its own server (7 links on
-      # the report page already 404), and a list that misses this step is lost
-      # to users permanently. R2 serves the archive; --backup keeps the
-      # off-site Drive copy current. A council link that 404s is reported as
-      # "linked but not hosted" and does not fail the run; a real sync failure
-      # does, because a silent gap is what let the bucket drift 220 → 247.
-      env:
-        R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-        R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-        CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        RCLONE_GDRIVE_CONFIG: ${{ secrets.RCLONE_GDRIVE_CONFIG }}
-      run: python3 -m tgpc dispatch --backup
+        
+        # Dispatch sync runs in same WARP session
+        echo "Syncing council dispatch lists..."
+        python3 -m tgpc dispatch --backup
 
     - name: Upload data to artifact
       if: always()
