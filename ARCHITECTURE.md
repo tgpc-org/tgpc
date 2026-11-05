@@ -47,7 +47,7 @@ tgpc/
 │   ├── dg_contacts.jsonl           # DG contact capture (PII) — gitignored
 │   ├── dg_fetch_checkpoint.json    # DG fetch resume state — gitignored
 │   ├── dg_raw/                     # Per-record DG raw snapshots — gitignored
-│   ├── dispatch/                   # Cache of archived council dispatch PDFs (R2 → Drive mirror) — gitignored
+│   ├── dispatch/                   # Scratch space for the download-upload-verify cycle — gitignored
 │   └── backups/                    # Timestamped rph.json backups (R2-backed) — gitignored
 ├── tgpc/                           # Python package
 │   ├── __init__.py                 # Imports Config, setup_logging, Scraper, Manager; __version__ = "2.0.0"
@@ -149,7 +149,7 @@ tgpc/
 │   │   ├── auth.setup.ts          # One-time admin login (E2E_ADMIN_SECRET) -> e2e/.auth.json
 │   │   ├── contrast-baseline.json # Tracked contrast debt baseline
 │   │   └── update-baseline.mjs    # Refresh the baseline after intentional palette changes
-├── tests/                          # 195 tests, 13 files (all mocked — no real HTTP/Supabase)
+├── tests/                          # 271 tests, 16 files (all mocked — no real HTTP/Supabase)
 │   ├── test_scraper.py             # 24: timeouts, WAF/blocked detection, table fallback, bad rows, detail parsing, legacy headers, missing tables, TLS verification + source-host rules
 │   ├── test_manager_update.py      # 7: safety guard, dedup/sort/GITHUB_OUTPUT, deterministic ordering, source-unavailable, +3 sync return-value regressions
 │   ├── test_manager_enrichment.py  # 3: enrichment save, registration mismatch, null serial_number regression
@@ -193,8 +193,8 @@ __main__.py ─── Manager ─── Config (utils.py)
                              ├── enrich_new_records() — auto-enrich records from the last update
                              └── process_records_sequential() — scrape → validate → photo → upsert
 
-tgpc/dispatch.py — council dispatch-list PDFs → R2 `dispatch/` → Drive backup
-        (standalone: DispatchSyncer + R2Client + rclone, no Manager)
+tgpc/dispatch.py — council dispatch-list PDFs → R2 `dispatch/`
+        (standalone: DispatchSyncer + R2Client, no Manager)
 ```
 
 ### Entry Point: `tgpc/__main__.py`
@@ -205,8 +205,6 @@ python3 -m tgpc update --no-sync    # Scrape only, skip cloud sync
 python3 -m tgpc update --force      # Override the 100-churn/1000-new safety caps
 python3 -m tgpc sync                # Sync to all destinations
 python3 -m tgpc dispatch            # Copy newly published council dispatch-list PDFs into R2 (--dry-run, --force, --limit, --write-fallback)
-python3 -m tgpc dispatch --backup   # …and mirror the whole archive to gdrive:tgpc/dispatch
-python3 -m tgpc dispatch --verify    # Assert R2 = local mirror = Drive; exits 1 on any drift
 python3 -m tgpc enrich              # Enrich records (photo, gender, status, validity) for pending records
 python3 -m tgpc retry-photos        # Retry uploading failed photos from data/webp/ to R2
 python3 -m tgpc quota               # Show free quota usage for all services
@@ -394,31 +392,27 @@ source-unavailable classification), and the photo pipeline
   object's stored size before reporting success. `--force` re-uploads
   everything, `--limit N` caps a run, `--dry-run` lists the work without
   touching R2.
-- Files in the bucket that the council no longer links are reported, never
+- Files in the bucket that the council no longer links are left alone, never
   deleted — the portal may still have served them. 13 were in that state on
   2026-11-02, including the newest-on-source `DL14072026.pdf`.
-- A council link that 404s is reported as *linked but not hosted* and does not
-  fail the run (7 of 241 on 2026-11-02: 17-06-2019, 11-07-2021, 25-06-2023,
-  27-06-2023, 10-07-2023, 18-07-2023, 07-10-2026). Retrying cannot fix their
-  server. Every other failure exits 1.
+- A council link that 404s is logged at debug level and does not fail the run
+  (7 of 241 on 2026-11-02: 17-06-2019, 11-07-2021, 25-06-2023, 27-06-2023,
+  10-07-2023, 18-07-2023, 07-10-2026). Retrying cannot fix their server. Every
+  other failure exits 1.
 - `--write-fallback` regenerates the listing route's stale `FALLBACK_FILES`
   block from the resulting bucket listing and restamps its provenance comment
   (the route comment says to regenerate rather than hand-edit).
-- **Durability.** The source deleting a list must not remove it from users, so
-  R2 is not the only copy: `--backup` mirrors every object to
-  `gdrive:tgpc/dispatch` through a local cache in `data/dispatch/` (gitignored),
-  using `rclone copy --size-only` because R2 and Drive timestamps never agree.
-  Only objects missing locally or truncated are re-downloaded, so a repeat run
-  is nearly free.
-- `--verify` is the alarm: it compares the bucket listing against the local
-  mirror and the Drive copy and exits 1 on any disagreement. A file present in
-  the mirror but gone from the bucket is the condition that matters — it means
-  archived material was deleted from the serving copy.
+- **The module does nothing else.** It does not mirror to Drive, does not keep a
+  local archive, and does not run a parity audit: R2 is the serving copy and
+  object storage is durable, so a second copy was extra moving parts without a
+  user-visible benefit (the `--backup`/`--verify` layer was removed 2026-11-04).
+  `data/dispatch/` exists only as scratch space for the download-upload-verify
+  cycle; each file is deleted after its upload is confirmed.
 - Seven council links 404 at source and predate any capture (`DL17062019`,
   `DL11072021`, `DL25062023`, `DL27062023`, `DL10072023`, `DL18072023`,
   `DL07102026`); they are not recoverable from the live server, Wayback, Common
-  Crawl, Drive or git history, so every list captured from now on is mirrored on
-  the first run after publication rather than at some later date.
+  Crawl, Drive or git history. Each new list is captured on the first run after
+  publication rather than at some later date.
 
 ### `tgpc/quota.py` — quota report
 - `python3 -m tgpc quota` prints free-tier usage for Supabase (DB size, storage, API requests), Cloudflare R2 (storage, objects, Class A/B ops via GraphQL), Resend (daily/monthly quota headers), and Google Drive (`rclone about`)
@@ -794,7 +788,7 @@ The 200-row ceiling is enforced in **two** places: the client cap in `searchLimi
 4. **Create data directory** (`mkdir -p data/backups`)
 5. **Restore artifact** — `gh run download` artifact `rph-data` if `data/rph.json` doesn't exist locally
 6. **Run data update** — `python3 -m tgpc update`; when `force_sync` is true and local data exists, runs `python3 -m tgpc sync` instead. All cloud syncs happen inside the CLI (delta to Supabase; Storage/R2/GDrive/Release/email only when there are changes); any destination failure exits non-zero and fails the job
-7. **Sync council dispatch lists** — `python3 -m tgpc dispatch --backup` with the R2 and Drive secrets. Not best-effort: the council deletes PDFs from its own server (7 report-page links already 404), so a list that misses this step is lost to users permanently. New PDFs go to R2 `dispatch/` and the whole archive is mirrored to `gdrive:tgpc/dispatch`. A council 404 is reported as *linked but not hosted* and does not fail the run
+7. **Sync council dispatch lists** — `python3 -m tgpc dispatch` with the R2 secrets. New PDFs go to R2 `dispatch/`; the archive is not mirrored anywhere else. A council 404 is logged at debug level and does not fail the run
 8. **Upload data artifact** — `rph-data` with 90-day retention (`if: always()`)
 9. **Notify on failure** — sends a failure-report email via Resend when `RESEND_API_KEY`/`NOTIFICATION_EMAIL` are configured
 
@@ -832,7 +826,7 @@ mypy                                         # tgpc/ only, config in pyproject.t
 pytest tests/ -q --cov --cov-fail-under=75   # what CI runs
 ```
 
-262 tests across 16 files. Coverage is measured over the installed package
+271 tests across 16 files. Coverage is measured over the installed package
 (`tgpc/`, configured in `pyproject.toml`) and sits at ~77% today; CI fails
 below **75%**. The number is a floor against erosion, not a target — raise it
 when the suite genuinely improves, never lower it to unblock a change. The
@@ -871,7 +865,7 @@ Per-file breakdown:
 | `test_quota.py` | 8 | Quota reporter helpers (ref parsing, formatting) and every `check_*` fail-closed path on missing credentials |
 | `test_inactive_sweep.py` | 19 | JSONL parsing (good/bad lines), checkpoint save/load roundtrip and corrupt-checkpoint fallback, resume skipping completed batches, partial-run slicing, `_sweep_regs` outcome counting + dedupe of already-known actives + per-record error isolation + parallel worker coverage + one-bar offset, batch loop checkpointing, CLI flag wiring |
 | `test_cli.py` | 31 | `python3 -m tgpc` dispatch: which Manager method each subcommand reaches, a failed destination exits 1, `update` delta/removal/no-change paths, `--no-sync` skipping every cloud step, the `fetch-dg` guards (`--no-resume` refuses to wipe a checkpoint, no IDs is a usage error, worker override clamps to 16), `dispatch` flags passed through and a failed upload exiting 1, WARP ownership (never disconnects a connection it did not open), creds set/list/delete |
-| `test_dispatch.py` | 42 | Dispatch-list sync: every council naming scheme normalised to `DLDDMMYYYY[suffix].pdf`, impossible dates and unrelated PDFs rejected, page parsing (dedupe, date sort, `jsessionid` stripped), missing-only plan, download/upload verification (error pages and size mismatches refused), 404-on-source reported without failing the run, generated `FALLBACK_FILES` rewrite, cursor pagination in `R2Client.list_objects_all`, the durability layer (incremental R2→Drive mirror, missing/failed rclone, archive parity alarms), and the CI rclone-config bootstrap (decoded to a private temp file, removed after use) |
+| `test_dispatch.py` | 20 | Dispatch-list sync: every council naming scheme normalised to `DLDDMMYYYY[suffix].pdf`, impossible dates and unrelated PDFs rejected, page parsing (dedupe, date sort, `jsessionid` stripped), missing-only plan, download/upload verification (error pages and size mismatches refused), a council 404 logged without failing the run, and the generated `FALLBACK_FILES` rewrite |
 | `test_enrich_actives.py` | 8 | The phase-3 upsert: identity mismatch refused, NULL serials do not collide, photo upload→link→delete and the failed-upload keep, `--limit`/`--workers` paths, missing-from-source counted as failed |
 | `test_bugfix_regressions.py` | 18 | Restore-to-temp validation, backup rotation, release return codes, `--force` overrides, DetailError vs absence |
 | `test_security_audit_regressions.py` | 27 | Audit remediations: DG PII RLS posture, DG artifacts kept out of the public R2 bucket, report-email HTML escaping, rclone temp paths, photo redirect validation, backup restore validation, DG Storage bucket publicity gate |
@@ -916,5 +910,6 @@ No Black, no trailing-whitespace, or end-of-file-fixer hooks.
 
 ## See Also
 
+- `DESIGN.md` — design rationale, failure posture and decision log
 - `ui/src/lib/BrandColors.md` — mandatory palette and enforcement notes
 - `README.md` — Project overview and quick-start

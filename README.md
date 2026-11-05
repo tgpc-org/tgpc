@@ -32,7 +32,7 @@ search UI with per-record profile pages.
 | Files | Cloudflare R2 (photos, dispatch PDFs) |
 | Hosting | Cloudflare Pages (push to `main` deploys) |
 | Pipeline | Python 3.12 (CI), requests + BeautifulSoup + supabase-py |
-| Tests | `pytest` (262), `node:test` (107), Playwright e2e |
+| Tests | `pytest` (271), `node:test` (107), Playwright e2e |
 
 ## Repository layout
 
@@ -76,8 +76,6 @@ make check             # every quality gate (needs the dev tools below)
 make scrape            # scrape → sync every destination → enrich → capture new dispatch lists
 make sync              # re-sync data/rph.json without scraping
 make dispatch          # copy newly published council dispatch-list PDFs into R2
-.venv/bin/python -m tgpc dispatch --backup   # also mirror the archive to the Drive backup
-.venv/bin/python -m tgpc dispatch --verify   # assert R2, the mirror and Drive agree (exits 1 on drift)
 make quota             # free-tier usage for Supabase / R2 / Resend / Drive
 make logs              # newest run log (FOLLOW=1 to tail it)
 ```
@@ -117,6 +115,7 @@ minor/patch updates.
 | Document | Contents |
 |---|---|
 | [`ARCHITECTURE.md`](./ARCHITECTURE.md) | Everything: routes, data access, caching, rate limits, pipeline phases, CI |
+| [`DESIGN.md`](./DESIGN.md) | Why the system is shaped this way: goals, failure posture, decisions, trade-offs |
 | [`AGENTS.md`](./AGENTS.md) | Rules for contributors and AI agents (brand colors, commands, email format) |
 | [`CLAUDE.md`](./CLAUDE.md) | Entry point for Claude Code — points at the two documents above |
 | [`DG_PIPELINE.md`](./DG_PIPELINE.md) | DG contact-capture pipeline (captcha flow, dashboard, CLI) |

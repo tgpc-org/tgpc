@@ -99,7 +99,7 @@ jobs:
         
         # Dispatch sync runs in same WARP session
         echo "Syncing council dispatch lists..."
-        python3 -m tgpc dispatch --backup
+        python3 -m tgpc dispatch
 
     - name: Upload data to artifact
       if: always()

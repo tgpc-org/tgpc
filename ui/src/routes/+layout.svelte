@@ -204,7 +204,7 @@
               <span style="color:#00cc66">TGPC</span><span style="color:#ef4444">RPh</span><span class="text-[#9ca3af]">Index</span>
             </span>
           </a>
-          <span class="hidden md:inline text-[0.75rem] font-medium truncate" style="color:var(--t-muted)">Open-source TGPC pharmacist data</span>
+          <span class="hidden md:inline text-[0.75rem] font-medium truncate" style="color:var(--t-muted)">Open-Source TGPC Pharmacist Data</span>
         </div>
 
         <div class="flex items-center gap-2 shrink-0">

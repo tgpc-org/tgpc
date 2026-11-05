@@ -335,7 +335,7 @@ def sync_dispatch(
             logger.info(f"dispatch: uploaded {entry.name} ({entry.date.isoformat()})")
         except requests.HTTPError as exc:
             if getattr(exc.response, "status_code", None) == 404:
-                logger.warning(f"dispatch: {entry.name} linked but not hosted by the council (HTTP 404)")
+                logger.debug(f"dispatch: {entry.name} linked but not hosted by the council (HTTP 404)")
             else:
                 report.failed += 1
                 report.failed_names.append(entry.name)
