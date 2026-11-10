@@ -63,8 +63,8 @@ jobs:
           ui=false
           while IFS= read -r f; do
             case "$f" in
-              # scripts/** is here because tests/ covers it
-              # (test_dg_dashboard.py); without it a scripts-only change would
+              # scripts/** is here because tests/ covers the shipped
+              # helpers; without it a scripts-only change would
               # skip the pytest run that guards it.
               tgpc/* | tests/* | scripts/* | pyproject.toml) python=true ;;
               ui/*) ui=true ;;

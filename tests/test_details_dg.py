@@ -16,6 +16,7 @@ from tgpc.details_dg import (  # noqa: E402
     normalize_gender,
     normalize_token,
     parse_dg_html,
+    pending_ids,
     prune_checkpoint_backups,
     run_fetch,
     save_checkpoint_atomic,
@@ -1047,6 +1048,52 @@ class NoResumeGuardTests(unittest.TestCase):
                     with patch.object(cli, "_warp_connect", return_value=False):
                         cli.main()
             self.assertTrue(rf.called)
+
+
+class PendingIdsTests(unittest.TestCase):
+    """Which DG records are still worth fetching.
+
+    The rule decides what gets re-requested from the council, so it is pinned
+    here rather than left as a shell heredoc on a machine nobody can read.
+    """
+
+    ROWS = [
+        {"registration_number": "TS001", "serial_number": 1},
+        {"registration_number": "TS002", "serial_number": 2},
+        {"registration_number": "TS003", "serial_number": 3},
+        {"registration_number": "TS004", "serial_number": 4},
+    ]
+
+    def test_fresh_records_come_back_in_registry_order(self):
+        ids = pending_ids(self.ROWS, {})
+        self.assertEqual(ids, ["TS001", "TS002", "TS003", "TS004"])
+
+    def test_completed_and_terminal_records_are_skipped(self):
+        cp = {"completed": ["TS001"], "failed_terminal": {"TS002": "not found"}}
+        self.assertEqual(pending_ids(self.ROWS, cp), ["TS003", "TS004"])
+
+    def test_retryable_failures_come_first(self):
+        cp = {"completed": ["TS001"], "failed": {"TS003": "blocked"}}
+        self.assertEqual(pending_ids(self.ROWS, cp), ["TS003", "TS002", "TS004"])
+
+    def test_retry_terminal_reprobes_the_whole_terminal_set(self):
+        cp = {"completed": ["TS001"], "failed_terminal": {"TS002": "not found"}}
+        self.assertEqual(pending_ids(self.ROWS, cp, retry_terminal=True), ["TS002", "TS003", "TS004"])
+
+    def test_limit_bounds_the_batch(self):
+        self.assertEqual(pending_ids(self.ROWS, {}, limit=2), ["TS001", "TS002"])
+        self.assertEqual(len(pending_ids(self.ROWS, {}, limit=0)), 4)
+
+    def test_records_without_a_serial_number_sort_last(self):
+        rows = [
+            {"registration_number": "TS900"},
+            {"registration_number": "TS100", "serial_number": 5},
+        ]
+        self.assertEqual(pending_ids(rows, {}), ["TS100", "TS900"])
+
+    def test_registrations_missing_from_the_reference_are_ignored(self):
+        cp = {"failed": {"TS999": "blocked"}}
+        self.assertNotIn("TS999", pending_ids(self.ROWS, cp))
 
 
 class ValidateL1Tests(unittest.TestCase):

@@ -42,6 +42,6 @@ had gone stale).
 
 ## Task-specific docs
 
-- DG contact pipeline: `DG_PIPELINE.md`, `VPS_DG_FETCH.md`
+- DG contact pipeline: `DG_PIPELINE.md` (runs on this Mac — `make dg-local`)
 - Security findings + resolution log: `docs/security/`
 - Historical review items: `CODE_REVIEW.md`

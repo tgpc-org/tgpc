@@ -22,16 +22,18 @@ Stored verbatim `DD-MM-YYYY`; `renewal_validity` kept separate from
 ## Commands
 
 ```bash
-python3 -m tgpc fetch-dg --ids-file data/dg_ids_100.txt --captcha auto --sync-cloud --sync-every 50
+python3 -m tgpc dg-pending --limit 600 --out data/dg_pending_ids.txt  # what to fetch
+python3 -m tgpc fetch-dg --ids-file data/dg_pending_ids.txt --captcha auto --sync-cloud --sync-every 50
 python3 -m tgpc fetch-dg --ids TS000001 --max-records 1   # bounded / smoke
-python3 scripts/dg_dashboard.py --port 8765               # live monitor → http://127.0.0.1:8765
 python3 scripts/dg_captcha_bench.py --n 12                # OCR accuracy bench
-touch data/dg_stop                                        # halt after current record
+make dg-local                                             # one bounded batch (same as the 01:30 job)
 ```
-Local batches run from the terminal (`python3 -m tgpc fetch-dg --ids-file … --sync-cloud`):
-retryable failures first, then fresh IDs in serial order (ordering contract:
-`scripts/dg_dashboard.py::next_ids`, mirrored by `gen_ids` in
-`scripts/vps_fetch.sh`). Halt cleanly with `touch data/dg_stop`.
+The fetch runs on the operator's Mac, because the council only answers Indian
+IPs. `make dg-local` (or the nightly LaunchAgent) selects the next batch with
+`tgpc dg-pending` and fetches it: retryable failures first, then fresh IDs in
+serial order (the ordering contract is `tgpc/details_dg.py::pending_ids`).
+The checkpoint is written after every record, so an interrupted run resumes
+where it stopped. Halt cleanly with `touch data/dg_stop`.
 
 ## Code map
 
@@ -42,13 +44,12 @@ retryable failures first, then fresh IDs in serial order (ordering contract:
   (service-role-only: captcha-gated PII, never anon-readable; no FK to `rph`
   on purpose). Re-run the whole file safely — re-running also applies the PII
   lockdown to an already-deployed project.
-* `scripts/dg_dashboard.py` + `scripts/dg_dashboard.html` — stdlib localhost
-  dashboard, no login (`./scripts/dg_open.sh` starts it and opens the
-  browser): collection scoreboard plus VPS controls only (START with
-  include-refused option, STOP/RESUME/RESTART, VM address, SSH exclusions)
-  — the VM does all fetching, so there are no local run buttons.
-  TGPC palette only.
-* `tests/test_details_dg.py`, `tests/test_dg_dashboard.py`.
+* `scripts/dg_local.sh` + `scripts/com.tgpc.dg.plist` — the nightly batch and
+  its LaunchAgent (01:30 IST). Bounded per run, resumable, cloud-synced as it
+  goes; the local files are only the crash buffer.
+* `tgpc/run_status.py` — the scrape's run record (the DG batch logs to
+  `data/logs/dg-local.log`).
+* `tests/test_details_dg.py`.
 
 ## State files (all gitignored, local crash buffer only)
 

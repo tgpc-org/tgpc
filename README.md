@@ -121,7 +121,6 @@ minor/patch updates.
 | [`AGENTS.md`](./AGENTS.md) | Rules for contributors and AI agents (brand colors, commands, email format) |
 | [`CLAUDE.md`](./CLAUDE.md) | Entry point for Claude Code — points at the two documents above |
 | [`DG_PIPELINE.md`](./DG_PIPELINE.md) | DG contact-capture pipeline (captcha flow, dashboard, CLI) |
-| [`VPS_DG_FETCH.md`](./VPS_DG_FETCH.md) | Runbook for running the DG fetch on a VPS |
 | [`CODE_REVIEW.md`](./CODE_REVIEW.md) | Historical review findings and their resolutions |
 | [`ui/src/lib/BrandColors.md`](./ui/src/lib/BrandColors.md) | Brand palette and contrast-safe usage |
 

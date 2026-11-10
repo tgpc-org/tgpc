@@ -34,6 +34,7 @@ data/update_details.json
 # Last pipeline outcome (status, egress IP) — read by the launchd scheduler
 data/last_run.json
 data/.scrape.lock/
+data/dg_pending_ids.txt
 # Local cache of the dispatch archive (R2 -> Drive mirror staging; never in git)
 data/dispatch/
 data/*.jsonl

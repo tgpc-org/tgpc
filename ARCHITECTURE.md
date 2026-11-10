@@ -29,15 +29,14 @@ tgpc/
 ├── uv.lock                         # Locked dependency graph (uv lock) — reproducible local installs; CI checks it is in sync
 ├── supabase/migrations/            # Version-controlled schema, RLS, RPC + hardening SQL
 ├── docs/security/                  # Security audit findings (JSON, with resolution log)
-├── Makefile                        # scrape / sync / quota + DG run-control targets (dg-start/stop/resume/watch)
+├── Makefile                        # scrape / sync / quota + scheduler targets (scheduler-install, dg-local, dg-pending)
 ├── .gitignore
 ├── ARCHITECTURE.md
 ├── README.md
 ├── CLAUDE.md                       # Agent quick context (commands, sync destinations, palette)
 ├── AGENTS.md                       # Agent working rules (brand palette, workflow, email format)
 ├── CODE_REVIEW.md
-├── DG_PIPELINE.md                  # DG contact-pipeline deep dive (captcha capture, fetch-dg CLI, dashboard :8765)
-├── VPS_DG_FETCH.md                 # Runbook: DG fetch on Oracle Always Free VPS (bootstrap → smoke → systemd)
+├── DG_PIPELINE.md                  # DG contact-pipeline deep dive (captcha capture, fetch-dg CLI, local batch runner)
 ├── data/
 │   ├── rph.json                     # ~91K pharmacist records (JSON array) — gitignored
 │   ├── update_details.json         # Sync diff summary — gitignored
@@ -72,18 +71,9 @@ tgpc/
 ├── scripts/                        # Standalone helpers (run from repo root)
 │   ├── daily_scrape.sh             # Scheduled scrape entry point: lock, skip-if-done-today, caffeinate, launchd log
 │   ├── com.tgpc.scrape.plist       # LaunchAgent template (06/10/14/18 IST; __REPO__ filled in by make scheduler-install)
-│   ├── dg_dashboard.py             # Local DG fetch dashboard (localhost, no login: status + START/STOP + VPS controls)
-│   ├── dg_dashboard.html           # DG monitor UI (dark mode, start/stop, live stats)
 │   ├── dg_captcha_bench.py         # Fetch N live DG captchas, OCR-guess, dump for human labeling
-│   ├── vps_bootstrap.sh            # One-time cloud VM setup (apt, WARP, clone, rph.json, ~/.tgpc_env)
-│   ├── vps_fetch.sh                # VPS DG fetch loop (batches, cloud sync, R2 checkpoint backup + ctl polling; --smoke for trial)
-│   ├── dg_run.sh                   # One-command recurring launcher (preflight → drift guards → push → smoke-gated start; set DG_VM)
-│   ├── vps_ctl.sh                  # No-SSH VPS ops over R2 (status/halt/resume/exclude via ops/ctl.json)
-│   ├── vm_view.sh                  # Re-open the Mac→VM dashboard tunnel (:8900; sleep kills it)
-│   ├── tgpc-dg-fetch.service       # systemd unit for the VPS fetch loop
-│   ├── tgpc-dg-dashboard.service   # systemd unit for the VPS dashboard (localhost-only)
-│   ├── vm_sweep_inactives.sh       # VM-side re-sweep of inactive records (runs tgpc.inactive_sweep sweep)
-│   ├── dg_open.sh                  # Start the local DG dashboard and open it in the browser
+│   ├── dg_local.sh                 # Nightly DG batch on this Mac (bounded batch, resumable, cloud sync)
+│   ├── com.tgpc.dg.plist           # LaunchAgent template (01:30 IST; __REPO__ filled in by make dg-scheduler-install)
 │   └── optimize_images.py          # Batch data/img/ → WebP q85, passport 413x531 resize
 ├── ui/                            # Production frontend (SvelteKit)
 │   ├── src/
@@ -163,7 +153,6 @@ tgpc/
 │   ├── test_bugfix_regressions.py  # 18: restore/backup/release/force regressions
 │   ├── test_security_audit_regressions.py  # 27: audit remediations (DG PII RLS posture, R2 publicity gate, email escaping, rclone temp paths)
 │   ├── test_details_dg.py          # 47: DG caption/detail parsing, captcha handling, RLS/Storage posture
-│   ├── test_dg_dashboard.py        # 19: DG monitor status merge, zombie-PID detection, IST formatting
 │   ├── test_merge_refresh.py       # 3: post-scrape merged-column refresh (fill/newer-wins/skip rules)
 │   ├── test_run_status.py          # 18: run record, day-boundary predicate, alert payload/failure isolation
 │   └── test_backfill_missing.py    # 5: blank-only backfill contract (never overwrites, never blanks)
@@ -627,7 +616,7 @@ captcha-gated at the source.
 | `TGPC_R2_PUBLIC_BASE` | `Config.load()` | R2 public bucket base URL (default: the `pub-…r2.dev` host) |
 | `TGPC_R2_DG_BUCKET` | `details_dg.push_file_to_r2()` | **Private** bucket for DG PII artifacts. Unset (or set to the public bucket) = pushes refuse; never falls back to the public bucket |
 | `TGPC_DG_WORKERS` | `fetch-dg` | DG fetch pool size (default 4, max 16) |
-| `TGPC_DG_RETRY_TERMINAL` | `scripts/dg_run.sh` | Whether the VM run re-attempts terminal DG failures |
+| `TGPC_DG_RETRY_TERMINAL` | `scripts/dg_local.sh` | Whether the local run re-attempts terminal DG failures |
 
 ### Frontend env vars
 
@@ -816,7 +805,7 @@ Job permissions: `actions: write`, `contents: write` (release upload).
 - `make check` is the local mirror of CI: it runs the eight gates (svelte-check, eslint, brand-color, unit tests, e2e typecheck, ruff, mypy, pytest-with-coverage) and exits non-zero if any fails. It deliberately does **not** chain them with `&&` — the usual reason to run it locally is "what exactly did I break?", and a first failure would hide the other seven. Each gate prints its own `ok`/`FAIL` line, and a failure prints the tail of that gate's output. It also compares the local `ruff`/`mypy` versions against the pins in `.github/workflows/ci.yml` (read from the file, never duplicated) and prints a note when they differ, because that skew is how a tree passes locally and fails CI. The two audit scans are excluded: they need the network and only fail once an advisory exists, so CI owns them.
 - `.github/workflows/ci.yml` is the only checks workflow (the separate `python.yml` and `ui.yml` were merged 2026-11; two entries bought nothing the filters did not already do). A single workflow can carry only one `paths:` trigger, so a `changes` job diffs the push — or the PR against its base — and sets `python` / `ui` outputs; the three real jobs run on those. It uses no extra action: `fetch-depth: 0` makes the base commit reachable and `git diff --name-only` is the whole implementation. An unusable base (new branch, force-push, all-zero sha) runs **every** job rather than none, because a skipped gate looks exactly like a passing one, and a change to `ci.yml` itself does the same.
 - The `ui` job runs on `ui/**` — ESLint + brand-color gate (`check:colors`) + svelte-check + the unit tests + a build + `npm audit --audit-level=high`. It defines **no** `PUBLIC_*` variables on purpose: they are declared non-static in `src/env.ts` and resolved at runtime, so the build needs none of them, and supplying placeholders in CI hid a real preview-build failure. Node comes from `ui/.node-version` (24.22.1 — the same file Cloudflare Pages reads) rather than a floating major, because the v3 build image defaults to Node 22.16.0, below Kit's `>=22.17` floor, and `engines` is ignored there (the default also emitted `EBADENGINE` on every deploy and is in LTS maintenance). Auto-deploys from `main` build `ui/`.
-- The `python` job runs on `tgpc/`, `tests/`, `scripts/`, or `pyproject.toml` — `ruff check`, `ruff format --check` (pinned 0.16.6, matching pre-commit), `mypy` over `tgpc/` (pinned 2.4.0), the full pytest suite with the coverage gate (75% of `tgpc/`, `pyproject.toml`), and a `pip-audit` dependency vulnerability scan. `scripts/**` is included because `tests/` covers it (`test_dg_dashboard.py`); without it a scripts-only change would skip the pytest run that guards it. Data freshness deliberately does **not** gate pushes: it is an operational condition, so `ui/e2e/smoke.spec.ts` asserts only the health *contract* (shape, not age) — freshness is the operator's job via the daily manual `make scrape`. (The former weekly k6 `load.yml` was removed 2026-09: agent-created, unread results. The 6-hourly `health.yml` freshness poll was removed 2026-10 for the same reason: manual scrape cadence made it pure noise. The 30-minute `uptime.yml` probe was removed 2026-11 on the same grounds — it alarmed through a GitHub issue nobody was watching, and lagged up to 30 minutes behind the failure it reported. `/api/health` is untouched: it still reports Supabase latency and `last_sync` age, and a browser visit is the check of record.)
+- The `python` job runs on `tgpc/`, `tests/`, `scripts/`, or `pyproject.toml` — `ruff check`, `ruff format --check` (pinned 0.16.6, matching pre-commit), `mypy` over `tgpc/` (pinned 2.4.0), the full pytest suite with the coverage gate (75% of `tgpc/`, `pyproject.toml`), and a `pip-audit` dependency vulnerability scan. `scripts/**` is included because `tests/` covers the shipped helpers; without it a scripts-only change would skip the pytest run that guards it. Data freshness deliberately does **not** gate pushes: it is an operational condition, so `ui/e2e/smoke.spec.ts` asserts only the health *contract* (shape, not age) — freshness is the operator's job via the daily manual `make scrape`. (The former weekly k6 `load.yml` was removed 2026-09: agent-created, unread results. The 6-hourly `health.yml` freshness poll was removed 2026-10 for the same reason: manual scrape cadence made it pure noise. The 30-minute `uptime.yml` probe was removed 2026-11 on the same grounds — it alarmed through a GitHub issue nobody was watching, and lagged up to 30 minutes behind the failure it reported. `/api/health` is untouched: it still reports Supabase latency and `last_sync` age, and a browser visit is the check of record.)
 
 **Dependency updates:**
 `.github/dependabot.yml` opens grouped weekly PRs for minor + patch updates across `npm` (`/ui`), `pip` (root `pyproject.toml`) and `github-actions`, leaves majors as individual PRs, and caps open PRs at 5/3/3. Dependabot was removed 2026-09 in favour of manual bumps; it is back because the two audit gates (`pip-audit` in `.github/workflows/ci.yml`, `npm audit --audit-level=high` in `.github/workflows/ci.yml`) only fail **after** an advisory exists — the most expensive moment to upgrade — and they still run on every Dependabot PR, so a grouped bump cannot merge a known-vulnerable tree. `.github/workflows/dependabot-auto-merge.yml` then auto-merges every PR that passes the `gate` check — major, minor and patch — so no update waits for human review. `.github/workflows/dependabot-auto-close.yml` closes any Dependabot PR whose CI fails, so a breaking update never sits in the queue waiting for attention; Dependabot retries with newer versions next cycle. Together the two make dependency updates fully hands-off: success merges, failure disappears, and nothing lands on a human's plate.
@@ -836,7 +825,7 @@ pytest tests/ -q --cov --cov-fail-under=75   # what CI runs
 below **75%**. The number is a floor against erosion, not a target — raise it
 when the suite genuinely improves, never lower it to unblock a change. The
 one-shot helpers in `scripts/` are reported separately (they are exercised by
-hand on the VM/dashboard), so they are not part of the gate.
+hand through the scheduled runners), so they are not part of the gate.
 
 The gate was 65% until 2026-10. It was raised because the two worst-covered
 modules were closed rather than argued away: the inactive-sweep and
@@ -875,7 +864,6 @@ Per-file breakdown:
 | `test_bugfix_regressions.py` | 18 | Restore-to-temp validation, backup rotation, release return codes, `--force` overrides, DetailError vs absence |
 | `test_security_audit_regressions.py` | 27 | Audit remediations: DG PII RLS posture, DG artifacts kept out of the public R2 bucket, report-email HTML escaping, rclone temp paths, photo redirect validation, backup restore validation, DG Storage bucket publicity gate |
 | `test_details_dg.py` | 49 | DG caption/detail parsing, captcha handling, and the RLS/Storage posture of the DG pipeline |
-| `test_dg_dashboard.py` | 19 | Local DG monitor: status merging, checkpoint-derived counts, zombie-PID detection, log tailing, IST formatting |
 | `test_merge_refresh.py` | 3 | Post-scrape merged-column refresh: fill/newer-wins/skip rules, changed-columns-only upserts, fail-closed credentials |
 | `test_backfill_missing.py` | 5 | Blank-only backfill contract: fills an empty column from the source, never overwrites an existing value, never blanks a column, never patches a record whose identity differs |
 

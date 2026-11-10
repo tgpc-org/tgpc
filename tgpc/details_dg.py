@@ -679,6 +679,62 @@ def _record_failure(
     stats["fail_by_reason"][reason] = stats["fail_by_reason"].get(reason, 0) + 1
 
 
+# --- Pending-ID selection ---------------------------------------------------
+
+
+def pending_ids(
+    reference_rows: List[Dict],
+    checkpoint: Dict,
+    *,
+    retry_terminal: bool = False,
+    limit: int | None = None,
+) -> List[str]:
+    """Registration numbers still worth fetching, in registry order.
+
+    Order follows the registry (serial number, records without one last), so a
+    bounded batch always covers the oldest records first. Completed records are
+    never re-fetched. Terminal failures are skipped unless `retry_terminal` is
+    set — an explicit "probe the whole set again", which is what re-attempts
+    the "not authorized for this record" gap at the council end.
+
+    Registrations that are not in the master list are dropped: a DG result is
+    published against an rph.json row, so a record with no row has nothing to
+    attach to and would only burn a captcha.
+
+    This used to live as a shell heredoc in the VM's fetch script; it is here
+    because the fetch now runs on the operator's Mac, and a selection rule
+    that decides what gets re-requested is worth a test.
+    """
+    order = {
+        r["registration_number"]: (r.get("serial_number") is None, r.get("serial_number") or 0)
+        for r in reference_rows
+        if r.get("registration_number")
+    }
+    completed = set(checkpoint.get("completed", []))
+    terminal = set(checkpoint.get("failed_terminal", {}))
+    done = completed if retry_terminal else (completed | terminal)
+
+    retryable = sorted(
+        (r for r in checkpoint.get("failed", {}) if r not in done and r in order),
+        key=lambda r: order.get(r, (True, 0)),
+    )
+    seen = set(retryable)
+    if retry_terminal:
+        term = sorted(
+            (r for r in terminal if r not in completed),
+            key=lambda r: order.get(r, (True, 0)),
+        )
+        retryable = term + retryable
+        seen |= set(term)
+
+    fresh = sorted(
+        (reg for reg in order if reg not in done and reg not in seen),
+        key=lambda r: order.get(r, (True, 0)),
+    )
+    ids = retryable + fresh
+    return ids if limit is None or limit <= 0 else ids[:limit]
+
+
 # --- Cloud sync (L2-L4) ----------------------------------------------------
 # Local L1 files are the crash buffer; these push them to redundant cloud
 # copies. Cloud failures never block the checkpoint — upserts are idempotent

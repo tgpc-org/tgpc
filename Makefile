@@ -1,4 +1,4 @@
-.PHONY: check scrape sync dispatch quota logs help scheduler-install scheduler-uninstall scheduler-status run-status dg-start dg-stop dg-resume dg-watch clean-data clean-ui clean
+.PHONY: check scrape sync dispatch quota logs help scheduler-install scheduler-uninstall scheduler-status run-status dg-local dg-scheduler-install dg-scheduler-uninstall dg-scheduler-status dg-pending clean-data clean-ui clean
 
 # Use the repo venv when present (survives Homebrew Python upgrades).
 PY := $(shell test -x .venv/bin/python && echo .venv/bin/python || echo python3)
@@ -122,6 +122,33 @@ scheduler-status:  # Show the LaunchAgent's state and last exit
 	@launchctl print gui/$$(id -u)/$(SCHED_LABEL) 2>/dev/null \
 		| grep -E "state|last exit|runs =|next fire" || echo "$(SCHED_LABEL) not installed"
 
+# --- Nightly DG contact fetch (launchd) ------------------------------------
+DG_SCHED_LABEL := com.tgpc.dg
+DG_SCHED_PLIST := $(HOME)/Library/LaunchAgents/$(DG_SCHED_LABEL).plist
+
+dg-local:  # Fetch the next batch of DG contacts now (resumable)
+	@./scripts/dg_local.sh
+
+dg-scheduler-install:  # Install the nightly DG fetch LaunchAgent (01:30 IST)
+	@mkdir -p "$(HOME)/Library/LaunchAgents" $(LOG_DIR)
+	@sed 's|__REPO__|$(CURDIR)|g' scripts/$(DG_SCHED_LABEL).plist > "$(DG_SCHED_PLIST)"
+	@plutil -lint "$(DG_SCHED_PLIST)" >/dev/null
+	@launchctl bootout gui/$$(id -u)/$(DG_SCHED_LABEL) 2>/dev/null || true
+	@launchctl bootstrap gui/$$(id -u) "$(DG_SCHED_PLIST)"
+	@echo "installed $(DG_SCHED_LABEL): 01:30 IST"
+
+dg-scheduler-uninstall:  # Remove the nightly DG fetch LaunchAgent
+	@launchctl bootout gui/$$(id -u)/$(DG_SCHED_LABEL) 2>/dev/null || true
+	@rm -f "$(DG_SCHED_PLIST)"
+	@echo "removed $(DG_SCHED_LABEL)"
+
+dg-scheduler-status:  # Show the DG LaunchAgent's state and last exit
+	@launchctl print gui/$$(id -u)/$(DG_SCHED_LABEL) 2>/dev/null \
+		| grep -E "state|last exit|runs =|next fire" || echo "$(DG_SCHED_LABEL) not installed"
+
+dg-pending:  # Show how many DG records are still worth fetching
+	@$(PY) -m tgpc dg-pending | head -1
+
 run-status:  # Show the last run's outcome (status, egress IP, duration)
 	@$(PY) -m tgpc.run_status
 
@@ -130,25 +157,6 @@ quota:  # Show free quota usage for all services
 
 help:  # List all commands
 	@grep -E '^[a-z-]+:  #' $(MAKEFILE_LIST) | sed 's/:  #/ — /'
-
-# DG contact collection: the VM does the fetching.
-DG_VM ?= $(shell cat data/dg_vm.conf 2>/dev/null)
-
-dg-start:  # Start fetching (stops any running fetch first, then starts fresh)
-	@echo "Stopping any running fetch first..."
-	@./scripts/vps_ctl.sh stop "pre-start" 2>/dev/null || true
-	@sleep 2
-	DG_VM=$(DG_VM) ./scripts/dg_run.sh --retry-terminal --restart
-
-dg-stop:  # Stop the run after the current record (nothing lost)
-	./scripts/vps_ctl.sh stop "$(MSG)"
-
-dg-resume:  # Unpause the run
-	./scripts/vps_ctl.sh resume
-
-dg-watch:  # Stream the fetch log live (Ctrl+C stops viewing only)
-	gcloud compute ssh tgpc-dg-fetch --zone=asia-south1-c --tunnel-through-iap \
-		--command='sudo -u tgpc-mac tail -f /home/tgpc-mac/tgpc/data/dg_fetch.log'
 
 # Housekeeping. Deliberately conservative: NEVER removes rph.json, backups/,
 # dg_contacts.jsonl (captcha-gated — expensive to re-fetch) or any *.jsonl

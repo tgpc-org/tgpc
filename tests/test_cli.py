@@ -365,6 +365,77 @@ class ScrapeFlowTests(unittest.TestCase):
         mgr.refresh_merged_columns.assert_not_called()
 
 
+class DgPendingTests(unittest.TestCase):
+    """`dg-pending` is how the local DG runner decides what to fetch."""
+
+    def _files(self, tmp):
+        ref = Path(tmp) / "rph.json"
+        cp = Path(tmp) / "cp.json"
+        out = Path(tmp) / "ids.txt"
+        ref.write_text(
+            json.dumps(
+                [
+                    {"registration_number": "TS1", "serial_number": 1},
+                    {"registration_number": "TS2", "serial_number": 2},
+                ]
+            ),
+            encoding="utf-8",
+        )
+        cp.write_text(
+            json.dumps({"completed": ["TS1"], "failed": {}, "failed_terminal": {}}),
+            encoding="utf-8",
+        )
+        return ref, cp, out
+
+    def test_writes_the_pending_ids_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ref, cp, out = self._files(tmp)
+            run_main(
+                [
+                    "dg-pending",
+                    "--reference",
+                    str(ref),
+                    "--checkpoint",
+                    str(cp),
+                    "--out",
+                    str(out),
+                ]
+            )
+            self.assertEqual(out.read_text(encoding="utf-8").split(), ["TS2"])
+
+    def test_limit_bounds_the_output(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ref, cp, out = self._files(tmp)
+            run_main(
+                [
+                    "dg-pending",
+                    "--reference",
+                    str(ref),
+                    "--checkpoint",
+                    str(cp),
+                    "--out",
+                    str(out),
+                    "--limit",
+                    "0",
+                ]
+            )
+            self.assertEqual(out.read_text(encoding="utf-8").split(), ["TS2"])
+
+    def test_missing_reference_is_an_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(SystemExit) as ctx:
+                run_main(
+                    [
+                        "dg-pending",
+                        "--reference",
+                        str(Path(tmp) / "nope.json"),
+                        "--checkpoint",
+                        str(Path(tmp) / "cp.json"),
+                    ]
+                )
+            self.assertEqual(ctx.exception.code, 1)
+
+
 class FetchDgGuardTests(unittest.TestCase):
     def test_no_ids_is_a_usage_error(self):
         with (

@@ -266,6 +266,40 @@ def _cmd_creds_delete(args):
         print(f"{args.key} not found in Keychain")
 
 
+def _cmd_dg_pending(args):
+    """Print (and optionally write) the DG registration numbers still to fetch."""
+    import json
+    from pathlib import Path
+
+    from tgpc.details_dg import pending_ids
+
+    reference = Path(args.reference)
+    checkpoint_path = Path(args.checkpoint)
+    try:
+        rows = json.loads(reference.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        print(f"Cannot read {reference}: {e}", file=sys.stderr)
+        raise SystemExit(1)
+    try:
+        checkpoint = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        checkpoint = {}
+
+    ids = pending_ids(
+        rows,
+        checkpoint,
+        retry_terminal=args.retry_terminal,
+        limit=args.limit,
+    )
+    if args.out:
+        out = Path(args.out)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text("\n".join(ids) + ("\n" if ids else ""), encoding="utf-8")
+    print(f"{len(ids)} pending")
+    for reg in ids:
+        print(reg)
+
+
 def main():
     parser = argparse.ArgumentParser(description="TGPC RPh Index Manager")
     subparsers = parser.add_subparsers(dest="command")
@@ -332,6 +366,21 @@ def main():
     validate_dg_parser.add_argument("--out", default="data/dg_contacts.jsonl", help="Contacts jsonl to validate")
     validate_dg_parser.add_argument("--raw-dir", default="data/dg_raw", help="Per-record raw snapshot dir")
     validate_dg_parser.add_argument("--max-list", type=int, default=50, help="Max flagged IDs to list")
+
+    # Dg-pending command: which registration numbers are still worth fetching.
+    # The DG fetch now runs on the operator's Mac, so the selection rule that
+    # decides what gets re-requested needs a first-class command (it used to
+    # be a shell heredoc inside the VM's fetch script).
+    dg_pending_parser = subparsers.add_parser("dg-pending", help="List registration numbers still worth fetching (DG)")
+    dg_pending_parser.add_argument("--reference", default="data/rph.json", help="rph.json master list")
+    dg_pending_parser.add_argument("--checkpoint", default="data/dg_fetch_checkpoint.json", help="DG fetch checkpoint")
+    dg_pending_parser.add_argument("--out", default="", help="Write the IDs here (default: stdout only)")
+    dg_pending_parser.add_argument("--limit", type=int, default=None, help="Max IDs (0 = all)")
+    dg_pending_parser.add_argument(
+        "--retry-terminal",
+        action="store_true",
+        help="Also re-attempt terminal failures (explicit re-probe of the whole set)",
+    )
 
     # Fetch-dg command (getdetailsdg captcha flow: capture + save contact details)
     fetch_dg_parser = subparsers.add_parser("fetch-dg", help="Fetch getdetailsdg records with captcha")
@@ -423,6 +472,10 @@ def main():
             _cmd_creds_list(args)
         elif args.creds_cmd == "delete":
             _cmd_creds_delete(args)
+        return
+
+    if args.command == "dg-pending":
+        _cmd_dg_pending(args)
         return
 
     manager = Manager()

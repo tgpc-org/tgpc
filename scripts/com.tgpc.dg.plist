@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Nightly DG contact fetch for TGPC RPh Index.
+
+  Installed by `make dg-scheduler-install`, which substitutes __REPO__ with
+  the checkout path and copies this file to ~/Library/LaunchAgents/.
+
+  01:30 IST, one bounded batch (DG_BATCH, default 600 records). The fetch
+  checkpoints after every record, so the next night resumes where this one
+  stopped. Nothing pending -> the script exits without touching the site.
+
+  Keep this job in the GUI session (no `User`/`LimitLoadToSessionType`): the
+  credentials are in the login Keychain.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.tgpc.dg</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>__REPO__/scripts/dg_local.sh</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>__REPO__</string>
+
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Hour</key><integer>1</integer><key>Minute</key><integer>30</integer></dict>
+  </array>
+
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>StandardOutPath</key>
+  <string>__REPO__/data/logs/launchd-dg.log</string>
+  <key>StandardErrorPath</key>
+  <string>__REPO__/data/logs/launchd-dg.log</string>
+</dict>
+</plist>
