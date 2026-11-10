@@ -248,12 +248,28 @@ class Scraper:
         self.urls = {
             "total": f"{self.config.base_url}/pharmacy/srchpharmacisttotal",
             "search": f"{self.config.base_url}/pharmacy/getsearchpharmacist",
+            # Preflight target. The bulk table above is ~76 MB and was being
+            # downloaded twice per run (once as the "am I blocked?" probe, once
+            # as the scrape). This is the same app on the same host at ~1.2 KB,
+            # so the probe is effectively free and the council serves a
+            # fraction of the traffic. A probe that passes while the bulk
+            # endpoint is blocked is still caught: the scrape then raises
+            # source_unavailable, and the 90%-of-existing cap catches a
+            # truncated page.
+            "probe": f"{self.config.base_url}/pharmacy/srchpharmacist",
         }
 
         logger.info("Simple scraper initialized - direct connection only")
 
     def health_check(self, timeout: int | None = None, max_retries: int = 3) -> bool:
         """Quick health check to detect if connection is blocked.
+
+        Probes the small search page, not the 76 MB bulk table: the bulk table
+        is fetched by the scrape itself a moment later, and downloading it
+        twice per run doubled the load on the council's server (and with it the
+        chance of tripping a rate rule). The real guard against a partial or
+        empty page remains the scrape's own error handling plus the
+        90%-of-existing-record-count cap.
 
         Args:
             timeout: Custom timeout for the request. Uses config.read_timeout if None.
@@ -262,7 +278,7 @@ class Scraper:
         for attempt in range(max_retries):
             try:
                 t = timeout if timeout is not None else self.config.read_timeout
-                response = self.session.get(self.urls["total"], timeout=(self.config.connect_timeout, t))
+                response = self.session.get(self.urls["probe"], timeout=(self.config.connect_timeout, t))
 
                 if response.status_code != 200:
                     logger.warning(

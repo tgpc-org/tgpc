@@ -429,8 +429,8 @@ worked around.
 
 | Symptom | Detected by | Behaviour | Operator action |
 |---|---|---|---|
-| Source blocked by WAF | Body markers in health check | `blocked`; run stops before scraping | Re-run later / adjust egress (WARP) |
-| Source timeout / 5xx | `_is_source_unavailable_error` | `source_unavailable`; data preserved | Re-run |
+| Source blocked by WAF | Body markers in the preflight probe | `blocked`; run stops before scraping, exits 2, alerts | Retries at 10/14/18; if all fail, switch egress (below) |
+| Source timeout / 5xx | `_is_source_unavailable_error` | `source_unavailable`; data preserved, exits 2, alerts | Retry slot picks it up |
 | Partial/empty scrape | `<90%` of existing count | `safety_abort`; old data kept | Investigate; `--force` only with evidence |
 | Corrupt R2 backup | `validate_rph_backup` | Falls through to older backup | None, automatic |
 | Enrichment identity mismatch | Registration/name/father/category compare | Record not written, counted as error | Fix parser, re-run |
@@ -445,6 +445,50 @@ worked around.
 Recurring principle: **every automatic path preserves the last known good
 state.** There is no code path where a transient failure deletes data, blanks a
 column, or publishes a partial object.
+
+### When the source blocks this host
+
+The council only answers Indian IPs, so the scrape runs on the operator's Mac
+(see §6). That makes egress a single point of failure, and it is handled in
+four layers rather than by keeping a second host:
+
+1. **Cheap probe.** The preflight fetches `/pharmacy/srchpharmacist` (~1.2 KB,
+   same app, same host) instead of the 76 MB bulk table, which used to be
+   downloaded twice per run. Council load per run halved, and the request
+   pattern most likely to trip a rate rule is gone. A probe that passes while
+   the bulk endpoint is blocked is still caught by `source_unavailable` and the
+   90% cap.
+2. **Retry across the day.** launchd runs `scripts/daily_scrape.sh` at 06:00,
+   10:00, 14:00 and 18:00. The wrapper exits immediately when
+   `data/last_run.json` says today already succeeded, so the extra slots only
+   cost anything on a day that failed. launchd (not cron) also runs a slot
+   missed while the Mac was asleep, and runs in the login session where the
+   Keychain credentials live.
+3. **Loud failure.** Every run writes `data/last_run.json` (status, detail,
+   egress IP, duration) and a non-success exits **2** and sends one short
+   operational alert. This replaced the old behaviour: `_write_update_outputs`
+   only wrote `$GITHUB_OUTPUT`, so a scheduled run could fail silently for
+   weeks. The alert carries no record lists — records email always uses the
+   default `sync_to_email` report.
+4. **Switchable egress.** `Config.load()` already honours `TGPC_PROXY_URL`
+   (`HTTPS_PROXY`/`HTTP_PROXY` too), and dispatch honours `HTTPS_PROXY`. So
+   recovery is an environment variable, not a code change:
+
+   | Path | Cost | Notes |
+   |---|---|---|
+   | Direct (home broadband) | — | Primary; residential Indian IP |
+   | Phone hotspot | ₹0 | Different Indian ASN; `make scrape` after tethering |
+   | `TGPC_PROXY_URL=socks5h://…` | ₹0 | Any Indian proxy, e.g. `ssh -D` to a host you control |
+   | Tor `ExitNodes {in}` | ₹0 | Last resort: free/OSS but slow for 76 MB and often blocked |
+
+   There is deliberately **no** always-on second host: the portal keeps serving
+   the last snapshot while the source is unreachable, `/api/health` reports
+   `degraded` after 48 h, and the site shows `LAST SYNC`. A block costs
+   freshness, not availability.
+
+`data/last_run.json` also records the egress IP of every run, which is the only
+reliable way to learn how often the ISP rotates it (there is no published
+cadence, and the lease the router shows is local, not upstream).
 
 ---
 

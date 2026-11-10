@@ -1002,7 +1002,13 @@ class NoResumeGuardTests(unittest.TestCase):
                 encoding="utf-8",
             )
             argv = ["tgpc", "fetch-dg", "--ids", "TS2", "--checkpoint", str(cp), "--no-resume"]
-            with patch.object(sys, "argv", argv):
+            # fetch-dg is a WARP command: without this patch the test connects
+            # and disconnects the developer's real WARP tunnel (and the
+            # disconnect only surfaces after pytest's capture ends).
+            with (
+                patch.object(sys, "argv", argv),
+                patch.object(cli, "_warp_connect", return_value=False),
+            ):
                 with self.assertRaises(SystemExit) as ctx:
                     cli.main()
             self.assertEqual(ctx.exception.code, 2)
@@ -1038,7 +1044,8 @@ class NoResumeGuardTests(unittest.TestCase):
             ]
             with patch.object(sys, "argv", argv):
                 with patch("tgpc.details_dg.run_fetch", return_value={"done": 0}) as rf:
-                    cli.main()
+                    with patch.object(cli, "_warp_connect", return_value=False):
+                        cli.main()
             self.assertTrue(rf.called)
 
 

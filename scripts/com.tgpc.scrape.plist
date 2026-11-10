@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Scheduled scrape for TGPC RPh Index.
+
+  Installed by `make scheduler-install`, which substitutes __REPO__ with the
+  checkout path and copies this file to ~/Library/LaunchAgents/.
+
+  Four slots: 06:00 does the work, 10:00/14:00/18:00 are free retries that
+  exit immediately when the day already succeeded (scripts/daily_scrape.sh
+  checks data/last_run.json). launchd runs a slot that was missed because the
+  Mac was asleep as soon as it wakes, which cron never does.
+
+  Keep this job in the GUI session (no `User`/`LimitLoadToSessionType`): the
+  credentials are in the login Keychain.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.tgpc.scrape</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>__REPO__/scripts/daily_scrape.sh</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>__REPO__</string>
+
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>10</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>14</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>18</integer><key>Minute</key><integer>0</integer></dict>
+  </array>
+
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>StandardOutPath</key>
+  <string>__REPO__/data/logs/launchd-scrape.log</string>
+  <key>StandardErrorPath</key>
+  <string>__REPO__/data/logs/launchd-scrape.log</string>
+</dict>
+</plist>

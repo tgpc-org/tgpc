@@ -65,10 +65,13 @@ tgpc/
 │   ├── details_dg.py               # DG getdetailsdg captcha flow → PII contacts; L1-L4 redundancy + --resume (~1390 lines)
 │   ├── merge_refresh.py            # Post-scrape recompute of DG-merged rph columns (idempotent, warn-and-continue)
 │   ├── dispatch.py                 # Council dispatch-list PDFs -> R2 `dispatch/` (name normalisation, upload, verify)
+│   ├── run_status.py               # data/last_run.json + failure alert + "did today already succeed?" for the scheduler
 │   ├── backfill_missing.py         # Blank-only column fills from the live source (strictly additive)
 │   ├── dg_migration.sql            # rph_dg_contacts table DDL (service-role only, no anon grants)
 │   └── dg_serial_int_migration.sql # rph_dg_contacts.serial_number TEXT -> INTEGER
 ├── scripts/                        # Standalone helpers (run from repo root)
+│   ├── daily_scrape.sh             # Scheduled scrape entry point: lock, skip-if-done-today, caffeinate, launchd log
+│   ├── com.tgpc.scrape.plist       # LaunchAgent template (06/10/14/18 IST; __REPO__ filled in by make scheduler-install)
 │   ├── dg_dashboard.py             # Local DG fetch dashboard (localhost, no login: status + START/STOP + VPS controls)
 │   ├── dg_dashboard.html           # DG monitor UI (dark mode, start/stop, live stats)
 │   ├── dg_captcha_bench.py         # Fetch N live DG captchas, OCR-guess, dump for human labeling
@@ -149,7 +152,7 @@ tgpc/
 │   │   ├── auth.setup.ts          # One-time admin login (E2E_ADMIN_SECRET) -> e2e/.auth.json
 │   │   ├── contrast-baseline.json # Tracked contrast debt baseline
 │   │   └── update-baseline.mjs    # Refresh the baseline after intentional palette changes
-├── tests/                          # 274 tests, 16 files (all mocked — no real HTTP/Supabase)
+├── tests/                          # 298 tests, 17 files (all mocked — no real HTTP/Supabase)
 │   ├── test_scraper.py             # 24: timeouts, WAF/blocked detection, table fallback, bad rows, detail parsing, legacy headers, missing tables, TLS verification + source-host rules
 │   ├── test_manager_update.py      # 7: safety guard, dedup/sort/GITHUB_OUTPUT, deterministic ordering, source-unavailable, +3 sync return-value regressions
 │   ├── test_manager_enrichment.py  # 3: enrichment save, registration mismatch, null serial_number regression
@@ -162,6 +165,7 @@ tgpc/
 │   ├── test_details_dg.py          # 47: DG caption/detail parsing, captcha handling, RLS/Storage posture
 │   ├── test_dg_dashboard.py        # 19: DG monitor status merge, zombie-PID detection, IST formatting
 │   ├── test_merge_refresh.py       # 3: post-scrape merged-column refresh (fill/newer-wins/skip rules)
+│   ├── test_run_status.py          # 18: run record, day-boundary predicate, alert payload/failure isolation
 │   └── test_backfill_missing.py    # 5: blank-only backfill contract (never overwrites, never blanks)
 └── (credentials stored in macOS Keychain, not files)
 ```
@@ -827,7 +831,7 @@ mypy                                         # tgpc/ only, config in pyproject.t
 pytest tests/ -q --cov --cov-fail-under=75   # what CI runs
 ```
 
-274 tests across 16 files. Coverage is measured over the installed package
+298 tests across 17 files. Coverage is measured over the installed package
 (`tgpc/`, configured in `pyproject.toml`) and sits at ~77% today; CI fails
 below **75%**. The number is a floor against erosion, not a target — raise it
 when the suite genuinely improves, never lower it to unblock a change. The

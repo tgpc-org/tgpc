@@ -8,9 +8,12 @@ import getpass
 import os
 import subprocess
 import sys
+import time
+
 from tgpc.manager import Manager
 from tgpc.progress import Phase
 from tgpc.quota import show_quotas
+from tgpc.run_status import egress_ip, send_alert, write_run_status
 from tgpc.utils import (
     KEYCHAIN_SERVICE,
     CREDENTIAL_KEYS,
@@ -171,6 +174,48 @@ def _run_dispatch(
     if report.failed_names:
         print(f"  failed: {', '.join(report.failed_names)}", file=sys.stderr)
         raise SystemExit(1)
+
+
+# Human-readable detail for each non-success status. The log has the specifics;
+# this is what lands in data/last_run.json and in the alert email.
+_STATUS_DETAIL = {
+    "blocked": "source preflight failed — the source is blocked or unreachable from this host",
+    "source_unavailable": "source error during scrape — existing data kept, nothing synced",
+    "safety_abort": "record count dropped more than 10% — refusing to overwrite good data",
+    "empty_scrape": "scrape returned no records — existing data kept",
+    "restore_failed": "data/rph.json is missing and the R2 backup restore failed",
+    "sync_failed": "a cloud destination failed — see the run log",
+    "dispatch_failed": "a dispatch list failed to upload — see the run log",
+}
+
+
+def _finish_run(
+    status: str,
+    started: float,
+    exit_code: int = 2,
+    host_egress: str = "",
+    command: str = "scrape",
+) -> None:
+    """Record the outcome, alert if it was not a success, and fail loudly.
+
+    Silence was the problem: a blocked source used to log one line and exit 0,
+    so a scheduled run could fail for weeks unnoticed. `data/last_run.json` is
+    what the scheduler reads (to skip a day that already succeeded), the email
+    is what a human reads, and the non-zero exit is what any wrapper sees.
+    """
+    record = write_run_status(
+        status,
+        error=_STATUS_DETAIL.get(status, "") if status != "updated" else "",
+        duration_s=round(time.monotonic() - started, 1),
+        egress=egress_ip(),
+        host_egress=host_egress,
+        command=command,
+    )
+    if status == "updated":
+        return
+    print(f"Run status: {status} — {_STATUS_DETAIL.get(status, '')}", file=sys.stderr)
+    send_alert(record)
+    raise SystemExit(exit_code)
 
 
 # --- Credential CLI commands ---
@@ -382,6 +427,11 @@ def main():
 
     manager = Manager()
 
+    # Sample the host's own address BEFORE any tunnel is raised: once WARP is
+    # up, the observed egress is Cloudflare's, which says nothing about the
+    # ISP lease. This is the number that answers "has my IP changed?".
+    host_egress = egress_ip() if args.command in ("update", "scrape") else ""
+
     # Connect WARP for network-level routing (update and sync hit external
     # services). `scrape` is one process so its WARP connection covers both
     # update and dispatch and is torn down only when the whole run ends.
@@ -395,11 +445,23 @@ def main():
     # covers SystemExit / early returns. A redundant try/finally here was
     # removed (CODE_REVIEW.md L6).
     if args.command in ("update", "scrape"):
-        _run_update(manager, args)
+        started = time.monotonic()
+        try:
+            status = _run_update(manager, args)
+        except SystemExit:
+            # A failed destination aborts the run (exit 1). Record it before
+            # propagating so the scheduler and the alert see the same outcome.
+            _finish_run("sync_failed", started, exit_code=1, host_egress=host_egress, command=args.command)
+            raise
         # Dispatch runs after a successful update in the SAME process, so the
         # WARP tunnel stays up instead of being torn down between two commands.
         if args.command == "scrape":
-            _run_dispatch()
+            try:
+                _run_dispatch()
+            except SystemExit:
+                _finish_run("dispatch_failed", started, exit_code=1, host_egress=host_egress, command=args.command)
+                raise
+        _finish_run(status, started, host_egress=host_egress, command=args.command)
         return
     elif args.command == "sync":
         with Phase("Sync to cloud destinations", 1, 1):

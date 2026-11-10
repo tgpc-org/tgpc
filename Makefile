@@ -1,4 +1,4 @@
-.PHONY: check scrape sync dispatch quota logs help dg-start dg-stop dg-resume dg-watch clean-data clean-ui clean
+.PHONY: check scrape sync dispatch quota logs help scheduler-install scheduler-uninstall scheduler-status run-status dg-start dg-stop dg-resume dg-watch clean-data clean-ui clean
 
 # Use the repo venv when present (survives Homebrew Python upgrades).
 PY := $(shell test -x .venv/bin/python && echo .venv/bin/python || echo python3)
@@ -96,6 +96,34 @@ logs:  # Show the newest scrape log (FOLLOW=1 to tail it)
 	if [ -z "$$last" ]; then echo "no run logs yet — run 'make scrape'"; exit 1; fi; \
 	echo "== $$last =="; \
 	if [ -n "$(FOLLOW)" ]; then tail -f "$$last"; else tail -n 60 "$$last"; fi
+
+# --- Scheduled scrape (launchd) -------------------------------------------
+# The council only answers Indian IPs, so the scrape runs on this Mac instead
+# of a hosted runner. Four slots a day: 06:00 works, the rest are free retries
+# that exit immediately once the day has succeeded.
+SCHED_LABEL := com.tgpc.scrape
+SCHED_PLIST := $(HOME)/Library/LaunchAgents/$(SCHED_LABEL).plist
+
+scheduler-install:  # Install the daily scrape LaunchAgent (06/10/14/18 IST)
+	@mkdir -p "$(HOME)/Library/LaunchAgents" $(LOG_DIR)
+	@sed 's|__REPO__|$(CURDIR)|g' scripts/$(SCHED_LABEL).plist > "$(SCHED_PLIST)"
+	@plutil -lint "$(SCHED_PLIST)" >/dev/null
+	@launchctl bootout gui/$$(id -u)/$(SCHED_LABEL) 2>/dev/null || true
+	@launchctl bootstrap gui/$$(id -u) "$(SCHED_PLIST)"
+	@echo "installed $(SCHED_LABEL): 06:00, 10:00, 14:00, 18:00 IST"
+	@echo "logs: $(LOG_DIR)/scheduled-scrape.log"
+
+scheduler-uninstall:  # Remove the daily scrape LaunchAgent
+	@launchctl bootout gui/$$(id -u)/$(SCHED_LABEL) 2>/dev/null || true
+	@rm -f "$(SCHED_PLIST)"
+	@echo "removed $(SCHED_LABEL)"
+
+scheduler-status:  # Show the LaunchAgent's state and last exit
+	@launchctl print gui/$$(id -u)/$(SCHED_LABEL) 2>/dev/null \
+		| grep -E "state|last exit|runs =|next fire" || echo "$(SCHED_LABEL) not installed"
+
+run-status:  # Show the last run's outcome (status, egress IP, duration)
+	@$(PY) -m tgpc.run_status
 
 quota:  # Show free quota usage for all services
 	$(PY) -m tgpc quota

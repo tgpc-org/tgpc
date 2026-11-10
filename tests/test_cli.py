@@ -23,12 +23,20 @@ import tgpc.__main__ as cli
 
 
 def run_main(argv, **patches):
-    """Run cli.main() with argv and return the patched Manager instance."""
+    """Run cli.main() with argv and return the patched Manager instance.
+
+    `write_run_status`, `egress_ip` and `send_alert` are stubbed for every
+    test: the CLI records the outcome of each run and alerts on failure, and
+    tests must neither touch `data/last_run.json` nor the network.
+    """
     mgr = MagicMock()
     defaults = {
         "Manager": MagicMock(return_value=mgr),
         "_warp_connect": MagicMock(return_value=False),
         "Phase": lambda *a, **kw: contextlib.nullcontext(),
+        "write_run_status": MagicMock(return_value={"status": "recorded"}),
+        "egress_ip": MagicMock(return_value="49.37.155.92"),
+        "send_alert": MagicMock(return_value=True),
     }
     defaults.update(patches)
     with contextlib.ExitStack() as stack:
@@ -157,11 +165,66 @@ class UpdateFlowTests(unittest.TestCase):
 
     def test_source_unavailable_skips_every_sync(self):
         mgr = self._manager(status="source_unavailable")
-        run_main(["update"], Manager=MagicMock(return_value=mgr))
+        with self.assertRaises(SystemExit) as ctx:
+            run_main(["update"], Manager=MagicMock(return_value=mgr))
+        self.assertEqual(ctx.exception.code, 2)
 
         mgr.run_daily_update.assert_called_once_with(force=False)
         mgr.sync_to_supabase.assert_not_called()
         mgr.enrich_new_records.assert_not_called()
+
+    def test_blocked_run_is_recorded_and_alerted(self):
+        # The whole point: a blocked source used to exit 0 with one log line.
+        mgr = self._manager(status="blocked")
+        record = MagicMock()
+        write = MagicMock(return_value=record)
+        alert = MagicMock(return_value=True)
+
+        with self.assertRaises(SystemExit) as ctx:
+            run_main(
+                ["update"],
+                Manager=MagicMock(return_value=mgr),
+                write_run_status=write,
+                send_alert=alert,
+            )
+        self.assertEqual(ctx.exception.code, 2)
+        self.assertEqual(write.call_args.args[0], "blocked")
+        self.assertIn("preflight", write.call_args.kwargs["error"])
+        alert.assert_called_once_with(record)
+        mgr.sync_to_supabase.assert_not_called()
+
+    def test_successful_run_records_status_without_alerting(self):
+        mgr = self._manager(records=["R1"])
+        write = MagicMock(return_value={})
+        alert = MagicMock()
+
+        run_main(
+            ["update"],
+            Manager=MagicMock(return_value=mgr),
+            write_run_status=write,
+            send_alert=alert,
+        )
+
+        self.assertEqual(write.call_args.args[0], "updated")
+        self.assertEqual(write.call_args.kwargs["error"], "")
+        alert.assert_not_called()
+
+    def test_failed_destination_is_recorded_before_the_run_exits(self):
+        mgr = self._manager(new=["R1"], records=["R1"])
+        mgr.sync_to_gdrive = MagicMock(return_value=False)
+        write = MagicMock(return_value={})
+        alert = MagicMock()
+
+        with self.assertRaises(SystemExit) as ctx:
+            run_main(
+                ["update"],
+                Manager=MagicMock(return_value=mgr),
+                write_run_status=write,
+                send_alert=alert,
+            )
+        self.assertEqual(ctx.exception.code, 1)
+        self.assertEqual(write.call_args.args[0], "sync_failed")
+        alert.assert_called_once()
 
     def test_no_sync_skips_every_cloud_step_including_enrichment(self):
         # --no-sync means "do not touch the cloud at all": enrichment uploads

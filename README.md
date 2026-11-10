@@ -32,7 +32,7 @@ search UI with per-record profile pages.
 | Files | Cloudflare R2 (photos, dispatch PDFs) |
 | Hosting | Cloudflare Pages (push to `main` deploys) |
 | Pipeline | Python 3.12 (CI), requests + BeautifulSoup + supabase-py |
-| Tests | `pytest` (274), `node:test` (107), Playwright e2e |
+| Tests | `pytest` (298), `node:test` (107), Playwright e2e |
 
 ## Repository layout
 
@@ -78,6 +78,8 @@ make sync              # re-sync data/rph.json without scraping
 make dispatch          # copy newly published council dispatch-list PDFs into R2
 make quota             # free-tier usage for Supabase / R2 / Resend / Drive
 make logs              # newest run log (FOLLOW=1 to tail it)
+make scheduler-install # daily scrape LaunchAgent (06/10/14/18 IST; needs an Indian IP)
+make run-status        # last run's outcome: status, egress IP, duration
 ```
 
 `make check` also needs the dev tools, which are not runtime dependencies:

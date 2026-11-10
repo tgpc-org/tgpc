@@ -85,6 +85,31 @@ class ScraperParsingTests(unittest.TestCase):
             self.assertTrue(_is_blocked(f"<body>{marker}</body>"), marker)
         self.assertFalse(_is_blocked("<body><table>real content " + "x" * 1000 + "</table></body>"))
 
+    def test_health_check_probes_the_small_page_not_the_bulk_table(self):
+        # The preflight used to download the 76 MB table and the scrape then
+        # downloaded it again — ~152 MB of council traffic per run, and the
+        # likeliest way to trip a rate rule.
+        scraper = Scraper()
+        response = MagicMock(status_code=200, text="<html>Pharmacy Council</html>")
+        with patch.object(scraper.session, "get", return_value=response) as get:
+            self.assertTrue(scraper.health_check(max_retries=1))
+
+        url = get.call_args.args[0]
+        self.assertTrue(url.endswith("/pharmacy/srchpharmacist"), url)
+        self.assertNotIn("srchpharmacisttotal", url)
+
+    def test_health_check_still_rejects_a_block_page(self):
+        scraper = Scraper()
+        response = MagicMock(status_code=200, text="Access Denied — unusual traffic detected")
+        with patch.object(scraper.session, "get", return_value=response):
+            self.assertFalse(scraper.health_check(max_retries=1))
+
+    def test_health_check_rejects_a_non_200(self):
+        scraper = Scraper()
+        response = MagicMock(status_code=403, text="")
+        with patch.object(scraper.session, "get", return_value=response):
+            self.assertFalse(scraper.health_check(max_retries=1))
+
     def test_extract_basic_records_falls_back_to_first_table_and_skips_bad_rows(self):
         html = """
         <html>
