@@ -264,12 +264,18 @@ class ScrapeFlowTests(unittest.TestCase):
         sync.assert_called_once_with(dry_run=False, force=False, limit=None, write_fallback=False)
 
     def test_scrape_keeps_warp_up_until_the_run_ends(self):
+        import tgpc.dispatch as dispatch_mod
+
         mgr = self._manager()
         connect = MagicMock(return_value=True)
         disconnect = MagicMock()
+        report = dispatch_mod.SyncReport(published=241, already_present=241)
 
         try:
-            with patch.object(cli, "_warp_disconnect", disconnect):
+            with (
+                patch.object(cli, "_warp_disconnect", disconnect),
+                patch.object(dispatch_mod, "sync_dispatch", return_value=report),
+            ):
                 run_main(
                     ["scrape"],
                     Manager=MagicMock(return_value=mgr),
