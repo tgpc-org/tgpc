@@ -210,6 +210,92 @@ class UpdateFlowTests(unittest.TestCase):
         self.assertEqual(ctx.exception.code, 1)
 
 
+class ScrapeFlowTests(unittest.TestCase):
+    """`scrape` runs update AND dispatch in one process.
+
+    That is the whole point of the command: `make scrape` used to invoke
+    `tgpc update && tgpc dispatch` as two processes, so the first process's
+    atexit handler disconnected WARP before dispatch started. One process =
+    one tunnel for the entire run.
+    """
+
+    def _manager(self, new=(), records=()):
+        mgr = MagicMock()
+        mgr.run_daily_update.return_value = "updated"
+        mgr._last_new_regs = set(new)
+        mgr._last_modified_regs = set()
+        mgr._last_removed_regs = set()
+        mgr.file_manager.load.return_value = [SimpleNamespace(registration_number=r) for r in records]
+        for name in (
+            "sync_to_supabase",
+            "sync_to_supabase_storage",
+            "sync_to_r2",
+            "sync_to_gdrive",
+            "sync_to_release",
+            "sync_to_email",
+            "delete_removed_from_supabase",
+        ):
+            setattr(mgr, name, MagicMock(return_value=True))
+        mgr.refresh_merged_columns.return_value = {
+            "dor_filled": 0,
+            "home_filled": 0,
+            "validity_updated": 0,
+            "review_skipped": 0,
+        }
+        return mgr
+
+    def test_scrape_runs_update_then_dispatch(self):
+        import tgpc.dispatch as dispatch_mod
+
+        mgr = self._manager(new=["R1"], records=["R1"])
+        calls = []
+        mgr.run_daily_update.side_effect = lambda **kw: (calls.append("update"), "updated")[1]
+        report = dispatch_mod.SyncReport(published=241, already_present=234)
+
+        with patch.object(
+            dispatch_mod,
+            "sync_dispatch",
+            side_effect=lambda **kw: (calls.append("dispatch"), report)[1],
+        ) as sync:
+            run_main(["scrape"], Manager=MagicMock(return_value=mgr))
+
+        self.assertEqual(calls, ["update", "dispatch"])
+        mgr.sync_to_r2.assert_called_once()
+        sync.assert_called_once_with(dry_run=False, force=False, limit=None, write_fallback=False)
+
+    def test_scrape_keeps_warp_up_until_the_run_ends(self):
+        mgr = self._manager()
+        connect = MagicMock(return_value=True)
+        disconnect = MagicMock()
+
+        try:
+            with patch.object(cli, "_warp_disconnect", disconnect):
+                run_main(
+                    ["scrape"],
+                    Manager=MagicMock(return_value=mgr),
+                    _warp_connect=connect,
+                )
+                connect.assert_called_once()
+                disconnect.assert_not_called()
+                cli._warp_ensure_disconnected()
+                disconnect.assert_called_once()
+        finally:
+            cli._warp_connected_by_us = False
+
+    def test_scrape_does_not_dispatch_when_update_sync_fails(self):
+        import tgpc.dispatch as dispatch_mod
+
+        mgr = self._manager(new=["R1"], records=["R1"])
+        mgr.sync_to_gdrive = MagicMock(return_value=False)
+
+        with patch.object(dispatch_mod, "sync_dispatch") as sync:
+            with self.assertRaises(SystemExit) as ctx:
+                run_main(["scrape"], Manager=MagicMock(return_value=mgr))
+        self.assertEqual(ctx.exception.code, 1)
+        sync.assert_not_called()
+        mgr.refresh_merged_columns.assert_not_called()
+
+
 class FetchDgGuardTests(unittest.TestCase):
     def test_no_ids_is_a_usage_error(self):
         with (

@@ -92,14 +92,11 @@ jobs:
         if [[ "${{ github.event.inputs.force_sync }}" == "true" && -f data/rph.json ]]; then
           echo "FORCE SYNC MODE — re-syncing existing data"
           python3 -m tgpc sync
+          python3 -m tgpc dispatch
         else
-          echo "Starting TGPC data update..."
-          python3 -m tgpc update
+          echo "Starting TGPC scrape (update + dispatch in one process)..."
+          python3 -m tgpc scrape
         fi
-        
-        # Dispatch sync runs in same WARP session
-        echo "Syncing council dispatch lists..."
-        python3 -m tgpc dispatch
 
     - name: Upload data to artifact
       if: always()

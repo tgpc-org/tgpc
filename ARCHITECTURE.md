@@ -149,7 +149,7 @@ tgpc/
 │   │   ├── auth.setup.ts          # One-time admin login (E2E_ADMIN_SECRET) -> e2e/.auth.json
 │   │   ├── contrast-baseline.json # Tracked contrast debt baseline
 │   │   └── update-baseline.mjs    # Refresh the baseline after intentional palette changes
-├── tests/                          # 271 tests, 16 files (all mocked — no real HTTP/Supabase)
+├── tests/                          # 274 tests, 16 files (all mocked — no real HTTP/Supabase)
 │   ├── test_scraper.py             # 24: timeouts, WAF/blocked detection, table fallback, bad rows, detail parsing, legacy headers, missing tables, TLS verification + source-host rules
 │   ├── test_manager_update.py      # 7: safety guard, dedup/sort/GITHUB_OUTPUT, deterministic ordering, source-unavailable, +3 sync return-value regressions
 │   ├── test_manager_enrichment.py  # 3: enrichment save, registration mismatch, null serial_number regression
@@ -201,6 +201,7 @@ tgpc/dispatch.py — council dispatch-list PDFs → R2 `dispatch/`
 
 ```bash
 python3 -m tgpc update              # Restore-if-missing → health check → backup → scrape → dedup → safety guard → save → sync to all destinations + email → enrich new records → refresh merged columns
+python3 -m tgpc scrape              # update + sync + enrich + dispatch in ONE process (one WARP tunnel for the whole run)
 python3 -m tgpc update --no-sync    # Scrape only, skip cloud sync
 python3 -m tgpc update --force      # Override the 100-churn/1000-new safety caps
 python3 -m tgpc sync                # Sync to all destinations
@@ -787,8 +788,8 @@ The 200-row ceiling is enforced in **two** places: the client cap in `searchLimi
 3. **Setup Cloudflare WARP** — install, register, connect (outbound routing for scraping/sync)
 4. **Create data directory** (`mkdir -p data/backups`)
 5. **Restore artifact** — `gh run download` artifact `rph-data` if `data/rph.json` doesn't exist locally
-6. **Run data update** — `python3 -m tgpc update`; when `force_sync` is true and local data exists, runs `python3 -m tgpc sync` instead. All cloud syncs happen inside the CLI (delta to Supabase; Storage/R2/GDrive/Release/email only when there are changes); any destination failure exits non-zero and fails the job
-7. **Sync council dispatch lists** — `python3 -m tgpc dispatch` with the R2 secrets. New PDFs go to R2 `dispatch/`; the archive is not mirrored anywhere else. A council 404 is logged at debug level and does not fail the run
+6. **Run the pipeline** — `python3 -m tgpc scrape` (update + sync + enrich + dispatch in one process, so the WARP tunnel spans the whole run); when `force_sync` is true and local data exists, runs `python3 -m tgpc sync` then `python3 -m tgpc dispatch` instead. All cloud syncs happen inside the CLI (delta to Supabase; Storage/R2/GDrive/Release/email only when there are changes); any destination failure exits non-zero and fails the job
+7. **Dispatch capture is part of that run** — new council PDFs go to R2 `dispatch/`; a council 404 is logged at debug level and does not fail the run
 8. **Upload data artifact** — `rph-data` with 90-day retention (`if: always()`)
 9. **Notify on failure** — sends a failure-report email via Resend when `RESEND_API_KEY`/`NOTIFICATION_EMAIL` are configured
 
@@ -826,7 +827,7 @@ mypy                                         # tgpc/ only, config in pyproject.t
 pytest tests/ -q --cov --cov-fail-under=75   # what CI runs
 ```
 
-271 tests across 16 files. Coverage is measured over the installed package
+274 tests across 16 files. Coverage is measured over the installed package
 (`tgpc/`, configured in `pyproject.toml`) and sits at ~77% today; CI fails
 below **75%**. The number is a floor against erosion, not a target — raise it
 when the suite genuinely improves, never lower it to unblock a change. The

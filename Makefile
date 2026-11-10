@@ -83,7 +83,7 @@ check:  # Run every quality gate (UI + Python); exits non-zero if any gate fails
 	echo; echo "all 8 gates passed in $$(( $$(date +%s) - start ))s"
 
 scrape:  # Scrape TGPC → sync all destinations → enrich → capture new dispatch lists
-	@$(call RUN_LOGGED,scrape,($(PY) -m tgpc update && $(PY) -m tgpc dispatch))
+	@$(call RUN_LOGGED,scrape,$(PY) -m tgpc scrape)
 
 sync:  # Full manual sync of rph.json to all cloud destinations
 	@$(call RUN_LOGGED,sync,$(PY) -m tgpc sync)

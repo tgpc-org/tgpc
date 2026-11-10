@@ -189,7 +189,13 @@ repository holds code only.
 
 ## 6. Ingestion: `python3 -m tgpc update`
 
-`make scrape` runs `update` then `dispatch`. `update` is five visible phases:
+`make scrape` runs `tgpc scrape`, which performs the update and the dispatch
+capture **in one process**. That is deliberate: each CLI process connects WARP
+on start and disconnects on exit, so running `update && dispatch` as two
+processes tore the tunnel down between them. One process means one tunnel,
+closed only when the whole run finishes.
+
+The `update` half is five visible phases:
 
 ```
 [1/5] Restore rph.json from backup
@@ -477,7 +483,7 @@ everything, because a skipped gate looks exactly like a passing one. A single
 ## 13. Operations
 
 ```bash
-make scrape     # update + dispatch, full output kept in data/logs/
+make scrape     # update + sync + enrich + dispatch in one process, logged to data/logs/
 make sync       # re-push data/rph.json without scraping
 make dispatch   # capture newly published council PDFs
 make quota      # free-tier usage: Supabase / R2 / Resend / Drive

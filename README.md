@@ -32,7 +32,7 @@ search UI with per-record profile pages.
 | Files | Cloudflare R2 (photos, dispatch PDFs) |
 | Hosting | Cloudflare Pages (push to `main` deploys) |
 | Pipeline | Python 3.12 (CI), requests + BeautifulSoup + supabase-py |
-| Tests | `pytest` (271), `node:test` (107), Playwright e2e |
+| Tests | `pytest` (274), `node:test` (107), Playwright e2e |
 
 ## Repository layout
 

@@ -84,6 +84,95 @@ def _warp_ensure_disconnected():
         _warp_connected_by_us = False
 
 
+# --- Pipeline steps shared by `update` and `scrape` ---
+
+
+def _run_update(manager, args) -> str:
+    """Run the daily update and every follow-on step; returns the status.
+
+    Kept as a function so `update` and `scrape` share one implementation —
+    `scrape` must run this and dispatch inside a single process, otherwise the
+    WARP tunnel is torn down at the first process's exit.
+    """
+    with Phase("Daily update", 1, 4):
+        status = manager.run_daily_update(force=args.force)
+    if status in ("source_unavailable", "blocked"):
+        print(f"TGPC source {status} — no new data to sync.")
+        return status
+    if status == "updated":
+        if not args.no_sync:
+            with Phase("Sync to cloud destinations", 2, 4):
+                all_records = manager.file_manager.load()
+                new_regs: set[str] = getattr(manager, "_last_new_regs", set())
+                mod_regs: set[str] = getattr(manager, "_last_modified_regs", set())
+                removed_regs: set[str] = getattr(manager, "_last_removed_regs", set())
+                delta_ids = new_regs | set(mod_regs)
+                delta = [r for r in all_records if r.registration_number in delta_ids] if delta_ids else []
+                sync_results = [manager.sync_to_supabase(delta_records=delta)]
+                # Delete orphans that were removed from source
+                if removed_regs:
+                    sync_results.append(manager.delete_removed_from_supabase(removed_regs))
+                # Any change — new, modified, OR removed — must propagate
+                # to the file destinations and the email report. A
+                # removals-only update has empty delta_ids, so gate on the
+                # union including removals.
+                if delta_ids or removed_regs:
+                    sync_results += [
+                        manager.sync_to_supabase_storage(),
+                        manager.sync_to_r2(),
+                        manager.sync_to_gdrive(),
+                        manager.sync_to_release(),
+                        manager.sync_to_email(),
+                    ]
+                else:
+                    print("No changes — skipping full syncs.")
+                if not all(sync_results):
+                    print("One or more sync destinations failed", file=sys.stderr)
+                    raise SystemExit(1)
+            if new_regs:
+                with Phase("Enrich new records", 3, 4):
+                    print(f"Enriching {len(new_regs)} new records...")
+                    manager.enrich_new_records(force=args.force)
+            if not args.no_sync:
+                with Phase("Refresh merged columns", 4, 4):
+                    stats = manager.refresh_merged_columns()
+                    if stats.get("error"):
+                        print(f"Merge refresh warning: {stats['error']} (retry next run)", file=sys.stderr)
+                    else:
+                        print(
+                            "Merge refresh: "
+                            f"dor={stats['dor_filled']} home={stats['home_filled']} "
+                            f"validity={stats['validity_updated']} review={stats['review_skipped']}"
+                        )
+    return status
+
+
+def _run_dispatch(
+    dry_run: bool = False,
+    force: bool = False,
+    limit: int | None = None,
+    write_fallback: bool = False,
+) -> None:
+    """Copy newly published council dispatch PDFs into R2."""
+    from tgpc.dispatch import sync_dispatch
+
+    with Phase("Sync dispatch lists", 1, 1):
+        report = sync_dispatch(
+            dry_run=dry_run,
+            force=force,
+            limit=limit,
+            write_fallback=write_fallback,
+        )
+    print(
+        f"Dispatch lists: {report.published} published, {report.already_present} already in R2, "
+        f"{report.missing} missing, {report.uploaded} uploaded, {report.failed} failed "
+        f"(newest {report.newest or 'none'})"
+    )
+    if report.failed_names:
+        print(f"  failed: {', '.join(report.failed_names)}", file=sys.stderr)
+        raise SystemExit(1)
+
+
 # --- Credential CLI commands ---
 
 
@@ -147,6 +236,23 @@ def main():
         "--force",
         action="store_true",
         help="Override safety caps (e.g. enrich >1000 records)",
+    )
+
+    # Scrape command: update + dispatch in ONE process so the WARP tunnel
+    # opened for the scrape also covers the dispatch download and is closed
+    # only once, at the end of the run.
+    scrape_parser = subparsers.add_parser(
+        "scrape", help="Full pipeline: update + sync + enrich + dispatch in one process"
+    )
+    scrape_parser.add_argument(
+        "--no-sync",
+        action="store_true",
+        help="Skip sync to cloud destinations after update",
+    )
+    scrape_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Override update safety caps (e.g. enrich >1000 records)",
     )
 
     # Sync command
@@ -276,9 +382,11 @@ def main():
 
     manager = Manager()
 
-    # Connect WARP for network-level routing (update and sync hit external services)
+    # Connect WARP for network-level routing (update and sync hit external
+    # services). `scrape` is one process so its WARP connection covers both
+    # update and dispatch and is torn down only when the whole run ends.
     global _warp_connected_by_us
-    if args.command in ("update", "sync", "enrich", "retry-photos", "fetch-dg"):
+    if args.command in ("update", "scrape", "sync", "enrich", "retry-photos", "fetch-dg"):
         atexit.register(_warp_ensure_disconnected)
         _warp_connected_by_us = _warp_connect()
 
@@ -286,57 +394,12 @@ def main():
     # atexit handler registered above (_warp_ensure_disconnected), which also
     # covers SystemExit / early returns. A redundant try/finally here was
     # removed (CODE_REVIEW.md L6).
-    if args.command == "update":
-        with Phase("Daily update", 1, 4):
-            status = manager.run_daily_update(force=args.force)
-        if status in ("source_unavailable", "blocked"):
-            print(f"TGPC source {status} — no new data to sync.")
-            return
-        if status == "updated":
-            if not args.no_sync:
-                with Phase("Sync to cloud destinations", 2, 4):
-                    all_records = manager.file_manager.load()
-                    new_regs = getattr(manager, "_last_new_regs", set())
-                    mod_regs = getattr(manager, "_last_modified_regs", set())
-                    removed_regs = getattr(manager, "_last_removed_regs", set())
-                    delta_ids = new_regs | set(mod_regs)
-                    delta = [r for r in all_records if r.registration_number in delta_ids] if delta_ids else []
-                    sync_results = [manager.sync_to_supabase(delta_records=delta)]
-                    # Delete orphans that were removed from source
-                    if removed_regs:
-                        sync_results.append(manager.delete_removed_from_supabase(removed_regs))
-                    # Any change — new, modified, OR removed — must propagate
-                    # to the file destinations and the email report. A
-                    # removals-only update has empty delta_ids, so gate on the
-                    # union including removals.
-                    if delta_ids or removed_regs:
-                        sync_results += [
-                            manager.sync_to_supabase_storage(),
-                            manager.sync_to_r2(),
-                            manager.sync_to_gdrive(),
-                            manager.sync_to_release(),
-                            manager.sync_to_email(),
-                        ]
-                    else:
-                        print("No changes — skipping full syncs.")
-                    if not all(sync_results):
-                        print("One or more sync destinations failed", file=sys.stderr)
-                        raise SystemExit(1)
-                if new_regs:
-                    with Phase("Enrich new records", 3, 4):
-                        print(f"Enriching {len(new_regs)} new records...")
-                        manager.enrich_new_records(force=args.force)
-                if not args.no_sync:
-                    with Phase("Refresh merged columns", 4, 4):
-                        stats = manager.refresh_merged_columns()
-                        if stats.get("error"):
-                            print(f"Merge refresh warning: {stats['error']} (retry next run)", file=sys.stderr)
-                        else:
-                            print(
-                                "Merge refresh: "
-                                f"dor={stats['dor_filled']} home={stats['home_filled']} "
-                                f"validity={stats['validity_updated']} review={stats['review_skipped']}"
-                            )
+    if args.command in ("update", "scrape"):
+        _run_update(manager, args)
+        # Dispatch runs after a successful update in the SAME process, so the
+        # WARP tunnel stays up instead of being torn down between two commands.
+        if args.command == "scrape":
+            _run_dispatch()
         return
     elif args.command == "sync":
         with Phase("Sync to cloud destinations", 1, 1):
@@ -442,23 +505,12 @@ def main():
         stats = validate_l1(Path(args.out), Path(args.raw_dir), max_list=args.max_list)
         print(json.dumps(stats, indent=2))
     elif args.command == "dispatch":
-        from tgpc.dispatch import sync_dispatch
-
-        with Phase("Sync dispatch lists", 1, 1):
-            report = sync_dispatch(
-                dry_run=args.dry_run,
-                force=args.force,
-                limit=args.limit,
-                write_fallback=args.write_fallback,
-            )
-        print(
-            f"Dispatch lists: {report.published} published, {report.already_present} already in R2, "
-            f"{report.missing} missing, {report.uploaded} uploaded, {report.failed} failed "
-            f"(newest {report.newest or 'none'})"
+        _run_dispatch(
+            dry_run=args.dry_run,
+            force=args.force,
+            limit=args.limit,
+            write_fallback=args.write_fallback,
         )
-        if report.failed_names:
-            print(f"  failed: {', '.join(report.failed_names)}", file=sys.stderr)
-            raise SystemExit(1)
     elif args.command == "quota":
         with Phase("Show service quotas", 1, 1):
             show_quotas()
