@@ -35,6 +35,10 @@ data/update_details.json
 data/last_run.json
 data/.scrape.lock/
 data/dg_pending_ids.txt
+# Artifacts rescued from the retired GCP VM (kept locally, never in git)
+data/vm_final/
+data/dg_fetch_vm.log
+data/dg_history.jsonl
 # Local cache of the dispatch archive (R2 -> Drive mirror staging; never in git)
 data/dispatch/
 data/*.jsonl
