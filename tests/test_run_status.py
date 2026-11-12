@@ -132,6 +132,23 @@ class AlertTests(unittest.TestCase):
         for field in ("new_details", "modified_details", "removed_details"):
             self.assertNotIn(field, body)
 
+    def test_subject_and_body_can_be_overridden(self):
+        # Non-fatal warnings (enrichment.report_no_details) reuse this
+        # transport without claiming the scrape failed.
+        post = MagicMock(return_value=MagicMock(status_code=200))
+        ok = run_status.send_alert(
+            {"status": "enrichment_no_details"},
+            api_key="re_test",
+            recipient="ops@example.com",
+            post=post,
+            subject="TGPC enrichment: 6 records missing at source",
+            body="not a failed run",
+        )
+        self.assertTrue(ok)
+        payload = post.call_args.kwargs["json"]
+        self.assertEqual(payload["subject"], "TGPC enrichment: 6 records missing at source")
+        self.assertEqual(payload["text"], "not a failed run")
+
     def test_http_error_is_reported_but_never_raised(self):
         post = MagicMock(return_value=MagicMock(status_code=422))
         self.assertFalse(run_status.send_alert(self.RECORD, api_key="re_test", recipient="a@b.c", post=post))

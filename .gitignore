@@ -43,6 +43,7 @@ data/dg_history.jsonl
 data/dispatch/
 data/*.jsonl
 data/failed_terminal_regs.json
+data/no_details_at_source.json
 data/dg_integrity_review.json
 data/dg_spotcheck.json
 # Local-only UI sandbox (live local datasets for layout experiments — never ships)

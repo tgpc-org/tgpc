@@ -58,7 +58,7 @@ tgpc/
 │   ├── manager.py                  # Manager facade (~730 lines): restore, update orchestration, photo pipeline
 │   ├── storage.py                  # R2Client, FileManager, BackupManager, validate_rph_backup, DataIntegrityError
 │   ├── sync.py                     # Sync destination bodies: Supabase DB/Storage, R2, GDrive, Release, Email
-│   ├── enrichment.py               # run_enrichment / enrich_new_records / process_records_sequential bodies
+│   ├── enrichment.py               # run_enrichment / enrich_new_records / process_records_sequential bodies + no-details-at-source report
 │   ├── inactive_sweep.py           # Detect inactive→active reactivations (2-phase, resumable)
 │   ├── enrich_actives.py           # Parallel enrichment + upsert of reactivated records
 │   ├── details_dg.py               # DG getdetailsdg captcha flow → PII contacts; L1-L4 redundancy + --resume (~1390 lines)
@@ -593,6 +593,17 @@ captcha-gated at the source.
 ```
 
 **Sweep JSONLs** — `data/inactive_records.jsonl` (phase 1: one identity-fields object per line) and `data/now_active_from_inactive.jsonl` (phase 2: now-Active records with gender/validity/status). `data/inactive_sweep_checkpoint.json` records completed batch indices for resumability.
+
+**`no_details_at_source.json`** — written by every enrichment run (`report_no_details`): the registrations the council *lists* but serves no detail page for, so they can never be enriched. Overwritten each run so two copies can be diffed.
+```json
+{
+  "ts": "2026-11-12T08:19:56Z",
+  "count": 1,
+  "candidates": 1200,
+  "registrations": ["TG082335"]
+}
+```
+One such row is normal — a withdrawn or never-completed registration lingering in the summary listing — and the portal shows it as status "Unknown" rather than "Inactive" (`get_rph_stats` keeps a separate `unknown` bucket). More than 5 in a run, or more than 0.5% of a run of 200+, means the listing and the detail backend have diverged: that logs an alert through `run_status.send_alert` (a warning, not a failed run).
 
 ### Environment Variables
 

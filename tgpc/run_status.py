@@ -175,12 +175,18 @@ def send_alert(
     api_key: str | None = None,
     recipient: str | None = None,
     post: Callable[..., Any] | None = None,
+    subject: str | None = None,
+    body: str | None = None,
 ) -> bool:
     """Email one operational alert via Resend. Never raises.
 
     Returns True only when Resend accepted the message. Missing credentials are
     a skip, not an error: the status file and the exit code still carry the
     outcome, and `make scrape` must not fail because alerting is unconfigured.
+
+    `subject`/`body` override the scrape-failure text so a non-fatal warning
+    (see `enrichment.report_no_details`) can reuse the same transport without
+    pretending the run failed.
     """
     key = api_key if api_key is not None else os.environ.get("RESEND_API_KEY", "")
     to = recipient if recipient is not None else os.environ.get("NOTIFICATION_EMAIL", "")
@@ -192,8 +198,8 @@ def send_alert(
     payload = {
         "from": RESEND_FROM,
         "to": [to],
-        "subject": f"TGPC scrape {status} — {_now_ist().strftime('%d %b %Y')}",
-        "text": _alert_body(record),
+        "subject": subject or f"TGPC scrape {status} — {_now_ist().strftime('%d %b %Y')}",
+        "text": body if body is not None else _alert_body(record),
     }
     try:
         sender = post or requests.post

@@ -8,17 +8,117 @@ through manager._make_supabase_client(), so tests can keep patching
 tgpc.manager.create_client and tgpc.manager.Scraper.
 """
 
+import json
 import os
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
 from tgpc.progress import ProgressBar, step
+from tgpc.run_status import send_alert
 from tgpc.storage import DataIntegrityError
 from tgpc.utils import setup_logging
 
 
 logger = setup_logging("tgpc.enrichment")
+
+
+# Registrations the council lists but serves no detail page for. Written on
+# every enrichment run that processes records, so the file is always "what the
+# last run saw" and can be diffed against an earlier copy.
+NO_DETAILS_PATH = Path("data") / "no_details_at_source.json"
+
+# One orphan row is normal — the council's summary listing and its detail
+# backend drift apart for withdrawn or never-completed registrations, and the
+# portal must not invent a status for them (`get_rph_stats` keeps an explicit
+# `unknown` bucket for exactly this). A spike is not normal: it means the two
+# have diverged, and every affected record publishes a blank profile. So the
+# bar is set above "one odd row" rather than at zero.
+NO_DETAILS_ALERT_COUNT = 5
+
+# Percentage rule for large runs. Guarded by a minimum sample because a
+# 1-record run with 1 orphan is 100% and means nothing.
+NO_DETAILS_ALERT_SHARE = 0.005
+NO_DETAILS_SHARE_MIN_SAMPLE = 200
+
+
+def _no_details_path(manager):
+    """Where this run records its listed-but-unserved registrations.
+
+    Follows the manager's configured data directory so a test or a
+    `TGPC_ENRICHMENT_DIR` override never writes into the checkout.
+    """
+    return Path(manager.config.data_directory) / "no_details_at_source.json"
+
+
+def report_no_details(regs, candidates, *, path=None, alert=True):
+    """Record registrations that are listed but have no details at source.
+
+    Returns True only when the volume crossed the alert threshold. A normal run
+    logs one line and writes the file; it does not email anyone.
+    """
+    regs = sorted(set(regs))
+    target = Path(path) if path is not None else NO_DETAILS_PATH
+    payload = {
+        "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "count": len(regs),
+        "candidates": candidates,
+        "registrations": regs,
+    }
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        tmp = target.with_suffix(target.suffix + ".tmp")
+        tmp.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        tmp.replace(target)
+    except OSError as e:
+        logger.warning(f"Could not write {target}: {e}")
+
+    if not regs:
+        logger.info(f"All {candidates} enriched records had details at source")
+        return False
+
+    preview = ", ".join(regs[:5])
+    if len(regs) > 5:
+        preview += f" (+{len(regs) - 5} more)"
+    logger.warning(
+        f"{len(regs)} of {candidates} records are listed but have no details at "
+        f"source: {preview} — recorded in {target}"
+    )
+
+    share = len(regs) / candidates if candidates else 0.0
+    breached = len(regs) > NO_DETAILS_ALERT_COUNT or (
+        candidates >= NO_DETAILS_SHARE_MIN_SAMPLE and share > NO_DETAILS_ALERT_SHARE
+    )
+    if not breached or not alert:
+        return False
+
+    sent = send_alert(
+        {"status": "enrichment_no_details"},
+        subject=f"TGPC enrichment: {len(regs)} records missing at source — {datetime.now(timezone.utc):%d %b %Y}",
+        body=(
+            "The TGPC enrichment run found registrations in the council's listing\n"
+            "that the council's detail backend does not serve.\n"
+            "\n"
+            f"  Checked:   {candidates} records\n"
+            f"  Missing:   {len(regs)}\n"
+            f"  Examples:  {preview}\n"
+            "\n"
+            "Each of these publishes a profile with no status and no validity date.\n"
+            "A single row is normal — a withdrawn or never-completed registration\n"
+            "lingering in the summary listing. This many means the listing and the\n"
+            "detail backend have diverged, and the portal is now showing blank\n"
+            "profiles for all of them.\n"
+            "\n"
+            f"Full list: {target}\n"
+            "\n"
+            "This is a warning, not a failed run: the other records enriched\n"
+            "normally and nothing was overwritten.\n"
+        ),
+    )
+    if sent:
+        logger.warning(f"Alert emailed for {len(regs)} records with no details at source")
+    return sent
 
 
 def run_enrichment(manager, start: int = 1, stop: Optional[int] = None):
@@ -128,7 +228,11 @@ def run_enrichment(manager, start: int = 1, stop: Optional[int] = None):
         return
 
     # Process records sequentially
-    total_processed = process_records_sequential(manager, pending_records, rph_lookup, img_dir, supabase=supabase)
+    no_details: list[str] = []
+    total_processed = process_records_sequential(
+        manager, pending_records, rph_lookup, img_dir, supabase=supabase, no_details=no_details
+    )
+    report_no_details(no_details, len(pending_records), path=_no_details_path(manager))
 
     # Keep progress file for tracking
     if total_processed > 0:
@@ -231,13 +335,24 @@ def enrich_new_records(manager, force: bool = False):
 
     logger.info(f"Enriching {len(records)} records...")
     rph_lookup = {r.registration_number: r for r in records}
+    no_details: list[str] = []
 
-    processed = process_records_sequential(manager, records, rph_lookup, img_dir, supabase=supabase)
+    processed = process_records_sequential(
+        manager, records, rph_lookup, img_dir, supabase=supabase, no_details=no_details
+    )
+    report_no_details(no_details, len(records), path=_no_details_path(manager))
     logger.info(f"Enrich complete: {processed} records processed")
 
 
-def process_records_sequential(manager, pending_records, rph_lookup, img_dir, ip_rotation_interval=500, supabase=None):
-    """Process records sequentially."""
+def process_records_sequential(
+    manager, pending_records, rph_lookup, img_dir, ip_rotation_interval=500, supabase=None, no_details=None
+):
+    """Process records sequentially.
+
+    `no_details`, when given, collects the registrations the source lists but
+    serves no detail page for, so the caller can report them once per run
+    instead of relying on a warning buried among thousands of log lines.
+    """
     total_processed = 0
     failed_photos = []
 
@@ -251,6 +366,8 @@ def process_records_sequential(manager, pending_records, rph_lookup, img_dir, ip
                 step(f"fetching details for {reg_no}")
                 details = manager.scraper.extract_detailed_info(reg_no, img_dir)
                 if not details:
+                    if no_details is not None:
+                        no_details.append(reg_no)
                     logger.warning(f"No details found at source for {reg_no} — skipping enrichment")
                     continue
 
