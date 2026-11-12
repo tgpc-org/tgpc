@@ -101,6 +101,21 @@ established: an unverifiable destination is not a private one.
 * `"You are not Authorized"` = per-record backend gap, refused at source
   (proven over 4 attempts/35 min) → checkpoint `failed_terminal` set
   (internal name for "refused, don't retry"), skipped on resume.
+* **That refusal is not random — it tracks `date_of_registration` exactly.**
+  Measured 2026-11-12 over the whole registry (91,687 rows): all 36,951
+  completed records carry a council registration date, and all 54,736 refused
+  records carry none. Zero exceptions in either direction. Re-probed live the
+  same day (6 sampled from each side): 6/6 completed still served, 6/6 refused
+  still refused, in the same session minutes apart, with the captcha accepted
+  in every case — so it is a stable class, not a transient glitch, and not a
+  captcha, session or egress problem.
+  Practical consequence: `--retry-terminal` on the full set re-requests 54,736
+  records for zero expected yield (~4 days of captchas). If DG coverage ever
+  changes, prove it on a sample first:
+  `fetch-dg --ids <few terminal ids> --no-resume --checkpoint /tmp/cp.json`.
+  Do **not** filter the ID pool by date: the terminal set is already skipped on
+  resume, and a selection rule built on a correlation would silently hide a
+  change in DG's coverage.
 * Valid reg prefixes: `TS|TG|TSDR|TGDR` (28k non-TS rows exist).
 * Table cells parse positionally — never drop empties (empty-cell bug
   shipped header text as values once; regression-tested).
