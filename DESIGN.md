@@ -458,12 +458,24 @@ four layers rather than by keeping a second host:
    pattern most likely to trip a rate rule is gone. A probe that passes while
    the bulk endpoint is blocked is still caught by `source_unavailable` and the
    90% cap.
-2. **Retry across the day.** launchd runs `scripts/daily_scrape.sh` at 06:00,
-   10:00, 14:00 and 18:00. The wrapper exits immediately when
+2. **Retry across the day.** `scripts/daily_scrape.sh` is designed to run at
+   06:00, 10:00, 14:00 and 18:00. The wrapper exits immediately when
    `data/last_run.json` says today already succeeded, so the extra slots only
    cost anything on a day that failed. launchd (not cron) also runs a slot
    missed while the Mac was asleep, and runs in the login session where the
    Keychain credentials live.
+   **Scheduling is opt-in, not the default.** The LaunchAgent is a template in
+   `scripts/` and is installed with `make scheduler-install` (DG:
+   `make dg-scheduler-install`), removed with the matching `-uninstall`
+   target. As of 2026-11-15 it is **not installed**: the registry advances only
+   when the operator runs `make scrape` by hand. Nothing else schedules this
+   repo — there is no cron entry, no `schedule:` trigger in any workflow, and
+   no `pg_cron` job, so an idle repo is expected rather than a broken one.
+   One consequence to know before enabling it: launchd cannot wake a sleeping
+   Mac, so the run only fires during macOS's own maintenance dark wakes
+   (`powernap`/`tcpkeepalive`). A 4-minute run can therefore stretch across
+   hours of wall clock — on 2026-11-15 it started 06:07 and finished 08:42 —
+   which is harmless but makes the log timestamps misleading.
 3. **Loud failure.** Every run writes `data/last_run.json` (status, detail,
    egress IP, duration) and a non-success exits **2** and sends one short
    operational alert. This replaced the old behaviour: `_write_update_outputs`

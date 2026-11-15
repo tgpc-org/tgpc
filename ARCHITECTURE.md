@@ -69,7 +69,7 @@ tgpc/
 │   ├── dg_migration.sql            # rph_dg_contacts table DDL (service-role only, no anon grants)
 │   └── dg_serial_int_migration.sql # rph_dg_contacts.serial_number TEXT -> INTEGER
 ├── scripts/                        # Standalone helpers (run from repo root)
-│   ├── daily_scrape.sh             # Scheduled scrape entry point: lock, skip-if-done-today, caffeinate, launchd log
+│   ├── daily_scrape.sh             # Scheduled scrape entry point: lock, skip-if-done-today, caffeinate, launchd log (agent installed on demand)
 │   ├── com.tgpc.scrape.plist       # LaunchAgent template (06/10/14/18 IST; __REPO__ filled in by make scheduler-install)
 │   ├── dg_captcha_bench.py         # Fetch N live DG captchas, OCR-guess, dump for human labeling
 │   ├── dg_local.sh                 # Nightly DG batch on this Mac (bounded batch, resumable, cloud sync)
