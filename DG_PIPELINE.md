@@ -101,21 +101,32 @@ established: an unverifiable destination is not a private one.
 * `"You are not Authorized"` = per-record backend gap, refused at source
   (proven over 4 attempts/35 min) → checkpoint `failed_terminal` set
   (internal name for "refused, don't retry"), skipped on resume.
-* **That refusal is not random — it tracks `date_of_registration` exactly.**
-  Measured 2026-11-12 over the whole registry (91,687 rows): all 36,951
-  completed records carry a council registration date, and all 54,736 refused
-  records carry none. Zero exceptions in either direction. Re-probed live the
-  same day (6 sampled from each side): 6/6 completed still served, 6/6 refused
-  still refused, in the same session minutes apart, with the captcha accepted
-  in every case — so it is a stable class, not a transient glitch, and not a
-  captcha, session or egress problem.
+* **The refusal is per-record and stable — but we do not know why.** Re-probed
+  live 2026-11-12 (6 sampled from each side, same session minutes apart, captcha
+  accepted every time): 6/6 completed still served, 6/6 refused still refused.
+  So it is a stable class, not a transient glitch, and not a captcha, session or
+  egress problem.
+  No council-side attribute separates the two sets either: by status 41.5%
+  of Active vs 33.6% of Inactive are served; by category 19.5% (PharmD) to
+  81.8% (QP); by prefix 50.1% (TS) vs 15.4% (TG); by validity year 29–51%.
+* **Do not "explain" the refusal with `date_of_registration`.** It looks like a
+  perfect predictor (every completed record has one, every refused record does
+  not, zero exceptions over 91,687 rows) and it is *circular*:
+  `date_of_registration` is a **DG-sourced field**. `merge_refresh.py` copies it
+  from `rph_dg_contacts` into `rph`, and nothing else ever writes it — measured
+  2026-11-15: 36,951 rows have a date, 36,951 DG rows exist, 100% of them carry
+  a date, and the two sets are identical with zero rows in either direction.
+  The refused records have no date *because* DG refused them; the date is not
+  evidence about why. It also means a newly registered record (e.g. TG084314,
+  added 2026-11-15) shows an empty date until DG serves it, not because the
+  council's row is incomplete.
   Practical consequence: `--retry-terminal` on the full set re-requests 54,736
-  records for zero expected yield (~4 days of captchas). If DG coverage ever
+  records for zero known yield (~4 days of captchas). If DG coverage ever
   changes, prove it on a sample first:
   `fetch-dg --ids <few terminal ids> --no-resume --checkpoint /tmp/cp.json`.
   Do **not** filter the ID pool by date: the terminal set is already skipped on
-  resume, and a selection rule built on a correlation would silently hide a
-  change in DG's coverage.
+  resume, and the filter would select on a field that only exists because the
+  fetch you are deciding whether to do already succeeded.
 * Valid reg prefixes: `TS|TG|TSDR|TGDR` (28k non-TS rows exist).
 * Table cells parse positionally — never drop empties (empty-cell bug
   shipped header text as values once; regression-tested).
