@@ -16,6 +16,7 @@ const OPEN_EXACT = new Set([
 	'/admin',
 	'/notice',
 	'/dispatch',
+	'/blocked',
 	'/sitemap.xml',
 	'/api/admin',
 	'/api/stats',
