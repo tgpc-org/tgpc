@@ -1,7 +1,12 @@
 import type { LayoutLoad } from './$types';
 import type { Stats } from '#lib/types.js';
 
-export const load: LayoutLoad = async ({ fetch }) => {
+export const load: LayoutLoad = async ({ fetch, url }) => {
+  // The standalone blocked-IDs page does not use the portal chrome or stats.
+  if (url.pathname === '/blocked' || url.pathname.startsWith('/blocked/')) {
+    return { stats: null, lastSync: '' };
+  }
+
   let stats: Stats | null = null;
   let lastSync = '';
 

@@ -100,6 +100,7 @@
     return out;
   });
 
+  let standalone = $derived(page.url.pathname === '/blocked' || page.url.pathname.startsWith('/blocked/'));
   let activeTab = $derived(page.url.pathname === '/'
     ? 'search'
     : page.url.pathname === '/notice'
@@ -193,6 +194,7 @@
     style="background:var(--t-surface-2);color:var(--t-ink)"
   >Skip to main content</a>
 
+{#if !standalone}
   <header
     class="sticky top-0 z-50 border-b"
     style="background:var(--t-bg);border-color:var(--t-border)"
@@ -337,11 +339,13 @@
       </nav>
     </div>
   </header>
+{/if}
 
   <main id="main-content" class="flex-1 w-full px-3 sm:px-5 pt-2 pb-4 sm:pb-20 lg:pb-24">
     {@render children()}
   </main>
 
+{#if !standalone}
   <footer
     class="relative mt-6 sm:mt-0 sm:fixed sm:bottom-0 w-full border-t text-[0.7rem] leading-snug"
     style="background:var(--t-bg);border-color:var(--t-border);color:var(--t-muted);padding-bottom:calc(0.4rem + env(safe-area-inset-bottom, 0px))"
@@ -360,4 +364,16 @@
       >TGPC RPh Index © {new Date().getFullYear()}</span>
     </div>
   </footer>
+{/if}
+
+{#if standalone}
+  <footer
+    class="w-full border-t text-[0.7rem] leading-snug px-3 sm:px-5 py-3"
+    style="border-color:var(--t-border);color:var(--t-muted);background:var(--t-bg)"
+  >
+    <span style="text-wrap:pretty">
+      Unofficial reference data. Verify against the official circular before acting. Operated under fair dealing (Indian Copyright Act, 1957, Section 52).
+    </span>
+  </footer>
+{/if}
 </div>
