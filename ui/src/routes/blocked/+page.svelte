@@ -42,7 +42,6 @@
     — duplicate / non-compliant BH-P IDs are blocked; affected pharmacists must re-register on
     <span style="color:var(--t-ink-soft)">DIGI-PHARMed</span>.
     {#if ids.length} {fmt(ids.length)} IDs indexed. {/if}
-    Also see the <a href="/notice" class="font-semibold no-underline" style="color:var(--t-link)">notice</a>.
   </p>
 
   {#if data.error}
