@@ -56,6 +56,11 @@ describe('gatePath', () => {
 		assert.equal(gatePath('/sandbox').kind, 'page-login');
 	});
 
+	it('leaves the blocked BH-P dataset open', () => {
+		assert.equal(gatePath('/data/blocked-bhp-2026-11-19.json').kind, 'open');
+		assert.equal(gatePath('/data/blocked-bhp-evil.json').kind, 'page-login');
+	});
+
 	it('does not treat lookalike paths as open', () => {
 		assert.equal(gatePath('/administrator').kind, 'page-login');
 		assert.equal(gatePath('/api/admin-evil').kind, 'api-deny');

@@ -49,6 +49,9 @@ export function gatePath(pathname: string): GateDecision {
 	// Sitemap chunks (/sitemap/<n>.xml): public XML, no registry data beyond
 	// registration numbers; the route 404s anything out of range.
 	if (pathname.startsWith('/sitemap/')) return { kind: 'open' };
+	// Blocked BH-P ID list (PCI circular Annexure-1): a public dataset, not
+	// registry data, served as a versioned static asset.
+	if (/^\/data\/blocked-bhp-\d{4}-\d{2}-\d{2}\.json$/.test(pathname)) return { kind: 'open' };
 	if (pathname.startsWith('/api/')) {
 		// /api/dispatch has a [name] file sub-route, so the whole subtree
 		// is public; every other /api/ path is denied unless allowlisted.

@@ -104,11 +104,13 @@
     ? 'search'
     : page.url.pathname === '/notice'
       ? 'notice'
-      : page.url.pathname === '/dispatch' ? 'dispatch' : '');
+      : page.url.pathname === '/dispatch' ? 'dispatch'
+      : page.url.pathname === '/blocked' ? 'blocked' : '');
 
   let searchRef = $state<HTMLAnchorElement | undefined>(undefined);
   let noticeRef = $state<HTMLAnchorElement | undefined>(undefined);
   let dispatchRef = $state<HTMLAnchorElement | undefined>(undefined);
+  let blockedRef = $state<HTMLAnchorElement | undefined>(undefined);
 
   const TAB_CLASS = 'px-3 py-2.5 text-[0.75rem] font-bold uppercase tracking-wider whitespace-nowrap no-underline transition-colors';
   const TAB_DIVIDER = 'text-[0.75rem] font-light select-none px-1';
@@ -123,7 +125,7 @@
 
   $effect(() => {
     const tab = activeTab;
-    const el = tab === 'search' ? searchRef : tab === 'notice' ? noticeRef : dispatchRef;
+    const el = tab === 'search' ? searchRef : tab === 'notice' ? noticeRef : tab === 'dispatch' ? dispatchRef : blockedRef;
     if (!el) {
       slider = { left: 0, width: 0, ready: false };
       return;
@@ -324,6 +326,8 @@
         <a href="/notice" bind:this={noticeRef} aria-current={activeTab === 'notice' ? 'page' : undefined} class={TAB_CLASS} style={tabStyle(activeTab === 'notice')}>Notices</a>
         <span aria-hidden="true" class={TAB_DIVIDER} style="color:var(--t-border-soft)">/</span>
         <a href="/dispatch" bind:this={dispatchRef} aria-current={activeTab === 'dispatch' ? 'page' : undefined} class={TAB_CLASS} style={tabStyle(activeTab === 'dispatch')}>Dispatch List</a>
+<span aria-hidden="true" class={TAB_DIVIDER} style="color:var(--t-border-soft)">/</span>
+<a href="/blocked" bind:this={blockedRef} aria-current={activeTab === 'blocked' ? 'page' : undefined} class={TAB_CLASS} style={tabStyle(activeTab === 'blocked')}>Blocked BH-P</a>
         {#if slider.ready}
           <div
             aria-hidden="true"
