@@ -16,25 +16,6 @@
 
   const exact = $derived(isFullId ? ids.find((id: string) => key(id) === qk) : undefined);
 
-  const matches = $derived.by(() => {
-    if (isFullId || qk.length < 4) return [];
-    const out: string[] = [];
-    for (const id of ids) {
-      if (key(id).includes(qk)) {
-        out.push(id);
-        if (out.length >= 5) break;
-      }
-    }
-    return out;
-  });
-
-  const matchCount = $derived.by(() => {
-    if (isFullId || qk.length < 4) return 0;
-    let n = 0;
-    for (const id of ids) if (key(id).includes(qk)) n++;
-    return n;
-  });
-
   function fmt(n: number) { return n.toLocaleString('en-IN'); }
 </script>
 
@@ -116,21 +97,8 @@
             </p>
           </div>
         {/if}
-      {:else if matchCount === 0}
-        <p class="text-[0.85rem] py-4" style="color:var(--t-muted)">No matching IDs found.</p>
       {:else}
-        <div class="text-[0.8rem] mb-2" style="color:var(--t-muted)">
-          {fmt(matchCount)} match{matchCount === 1 ? '' : 'es'} — tap a suggestion to check it:
-        </div>
-        <div class="flex flex-wrap gap-1.5">
-          {#each matches as m (m)}
-            <button
-              class="px-2.5 py-1 rounded text-[0.8rem] font-mono tabular-nums no-underline cursor-pointer"
-              style="background:var(--t-surface);border:1px solid var(--t-border);color:var(--t-ink)"
-              onclick={() => (query = m)}
-            >{m}</button>
-          {/each}
-        </div>
+        <p class="text-[0.85rem] py-4" style="color:var(--t-muted)">Type the full ID to check — partial numbers are not searched.</p>
       {/if}
     </div>
   {/if}
