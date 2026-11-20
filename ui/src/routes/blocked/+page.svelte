@@ -10,9 +10,9 @@
   const qk = $derived(key(q));
 
   // A complete, well-formed BH-P ID → one definitive answer (4+ digits, matching real IDs)
-  const isFullId = $derived(/^BHP\d{2}\d{4,}$/.test(qk) || ids.includes(q));
+  const isFullId = $derived((q.split('-').length >= 3 && /^BHP\d{2}\d{4,}$/.test(qk)) || ids.includes(q));
   // Looks like an attempt at a full ID but malformed
-  const isMalformed = $derived(qk.startsWith('BHP') && qk.length >= 6 && !/^BHP\d+$/.test(qk));
+  const isMalformed = $derived(qk.startsWith('BHP') && qk.length >= 6 && (!/^BHP\d+$/.test(qk) || q.split('-').length < 3));
 
   const exact = $derived(isFullId ? ids.find((id: string) => key(id) === qk) : undefined);
 
