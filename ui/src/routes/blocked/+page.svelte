@@ -9,22 +9,27 @@
   function key(s: string) { return (s || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
   const qk = $derived(key(q));
 
-  const exact = $derived(qk.length > 0 ? ids.find(id => key(id) === qk) : undefined);
+  // A complete, well-formed BH-P ID → one definitive answer
+  const isFullId = $derived(/^BHP\d{2}\d+$/.test(qk));
+  // Looks like an attempt at a full ID but malformed
+  const isMalformed = $derived(qk.startsWith('BHP') && qk.length >= 6 && !isFullId);
+
+  const exact = $derived(isFullId ? ids.find((id: string) => key(id) === qk) : undefined);
 
   const matches = $derived.by(() => {
-    if (qk.length < 4) return [];
-    const out = [];
+    if (isFullId || qk.length < 4) return [];
+    const out: string[] = [];
     for (const id of ids) {
       if (key(id).includes(qk)) {
         out.push(id);
-        if (out.length >= 12) break;
+        if (out.length >= 5) break;
       }
     }
     return out;
   });
 
   const matchCount = $derived.by(() => {
-    if (qk.length < 4) return 0;
+    if (isFullId || qk.length < 4) return 0;
     let n = 0;
     for (const id of ids) if (key(id).includes(qk)) n++;
     return n;
@@ -84,32 +89,38 @@
         <p class="text-[0.85rem] py-4" style="color:var(--t-muted)">Type your BH-P number above to check whether it is on the blocked list.</p>
       {:else if qk.length < 4}
         <p class="text-[0.85rem] py-4" style="color:var(--t-muted)">Keep typing…</p>
-      {:else if exact}
-        <div class="rounded-lg p-4" style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.35)">
-          <div class="flex items-center gap-2">
-            <span class="h-2.5 w-2.5 rounded-full" style="background:#ef4444"></span>
-            <span class="text-[1rem] font-bold" style="color:#ef4444">Blocked</span>
+      {:else if isMalformed}
+        <p class="text-[0.85rem] py-4" style="color:var(--t-muted)">Invalid format. Expected: <strong>BH-P-YY-NNNNN</strong> (e.g. BH-P-25-11457).</p>
+      {:else if isFullId}
+        {#if exact}
+          <div class="rounded-lg p-4" style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.35)">
+            <div class="flex items-center gap-2">
+              <span class="h-2.5 w-2.5 rounded-full" style="background:#ef4444"></span>
+              <span class="text-[1rem] font-bold" style="color:#ef4444">Blocked</span>
+            </div>
+            <div class="mt-1 font-mono text-[0.95rem] tabular-nums" style="color:var(--t-ink)">{exact}</div>
+            <p class="mt-2 text-[0.8rem]" style="color:var(--t-ink-soft)">
+              This ID is on Annexure-1 of PCI circular IT-11/3/2026-IT. Re-register on
+              <span style="color:var(--t-ink)">DIGI-PHARMed</span> with an Aadhaar-matching name
+              and genuine educational records, then complete AEBAS registration.
+            </p>
           </div>
-          <div class="mt-1 font-mono text-[0.95rem] tabular-nums" style="color:var(--t-ink)">{exact}</div>
-          <p class="mt-2 text-[0.8rem]" style="color:var(--t-ink-soft)">
-            This ID is on Annexure-1 of PCI circular IT-11/3/2026-IT. Re-register on
-            <span style="color:var(--t-ink)">DIGI-PHARMed</span> with an Aadhaar-matching name
-            and genuine educational records, then complete AEBAS registration.
-          </p>
-        </div>
+        {:else}
+          <div class="rounded-lg p-4" style="background:rgba(0,204,102,0.08);border:1px solid rgba(0,204,102,0.35)">
+            <div class="flex items-center gap-2">
+              <span class="h-2.5 w-2.5 rounded-full" style="background:#00cc66"></span>
+              <span class="text-[1rem] font-bold" style="color:#00b359">Not on the blocked list</span>
+            </div>
+            <p class="mt-1 text-[0.8rem]" style="color:var(--t-ink-soft)">
+              {q} does not appear in Annexure-1. Verify against the official circular before acting.
+            </p>
+          </div>
+        {/if}
       {:else if matchCount === 0}
-        <div class="rounded-lg p-4" style="background:rgba(0,204,102,0.08);border:1px solid rgba(0,204,102,0.35)">
-          <div class="flex items-center gap-2">
-            <span class="h-2.5 w-2.5 rounded-full" style="background:#00cc66"></span>
-            <span class="text-[1rem] font-bold" style="color:#00b359">Not on the blocked list</span>
-          </div>
-          <p class="mt-1 text-[0.8rem]" style="color:var(--t-ink-soft)">
-            {q} does not appear in Annexure-1. Verify against the official circular before acting.
-          </p>
-        </div>
+        <p class="text-[0.85rem] py-4" style="color:var(--t-muted)">No matching IDs found.</p>
       {:else}
         <div class="text-[0.8rem] mb-2" style="color:var(--t-muted)">
-          {fmt(matchCount)} match{matchCount === 1 ? '' : 'es'}{matchCount > 12 ? ' (showing 12)' : ''}
+          {fmt(matchCount)} match{matchCount === 1 ? '' : 'es'} — tap a suggestion to check it:
         </div>
         <div class="flex flex-wrap gap-1.5">
           {#each matches as m (m)}
