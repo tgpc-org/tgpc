@@ -14,7 +14,7 @@
       the page never flashes the wrong mode. CSP nonce placeholder is filled
       by SvelteKit (csp.mode 'auto'); if CSP ever blocks this, the app simply
       starts in light mode until $lib/theme hydrates. -->
-    <script nonce="%sveltekit.nonce%">try{var t=localStorage.getItem('tgpc-theme');if(t!=='light'&&t!=='dark'){t=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}if(t==='dark'){document.documentElement.classList.add('dark');var m=document.querySelector('meta[name="theme-color"]');if(m){m.setAttribute('content','#111827');}}}catch(e){}</script>
+    <script nonce="%sveltekit.nonce%">try{if(!(location.pathname==='/blocked'||location.pathname.startsWith('/blocked/'))){var t=localStorage.getItem('tgpc-theme');if(t!=='light'&&t!=='dark'){t=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}if(t==='dark'){document.documentElement.classList.add('dark');var m=document.querySelector('meta[name="theme-color"]');if(m){m.setAttribute('content','#111827');}}}}catch(e){}</script>
     %sveltekit.head%
   </head>
   <body>

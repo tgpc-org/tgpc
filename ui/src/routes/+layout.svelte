@@ -43,6 +43,13 @@
   }
 
   $effect(() => {
+    if (standalone) {
+      // /blocked is light-only: never inherit a saved/OS dark preference.
+      document.documentElement.classList.remove('dark');
+      const meta = document.querySelector('meta[name="theme-color"]');
+      if (meta) meta.setAttribute('content', '#00cc66');
+      return;
+    }
     // Sync toggle state with the FOUC guard in app.html (client only).
     initTheme();
   });
