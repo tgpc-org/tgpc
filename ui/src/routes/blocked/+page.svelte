@@ -61,7 +61,7 @@
         >×</button>
       {/if}
     </div>
-    <p class="text-[0.75rem]" style="color:var(--t-muted);margin-top:6px">Hyphens and spaces are optional — <code>BHP2511457</code> works too.</p>
+
 
     <div aria-live="polite" aria-atomic="true" class="min-h-[4rem]">
       {#if data.ids.length === 0}
