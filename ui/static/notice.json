@@ -1,5 +1,17 @@
 [
   {
+    "id": 28,
+    "date": "2026-11-19",
+    "source": "Circular",
+    "title": "PCI Circular IT-11/3/2026-IT (19-11-2026) – Blocking of Duplicate BH-P IDs and Mandatory Fresh Registration on DIGI-PHARMed Portal",
+    "links": [
+      {
+        "label": "Circular",
+        "url": "https://pub-4591c8c5282040459ade2ed1e5e3d5be.r2.dev/notice/20261119PCICircularBlockingDuplicateBHPIDs.pdf"
+      }
+    ]
+  },
+  {
     "id": 27,
     "date": "2026-11-10",
     "source": "Circular",
