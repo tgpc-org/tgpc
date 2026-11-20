@@ -12,6 +12,10 @@
       {
         "label": "Annexure-1",
         "url": "https://pub-4591c8c5282040459ade2ed1e5e3d5be.r2.dev/notice/20261119PCIAnnexure1BlockedBHPIDs.pdf"
+      },
+      {
+        "label": "Blocked BH-P lookup (searchable)",
+        "url": "https://tgpc-org.github.io/pciblockedbhpids/"
       }
     ]
   },

@@ -45,6 +45,8 @@
     <a href="https://pub-4591c8c5282040459ade2ed1e5e3d5be.r2.dev/notice/20261119PCICircularBlockingDuplicateBHPIDs.pdf"
        target="_blank" rel="noopener" class="font-semibold no-underline" style="color:var(--t-link)">IT-11/3/2026-IT (19 Nov 2026)</a>
     — duplicate / non-compliant BH-P IDs are blocked; affected pharmacists must re-register on DIGI-PHARMed.
+    <a href="https://pub-4591c8c5282040459ade2ed1e5e3d5be.r2.dev/notice/20261119PCIAnnexure1BlockedBHPIDs.pdf"
+       target="_blank" rel="noopener" class="font-semibold no-underline" style="color:var(--t-link)">Annexure-1: List of Blocked BH-P IDs (PDF)</a>
     {#if ids.length} {fmt(ids.length)} IDs indexed. {/if}
   </p>
 
