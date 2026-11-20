@@ -112,8 +112,7 @@
     ? 'search'
     : page.url.pathname === '/notice'
       ? 'notice'
-      : page.url.pathname === '/dispatch' ? 'dispatch'
-      : page.url.pathname === '/blocked' ? 'blocked' : '');
+      : page.url.pathname === '/dispatch' ? 'dispatch' : '');
 
   let searchRef = $state<HTMLAnchorElement | undefined>(undefined);
   let noticeRef = $state<HTMLAnchorElement | undefined>(undefined);
