@@ -26,6 +26,7 @@ describe('gatePath', () => {
 		for (const p of [
 			'/',
 			'/notice',
+			'/blocked',
 			'/dispatch',
 			'/sitemap.xml',
 			'/sitemap/1.xml',
