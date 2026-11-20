@@ -106,10 +106,11 @@
 
 {#snippet noticeRows(list: Notice[])}
   {#each list as n, i (i)}
-    <div style="display:grid;grid-template-columns:96px 1fr 160px;gap:12px;padding:12px 0;border-bottom:1px solid var(--t-surface);font-size:0.875rem">
+    <div style="display:grid;grid-template-columns:96px 1fr;column-gap:12px;row-gap:6px;align-items:start;padding:12px 0;border-bottom:1px solid var(--t-surface);font-size:0.875rem">
       <span class="text-[var(--t-muted)] tabular-nums">{fmtDate(n.date)}</span>
       <span style="min-width:0">{n.title}</span>
-      <span class="flex gap-1 flex-wrap" style="min-width:0">
+      <span aria-hidden="true"></span>
+      <span class="flex gap-1.5 flex-wrap items-center" style="min-width:0">
         {@render linkChips(n.links)}
       </span>
     </div>
@@ -192,10 +193,9 @@
   {:else}
     <div use:fitToViewport class="overflow-x-hidden overflow-y-auto">
       <div class="hidden md:block">
-        <div style="display:grid;grid-template-columns:96px 1fr 160px;gap:12px;align-items:center;justify-items:center;padding:6px 0;border-bottom:1px solid var(--t-border-soft);font-size:0.7rem;font-weight:600;color:var(--t-muted);text-transform:uppercase;letter-spacing:0.5px">
+        <div style="display:grid;grid-template-columns:96px 1fr;gap:12px;align-items:center;padding:6px 0;border-bottom:1px solid var(--t-border-soft);font-size:0.7rem;font-weight:600;color:var(--t-muted);text-transform:uppercase;letter-spacing:0.5px">
           <span>Date</span>
-          <span>Title / Description</span>
-          <span style="justify-self:start">Links</span>
+          <span>Title / Description &amp; links</span>
         </div>
         {@render noticeRows(filtered)}
       </div>
