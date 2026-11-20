@@ -44,7 +44,7 @@
 
   $effect(() => {
     if (standalone) {
-      // /blocked is light-only: never inherit a saved/OS dark preference.
+      // Standalone pages are light-only: never inherit a saved/OS dark preference.
       document.documentElement.classList.remove('dark');
       const meta = document.querySelector('meta[name="theme-color"]');
       if (meta) meta.setAttribute('content', '#00cc66');
@@ -107,7 +107,7 @@
     return out;
   });
 
-  let standalone = $derived(page.url.pathname === '/blocked' || page.url.pathname.startsWith('/blocked/'));
+  let standalone = false;
   let activeTab = $derived(page.url.pathname === '/'
     ? 'search'
     : page.url.pathname === '/notice'
@@ -118,8 +118,7 @@
   let searchRef = $state<HTMLAnchorElement | undefined>(undefined);
   let noticeRef = $state<HTMLAnchorElement | undefined>(undefined);
   let dispatchRef = $state<HTMLAnchorElement | undefined>(undefined);
-  let blockedRef = $state<HTMLAnchorElement | undefined>(undefined);
-
+  
   const TAB_CLASS = 'px-3 py-2.5 text-[0.75rem] font-bold uppercase tracking-wider whitespace-nowrap no-underline transition-colors';
   const TAB_DIVIDER = 'text-[0.75rem] font-light select-none px-1';
 
@@ -133,7 +132,7 @@
 
   $effect(() => {
     const tab = activeTab;
-    const el = tab === 'search' ? searchRef : tab === 'notice' ? noticeRef : tab === 'dispatch' ? dispatchRef : blockedRef;
+    const el = tab === 'search' ? searchRef : tab === 'notice' ? noticeRef : dispatchRef;
     if (!el) {
       slider = { left: 0, width: 0, ready: false };
       return;
@@ -335,8 +334,7 @@
         <a href="/notice" bind:this={noticeRef} aria-current={activeTab === 'notice' ? 'page' : undefined} class={TAB_CLASS} style={tabStyle(activeTab === 'notice')}>Notices</a>
         <span aria-hidden="true" class={TAB_DIVIDER} style="color:var(--t-border-soft)">/</span>
         <a href="/dispatch" bind:this={dispatchRef} aria-current={activeTab === 'dispatch' ? 'page' : undefined} class={TAB_CLASS} style={tabStyle(activeTab === 'dispatch')}>Dispatch List</a>
-<span aria-hidden="true" class={TAB_DIVIDER} style="color:var(--t-border-soft)">/</span>
-<a href="/blocked" bind:this={blockedRef} aria-current={activeTab === 'blocked' ? 'page' : undefined} class={TAB_CLASS} style={tabStyle(activeTab === 'blocked')}>Blocked BH-P</a>
+
         {#if slider.ready}
           <div
             aria-hidden="true"
@@ -373,14 +371,5 @@
   </footer>
 {/if}
 
-{#if standalone}
-  <footer
-    class="w-full border-t text-[0.7rem] leading-snug px-3 sm:px-5 py-3"
-    style="border-color:var(--t-border);color:var(--t-muted);background:var(--t-bg)"
-  >
-    <span style="text-wrap:pretty">
-      Unofficial reference data. Verify against the official circular before acting. Operated under fair dealing (Indian Copyright Act, 1957, Section 52).
-    </span>
-  </footer>
-{/if}
+
 </div>

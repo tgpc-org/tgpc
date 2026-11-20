@@ -26,8 +26,7 @@ describe('gatePath', () => {
 		for (const p of [
 			'/',
 			'/notice',
-			'/blocked',
-			'/dispatch',
+						'/dispatch',
 			'/sitemap.xml',
 			'/sitemap/1.xml',
 			'/sitemap/8.xml',
@@ -55,11 +54,6 @@ describe('gatePath', () => {
 		// the hook denies strangers before they get there.
 		assert.equal(gatePath('/api/admin/contacts').kind, 'api-deny');
 		assert.equal(gatePath('/sandbox').kind, 'page-login');
-	});
-
-	it('leaves the blocked BH-P dataset open', () => {
-		assert.equal(gatePath('/data/blocked-bhp-2026-11-19.json').kind, 'open');
-		assert.equal(gatePath('/data/blocked-bhp-evil.json').kind, 'page-login');
 	});
 
 	it('does not treat lookalike paths as open', () => {
