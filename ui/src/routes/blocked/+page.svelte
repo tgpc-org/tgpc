@@ -9,8 +9,8 @@
   function key(s: string) { return (s || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
   const qk = $derived(key(q));
 
-  // A complete, well-formed BH-P ID → one definitive answer
-  const isFullId = $derived(/^BHP\d{2}\d{3,}$/.test(qk));
+  // A complete, well-formed BH-P ID → one definitive answer (4+ digits, matching real IDs)
+  const isFullId = $derived(/^BHP\d{2}\d{4,}$/.test(qk) || ids.includes(q));
   // Looks like an attempt at a full ID but malformed
   const isMalformed = $derived(qk.startsWith('BHP') && qk.length >= 6 && !/^BHP\d+$/.test(qk));
 
